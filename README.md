@@ -1,126 +1,87 @@
-# Kanz — دليل النشر الكامل
+# Kanz
 
-المشروع اتقسم لجزئين مستقلين تمامًا (زي أي تطبيق ويب احترافي):
+A personal wealth tracker (EGP, hard currency, gold, and other assets), originally
+built as a Google Apps Script app and migrated to a standard Node.js stack.
 
 ```
 kanz/
-├── backend/     ← سيرفر Node.js + Express + PostgreSQL (بديل Google Apps Script)
-└── frontend/    ← index.html (الواجهة، بتتصل بالسيرفر عبر REST API)
+├── backend/   Express + PostgreSQL API, deployed as Vercel serverless functions
+└── docs/      Static frontend (index.html), deployed on GitHub Pages
 ```
 
-مفيش أي iframe ولا أي قفل على منصة جوجل — كل حاجة كود عادي قياسي (Node.js + Postgres) تقدر تشغّله وتنقله لأي سيرفر في أي وقت.
+No vendor lock-in: the backend is plain Node/Express/Postgres and can be moved
+to any host (VPS, Docker, another serverless provider) without touching a
+single line of application code.
 
----
+## Stack
 
-## الخطوة 1 — رفع المشروع على GitHub
+- **Frontend:** single-file HTML/CSS/JS, no build step, no framework
+- **Backend:** Express, deployed on Vercel as serverless functions
+- **Database:** PostgreSQL (tested against [Neon](https://neon.tech)'s free tier)
+- **Auth:** JWT (stateless — no server-side session storage)
+- **Scheduled jobs:** Vercel Cron (daily) + an external pinger for the
+  3-hourly job (see below)
 
-```bash
-cd kanz
-git init
-git add .
-git commit -m "Initial commit: Kanz migrated off Google Apps Script"
-```
-
-روح على github.com واعمل repository جديد (مثلاً `kanz`)، وبعدين:
-
-```bash
-git remote add origin https://github.com/USERNAME/kanz.git
-git branch -M main
-git push -u origin main
-```
-
-> ملاحظة أمان مهمة: ملف `.env` متضافش أبدًا للـ commit (موجود جوه `.gitignore` أصلاً). لو حصل وحطيته بالغلط، غيّر كل الأسرار (JWT_SECRET، كلمات مرور SMTP، إلخ) فورًا.
-
----
-
-## الخطوة 2 — نشر الباك إند (Render — مجاني)
-
-1. روح على [render.com](https://render.com) واعمل حساب (تقدر تسجل بحساب GitHub مباشرة)
-2. **New +** → **PostgreSQL** → اختار الخطة المجانية (Free) → أنشئ قاعدة البيانات
-   - بعد الإنشاء، انسخ قيمة **Internal Database URL** (هتحتاجها في الخطوة الجاية)
-3. **New +** → **Web Service** → اختار الـ repo بتاعك على GitHub
-   - **Root Directory:** `backend`
-   - **Build Command:** `npm install`
-   - **Start Command:** `npm start`
-   - اختار الخطة المجانية (Free)
-4. في تبويب **Environment**، ضيف كل المتغيرات من ملف `backend/.env.example`:
-   - `DATABASE_URL` = رابط قاعدة البيانات اللي نسخته فوق
-   - `JWT_SECRET` = نص عشوائي طويل (تقدر تولّده من [هنا](https://www.uuidgenerator.net) مثلاً)
-   - `FRONTEND_ORIGIN` = رابط موقعك اللي هتاخده في الخطوة 3 (مؤقتًا سيبه `*` وارجعله بعد كده)
-   - إعدادات SMTP لو عايز تنبيهات الإيميل تشتغل (اختياري)
-5. اضغط **Create Web Service** — Render هيبني وينشر السيرفر تلقائيًا، وهيديك رابط زي:
-   `https://kanz-backend-xxxx.onrender.com`
-
-**ملحوظة عن الخطة المجانية:** السيرفر بينام بعد 15 دقيقة من غير استخدام، وأول طلب بعد النوم بياخد 30-60 ثانية عشان "يصحى" (Cold Start). ده طبيعي وموجود في كل استضافة مجانية فيها سيرفر حقيقي شغال — مش عيب في الكود.
-
-*(البديل: [Koyeb](https://koyeb.com) بنفس الخطوات تقريبًا لو حبيت تجرب حاجة تانية)*
-
----
-
-## الخطوة 3 — نشر الواجهة (Cloudflare Pages أو GitHub Pages)
-
-### الخيار السريع: GitHub Pages
-1. في إعدادات الـ repo على GitHub → **Settings → Pages**
-2. **Source:** Deploy from a branch → اختار `main` والمجلد `/frontend`
-3. هيديك رابط زي: `https://USERNAME.github.io/kanz/`
-
-### الخيار الأفضل أداءً: Cloudflare Pages
-1. روح [pages.cloudflare.com](https://pages.cloudflare.com) → **Create a project** → اربط حساب GitHub
-2. اختار الـ repo → **Build output directory:** `frontend`
-3. Deploy — هيديك رابط زي `kanz.pages.dev` (وتقدر تربط دومين خاص بيك مجانًا كمان)
-
-### حاجة واحدة قبل النشر: وصّل الواجهة بالسيرفر
-افتح `frontend/index.html` ودوّر على السطر ده (قريب من بداية الكود):
-
-```js
-const API_BASE = window.KANZ_API_BASE || "http://localhost:3000/api";
-```
-
-غيّره لرابط السيرفر بتاعك من الخطوة 2:
-
-```js
-const API_BASE = window.KANZ_API_BASE || "https://kanz-backend-xxxx.onrender.com/api";
-```
-
-اعمل commit وpush، وارجع لـ Render وحدّث `FRONTEND_ORIGIN` بالرابط النهائي للواجهة (عشان الـ CORS يشتغل صح).
-
----
-
-## التشغيل محليًا (قبل النشر، للتجربة)
+## Local development
 
 ```bash
 cd backend
-cp .env.example .env     # واملأ القيم
+cp .env.example .env      # fill in DATABASE_URL and JWT_SECRET at minimum
 npm install
-npm start                # السيرفر هيشتغل على http://localhost:3000
+npm run dev                # or `npm start`
 ```
 
-وافتح `frontend/index.html` مباشرة في المتصفح (أو عبر أي static server محلي زي `npx serve frontend`).
+Open `docs/index.html` directly in a browser (or serve it with `npx serve docs`),
+and update `API_BASE` near the top of its `<script>` tag to
+`http://localhost:3000/api`.
 
----
+## Deployment
 
-## إيه اللي اتغيّر عن نسخة Apps Script القديمة؟
+### 1. Database — Neon (free, no card required)
+Create a project at [neon.tech](https://neon.tech) and copy its connection
+string into `DATABASE_URL`.
 
-| القديم (Apps Script) | الجديد |
-|---|---|
-| تخزين البيانات في Google Sheet | جدول PostgreSQL حقيقي |
-| تشفير الباسورد SHA-256 يدوي | bcrypt (معيار الصناعة) |
-| نظام "تذكرني" بتوكن مخزّن يدويًا في الشيت | JWT ذاتي التحقق (مفيش حاجة متخزنة تتفحص كل مرة) |
-| `ScriptApp` triggers | `node-cron` (نفس التوقيتات بالظبط: snapshot 3 فجرًا، تنبيهات كل 3 ساعات) |
-| `MailApp.sendEmail` | `nodemailer` عبر أي SMTP تختاره |
-| الموقع جوه iframe من جوجل | موقع مستقل تمامًا على دومينك |
+### 2. Backend — Vercel (free, no card required)
+1. Import the GitHub repo on [vercel.com](https://vercel.com)
+2. Set **Root Directory** to `backend`
+3. Add environment variables: `DATABASE_URL`, `JWT_SECRET`, `CRON_SECRET`,
+   `FRONTEND_ORIGIN` (see `.env.example` for the full list)
+4. Deploy — Vercel assigns a permanent domain like `your-app.vercel.app`
 
-منطق الحسابات نفسه (الأسعار، التحويلات، الـ snapshot) اتنقل زي ما هو بالظبط من غير أي تغيير — بس المكان اللي بيشتغل فيه اتغيّر.
+### 3. Frontend — GitHub Pages
+Settings → Pages → Deploy from branch `main`, folder `/docs`.
 
-## المرونة للمستقبل
+Update `API_BASE` in `docs/index.html` to your Vercel URL + `/api`.
 
-الباك إند ده Node.js + Express + PostgreSQL قياسي 100%. يوم ما تحب تستضيفه بنفسك على VPS خاص بيك:
+### 4. Price-alert scheduling
+Vercel's free tier only runs a built-in cron job once a day (used here for
+the 3 AM daily snapshot). For the 3-hourly price-alert check, use a free
+external scheduler such as [cron-job.org](https://cron-job.org) to hit:
 
-```bash
-git clone https://github.com/USERNAME/kanz.git
-cd kanz/backend
-npm install
-npm start
+```
+https://your-app.vercel.app/api/cron/price-alerts?secret=YOUR_CRON_SECRET
 ```
 
-نفس الأمر بالظبط، على أي سيرفر في الدنيا — من غير إعادة كتابة سطر واحد.
+## Security notes
+
+- Passwords are hashed with bcrypt; a `legacy_hash` column supports
+  transparent upgrade of accounts migrated from the old SHA-256-based
+  Apps Script version.
+- Auth endpoints are rate-limited (20 requests / 15 min / IP).
+- `helmet` sets standard security headers; JSON body size is capped at 100kb.
+- The cron secret is compared using `crypto.timingSafeEqual` to avoid timing
+  attacks.
+- `JWT_SECRET` and `DATABASE_URL` are required at boot — the process fails
+  fast instead of silently running with an undefined secret.
+- Set `FRONTEND_ORIGIN` to your real frontend URL in production; leaving it
+  as `*` allows any site to call the API.
+
+## Migrating data from the old Google Sheets version
+
+Export the old `kanz_users` sheet as **Tab Separated Values (.tsv)** and
+insert each row directly into `kanz_users` via Neon's SQL Editor, or in bulk
+with a small script — see the "Migrating an old account" section in project
+history/issues for the exact column mapping (`username | password_hash |
+created_at | data_json | history_json`). Old password hashes are preserved
+in the `legacy_hash` column and upgraded to bcrypt automatically on first
+login.

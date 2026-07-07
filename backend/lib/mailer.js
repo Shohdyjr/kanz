@@ -1,26 +1,26 @@
 const nodemailer = require("nodemailer");
+const env = require("../config/env");
 
 let transporter = null;
 
 function getTransporter() {
   if (transporter) return transporter;
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn("⚠ إعدادات SMTP ناقصة في .env — تنبيهات الإيميل مش هتشتغل لحد ما تضيفها.");
-    return null;
-  }
+  if (!env.smtp.host || !env.smtp.user || !env.smtp.pass) return null;
+
   transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT || "587", 10),
-    secure: process.env.SMTP_PORT === "465",
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    host: env.smtp.host,
+    port: env.smtp.port,
+    secure: env.smtp.port === 465,
+    auth: { user: env.smtp.user, pass: env.smtp.pass },
   });
   return transporter;
 }
 
+/** Sends a plain-text email. Returns false silently if SMTP isn't configured. */
 async function sendMail(to, subject, text) {
   const t = getTransporter();
   if (!t) return false;
-  await t.sendMail({ from: process.env.MAIL_FROM || process.env.SMTP_USER, to, subject, text });
+  await t.sendMail({ from: env.smtp.from, to, subject, text });
   return true;
 }
 

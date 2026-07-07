@@ -3,54 +3,45 @@ const pool = require("../db/pool");
 const { fetchRatesServerSide } = require("../lib/rates");
 const { sendMail } = require("../lib/mailer");
 
+/** Emails users whose gold/USD price targets have just been reached (fires once per target). */
 async function checkPriceAlerts() {
-  console.log("🔔 Checking price alerts...");
-  try {
-    const rates = await fetchRatesServerSide();
-    const { rows } = await pool.query("SELECT username, data FROM kanz_users");
+  const rates = await fetchRatesServerSide();
+  const { rows } = await pool.query("SELECT username, data FROM kanz_users");
 
-    for (const row of rows) {
-      try {
-        const data = row.data || {};
-        const alerts = data.priceAlerts;
-        if (!alerts || !alerts.email) continue;
+  for (const row of rows) {
+    const alerts = row.data?.priceAlerts;
+    if (!alerts?.email) continue;
 
-        let changed = false;
+    let changed = false;
 
-        if (alerts.goldTarget > 0 && !alerts.goldFired && rates.goldUsdPerGram >= alerts.goldTarget) {
-          await sendMail(
-            alerts.email,
-            "Kanz — تنبيه سعر الذهب",
-            `سعر جرام الذهب وصل لـ $${rates.goldUsdPerGram.toFixed(2)} (كان هدفك $${alerts.goldTarget}).\n\nافتح تطبيق Kanz عشان تحدّث هدف جديد لو حبيت.`
-          );
-          alerts.goldFired = true;
-          changed = true;
-        }
-
-        if (alerts.usdEgpTarget > 0 && !alerts.usdEgpFired && rates.egpPerUsd >= alerts.usdEgpTarget) {
-          await sendMail(
-            alerts.email,
-            "Kanz — تنبيه سعر الدولار",
-            `سعر الدولار وصل لـ ${rates.egpPerUsd.toFixed(2)} جنيه (كان هدفك ${alerts.usdEgpTarget} جنيه).\n\nافتح تطبيق Kanz عشان تحدّث هدف جديد لو حبيت.`
-          );
-          alerts.usdEgpFired = true;
-          changed = true;
-        }
-
-        if (changed) {
-          data.priceAlerts = alerts;
-          await pool.query("UPDATE kanz_users SET data = $1 WHERE username = $2", [JSON.stringify(data), row.username]);
-        }
-      } catch (err) {
-        console.error("checkPriceAlerts failed for", row.username, err.message);
-      }
+    if (alerts.goldTarget > 0 && !alerts.goldFired && rates.goldUsdPerGram >= alerts.goldTarget) {
+      await sendMail(
+        alerts.email,
+        "Kanz — Gold Price Alert",
+        `Gold reached $${rates.goldUsdPerGram.toFixed(2)}/gram (your target was $${alerts.goldTarget}).`
+      );
+      alerts.goldFired = true;
+      changed = true;
     }
-  } catch (err) {
-    console.error("checkPriceAlerts error:", err.message);
+
+    if (alerts.usdEgpTarget > 0 && !alerts.usdEgpFired && rates.egpPerUsd >= alerts.usdEgpTarget) {
+      await sendMail(
+        alerts.email,
+        "Kanz — USD/EGP Price Alert",
+        `USD reached ${rates.egpPerUsd.toFixed(2)} EGP (your target was ${alerts.usdEgpTarget}).`
+      );
+      alerts.usdEgpFired = true;
+      changed = true;
+    }
+
+    if (changed) {
+      const data = { ...row.data, priceAlerts: alerts };
+      await pool.query("UPDATE kanz_users SET data = $1 WHERE username = $2", [JSON.stringify(data), row.username]);
+    }
   }
 }
 
-/** بيفحص كل 3 ساعات */
+/** Only used when running as a persistent server (local dev / Docker). Not used on Vercel. */
 function schedulePriceAlerts() {
   cron.schedule("0 */3 * * *", checkPriceAlerts);
   console.log("✓ Price alerts cron scheduled — every 3 hours");

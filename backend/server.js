@@ -1,16 +1,12 @@
-require("dotenv").config();
+const env = require("./config/env");
 const app = require("./app");
-
-const PORT = process.env.PORT || 3000;
-
-// ملاحظة: مهمة node-cron الدورية شغالة هنا بس لو شغّلت السيرفر ده بنفسك
-// (محليًا أو على Docker/Back4app). على Vercel، الجدولة بتتم بطريقة مختلفة
-// تمامًا (Vercel Cron + رابط خارجي) — شوف vercel.json و routes/cron.js.
 const { scheduleDailySnapshot } = require("./cron/dailySnapshot");
 const { schedulePriceAlerts } = require("./cron/priceAlerts");
 
-app.listen(PORT, () => {
-  console.log(`✓ Kanz backend running on port ${PORT}`);
+// Only used for local development or a persistent-server deployment (e.g. Docker).
+// On Vercel, scheduling works differently — see vercel.json and routes/cron.js.
+app.listen(env.port, () => {
+  console.log(`✓ Kanz backend running on port ${env.port}`);
   scheduleDailySnapshot();
   schedulePriceAlerts();
 });

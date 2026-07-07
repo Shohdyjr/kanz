@@ -18,7 +18,7 @@ html,body{margin:0;padding:0}
 ::-webkit-scrollbar-thumb:hover{background:var(--wt-gold-dim)}
 
 .wt-body{
-  /* ── الوضع الغامق (افتراضي) ── */
+  /* ── Dark mode (default) ── */
   --wt-bg:#0f1411;--wt-panel:#161d19;--wt-panel-2:#1c2521;
   --wt-line:rgba(212,201,165,.14);--wt-line-strong:#3a4540;
   --wt-gold:#d4af37;--wt-gold-light:#f0d878;--wt-gold-dim:#8a7430;
@@ -171,7 +171,7 @@ html,body{margin:0;padding:0}
 .wt-fx-badge{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:500;white-space:nowrap;align-self:flex-end}
 .fx-hourly{color:var(--wt-green);background:rgba(95,174,110,.12)}
 .fx-daily{color:#f0b429;background:rgba(240,180,41,.12)}
-/* Modal لإضافة بند جديد */
+/* Modal for adding a new asset */
 .wt-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
 /* Auth Screen */
 .wt-auth-screen{position:fixed;inset:0;background:var(--wt-bg-gradient);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px}
@@ -201,7 +201,7 @@ html,body{margin:0;padding:0}
 .wt-field input[type=text]:focus,.wt-field input[type=password]:focus,.wt-field select:focus{outline:none;border-color:var(--wt-gold-dim)}
 .wt-modal-actions{display:flex;gap:8px;margin-top:12px}
 .wt-modal-actions .wt-btn,.wt-modal-actions .wt-btn-ghost{flex:1;text-align:center;padding:9px}
-/* Historical snapshot modal — نسخة أحلى بكروت ملونة لكل فئة، شبكة عمودين مضغوطة */
+/* Historical snapshot modal — colorful cards per category, compact 2-column grid */
 .wt-hist-modal{max-width:600px;max-height:94vh;overflow-y:auto;padding:16px 18px}
 .wt-hist-modal h3{margin-bottom:4px}
 .wt-hist-rate-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 10px;border-radius:999px;margin-top:6px;font-family:"JetBrains Mono",monospace;transition:.2s}
@@ -236,7 +236,7 @@ html,body{margin:0;padding:0}
   .wt-hist-modal{max-width:100%}
   .wt-hist-grid{grid-template-columns:1fr}
 }
-/* History manager — جدول تفاعلي زي إكسيل لعرض/تعديل/حذف اللقطات التاريخية */
+/* History manager — Excel-like interactive table to view/edit/delete snapshots */
 .wt-histmgr-modal{max-width:480px;max-height:85vh;display:flex;flex-direction:column}
 .wt-histmgr-table-modal{max-width:840px;width:96vw}
 .wt-histmgr-table-wrap{overflow:auto;flex:1;max-height:60vh;border:1px solid var(--wt-line);border-radius:10px;margin:4px 0 14px}
@@ -275,14 +275,14 @@ html,body{margin:0;padding:0}
 <div class="wt-body" id="bodyRoot"><div class="wt-wrap" id="app"></div></div>
 <script>
 // ══════════════════════════════════════════════════════
-//  متتبع الثروة — التواصل مع الـ backend عبر google.script.run
-//  (الصفحة بتتحمّل جوه iframe معزول، فمينفعش fetch(location))
+//  Wealth tracker — talks to the backend via a REST API
+//  (the page used to load inside a sandboxed iframe, so fetch(location) would not work)
 // ══════════════════════════════════════════════════════
 
 const OUNCE_TO_GRAM = 31.1034768;
 
-// البنود الأساسية — نفس الـ id القديم (عشان الأرقام المحفوظة متتفقدش)،
-// بس بقت ليها name_ar/name_en/icon قابلين للتعديل زي أي بند تاني.
+// Base assets — same ids as before (so saved quantities keep matching),
+// now with editable name_ar/name_en/icon like any other asset.
 const BASE_ASSETS = [
   {id:"thunder_save",   name_ar:"ثاندر — توفير (جنيه)",      name_en:"Thunder — Savings",   icon:"💰", currency:"EGP", isAsset:false},
   {id:"thunder_invest", name_ar:"ثاندر — استثمار (جنيه)",    name_en:"Thunder — Investment", icon:"📈", currency:"EGP", isAsset:false},
@@ -306,7 +306,7 @@ let ASSETS = [];
 
 let qty   = {};
 let order = [];
-let rates = null; // أسعار العملات/الذهب — JS variable عادي، تُجلب من جديد كل مرة، مالها أهمية تخزين
+let rates = null; // FX/gold rates — plain JS variable, refetched every time, no need to persist
 let status= "loading";
 let syncStatus = "idle";
 let syncTimer  = null;
@@ -315,31 +315,31 @@ let innerChart = null;
 let historyChart = null;
 let historyData = [];
 let modalOpen  = false;
-let historyModalOpen = false; // فتح/قفل مودال إضافة لقطة تاريخية يدوية
-let historyManagerOpen = false; // فتح/قفل لوحة إدارة السجل (عرض/تعديل/حذف)
-let historyChartPeriod = "mtd"; // "7d" | "30d" | "mtd" | "ytd" | "all" — الفترة المعروضة في الرسم البياني
-let showBenchmark = false; // هل نعرض خط مقارنة بمؤشر S&P 500 فوق الرسم؟
-let histRate       = null;   // { egpPerUsd, date } — سعر الصرف التاريخي بعد ما يتجاب
+let historyModalOpen = false; // open/close the "add manual snapshot" modal
+let historyManagerOpen = false; // open/close the history manager panel (view/edit/delete)
+let historyChartPeriod = "mtd"; // "7d" | "30d" | "mtd" | "ytd" | "all" — chart's visible period
+let showBenchmark = false; // whether to overlay the S&P 500 comparison line
+let histRate       = null;   // { egpPerUsd, date } — historical exchange rate, once fetched
 let histRateStatus = "idle"; // idle | loading | ok | error
 let histRateError  = "";
 let logoAnimated = false;
 let editingId  = null;
-let authMode   = "login"; // "login" أو "signup"
-let theme = "dark"; // يتحدّث من بيانات اليوزر بعد تسجيل الدخول
-let lang  = "en";   // يتحدّث من بيانات اليوزر بعد تسجيل الدخول
+let authMode   = "login"; // "login" or "signup"
+let theme = "dark"; // updated from the user's data after login
+let lang  = "en";   // updated from the user's data after login
 
 /**
- * تخزين المتصفح في المشروع ده مقصور على حاجتين بس:
- * 1) اسم اليوزر الحالي في sessionStorage — عشان السيشن تنجو من الـ refresh.
- * 2) توكن "تذكرني" في localStorage — عشان اليوزر يفضل مسجّل دخول على
- *    الجهاز ده لمدة 7 أيام من غير ما يكتب الباسورد كل مرة. التوكن ده
- *    عشوائي طويل، وبيتوصل بيه السيرفر عن طريق مقارنة الـ hash بتاعه فقط
- *    (زي الباسورد بالظبط) — النص الصريح للتوكن مش بيتخزن في السيرفر خالص.
- * كل تفضيل تاني (theme/lang/order/بنود/كميات) بييجي من السيرفر مع كل تحميل.
+ * Browser storage in this project is limited to two things:
+ * 1) The current username in sessionStorage — so the session survives a refresh.
+ * 2) The "remember me" token in localStorage — so the user stays logged in on
+ *    this device for 7 days without re-entering their password. This token
+ *    is long and random; the server only ever compares its hash (just like
+ *    a password) — the raw token itself is never stored server-side.
+ * Every other preference (theme/lang/order/assets/quantities) comes from the server on every load.
  */
-let currentUser = null; // بيتحدد فقط بعد تسجيل دخول حقيقي أو تحقق ناجح من توكن التذكرني
-let sessionToken = null; // التوكن المستخدم لتفويض كل طلب حساس للسيرفر — في الذاكرة بس، أبدًا مش بيتخزن إلا لو "تذكرني" متفعّلة
-let savingsGoal = 0;   // هدف الادخار بالدولار — 0 يعني مفيش هدف محدد
+let currentUser = null; // only set after a real login or a successful "remember me" check
+let sessionToken = null; // authorizes every sensitive server request — memory only, persisted only if "remember me" is on
+let savingsGoal = 0;   // savings goal in USD — 0 means no goal set
 let goalModalOpen = false;
 let alertsModalOpen = false;
 let priceAlertsSettings = { email: "", goldTarget: 0, usdEgpTarget: 0 };
@@ -731,19 +731,19 @@ function toggleLang() {
   scheduleSave();
 }
 
-// ── مساعدات ────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────
 const fmtUsd = n => "$" + n.toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2});
 const fmtEgp = n => n.toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0}) + (lang === "en" ? " EGP" : " ج.م");
 const fmtNum = (n, d=4) => n.toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:d});
 const esc    = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function uid() { return "custom_" + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
-// بيضيف عدد أيام لتاريخ (YYYY-MM-DD) بالتوقيت المحلي، من غير ما يمر بـ
-// toISOString() اللي بتحوّل لـ UTC وممكن ترجّع يوم غلط حسب فرق التوقيت
-// (مثلًا توقيت مصر UTC+2/+3 بيخلي toISOString ترجع يوم قبل اللي متوقّع)
+// Adds a number of days to a date (YYYY-MM-DD) in local time, avoiding
+// toISOString() which converts to UTC and can shift the day depending on
+// the timezone offset (e.g. Cairo's UTC+2/+3 makes toISOString return the previous day)
 function addDaysToDateStr(dateStr, days) {
   const [y, m, d] = dateStr.split("-").map(Number);
-  const dt = new Date(y, m - 1, d); // تاريخ محلي صريح، من غير أي غموض توقيت
+  const dt = new Date(y, m - 1, d); // explicit local date, no timezone ambiguity
   dt.setDate(dt.getDate() + days);
   const yyyy = dt.getFullYear();
   const mm = String(dt.getMonth() + 1).padStart(2, "0");
@@ -763,9 +763,9 @@ function priceFor(a) {
   return 0;
 }
 
-// ── إيجاد أقرب لقطة مرجعية لفترة زمنية معيّنة (بالأيام) ──
-// نفس منطق "أقدم لقطة جوه النافذة، وإلا أقرب لقطة قبلها" — بنستخدمها في
-// حساب نسبة النمو وفي فلترة الرسم البياني، عشان الاتنين يفضلوا متطابقين
+// ── Find the closest reference snapshot for a given time window (in days) ──
+// Same "oldest snapshot within the window, else the closest one before it" logic
+// used for both the growth percentage and chart filtering, so they stay consistent
 function getGrowthCandidate(days) {
   if (!historyData || historyData.length === 0) return null;
 
@@ -782,7 +782,7 @@ function getGrowthCandidate(days) {
   return candidate;
 }
 
-// ── حساب نسبة التغيير مقابل أقرب لقطة قبل N يوم ─────────
+// ── Compute the change % vs. the closest snapshot N days ago ─────────
 function computeGrowth(days, currentTotal) {
   const candidate = getGrowthCandidate(days);
   if (!candidate || candidate.totalUsd === 0) return null;
@@ -792,8 +792,8 @@ function computeGrowth(days, currentTotal) {
   return { diff, pct };
 }
 
-// ── حساب نسبة التغيير منذ تاريخ ثابت (زي بداية السنة) ───
-// بيدور على أقرب لقطة بتاريخ >= sinceDate (الأقرب لتاريخ البداية)
+// ── Compute the change % since a fixed date (e.g. start of year) ───
+// Finds the closest snapshot with date >= sinceDate (closest to the start date)
 function computeGrowthSince(sinceDate, currentTotal) {
   if (!historyData || historyData.length === 0) return null;
 
@@ -801,7 +801,7 @@ function computeGrowthSince(sinceDate, currentTotal) {
   for (let i = 0; i < historyData.length; i++) {
     if (historyData[i].date >= sinceDate) { candidate = historyData[i]; break; }
   }
-  // لو كل اللقطات قبل تاريخ البداية، مفيش نقطة مرجعية صالحة
+// If every snapshot predates the start date, there's no valid reference point
   if (!candidate || candidate.totalUsd === 0) return null;
 
   const diff = currentTotal - candidate.totalUsd;
@@ -809,10 +809,10 @@ function computeGrowthSince(sinceDate, currentTotal) {
   return { diff, pct };
 }
 
-// ── حساب نسبة التغيير منذ أقدم لقطة مسجّلة في السجل كله ──
+// ── Compute the change % since the very first snapshot in the whole history ──
 function computeGrowthAllTime(currentTotal) {
   if (!historyData || historyData.length === 0) return null;
-  const candidate = historyData[0]; // historyData متسورتة تصاعديًا حسب التاريخ
+  const candidate = historyData[0]; // historyData is sorted ascending by date
   if (!candidate || candidate.totalUsd === 0) return null;
 
   const diff = currentTotal - candidate.totalUsd;
@@ -820,9 +820,9 @@ function computeGrowthAllTime(currentTotal) {
   return { diff, pct };
 }
 
-// ── جلب أسعار العملات: مصدر ساعي أولاً، ولو فشل نرجع لليومي ─
+// ── Fetch exchange rates: hourly source first, falling back to daily ─
 async function fetchFxRates() {
-  // المصدر الأساسي: تحديث كل ساعة (api.exchangerate.fun)
+// Primary source: updates hourly (api.exchangerate.fun)
   try {
     const res = await fetch("https://api.exchangerate.fun/latest?base=USD");
     const j   = await res.json();
@@ -833,13 +833,13 @@ async function fetchFxRates() {
   } catch(e) {
     console.warn("fetchFxRates: المصدر الساعي فشل، رجوع للمصدر اليومي:", e);
   }
-  // مصدر احتياطي: تحديث يومي (open.er-api.com)
+// Fallback source: updates daily (open.er-api.com)
   const res = await fetch("https://open.er-api.com/v6/latest/USD");
   const fx  = await res.json();
   return { egpPerUsd: fx.rates.EGP, eurPerUsd: fx.rates.EUR, sarPerUsd: fx.rates.SAR, source: "daily" };
 }
 
-// ── جلب الأسعار من الإنترنت ────────────────────────────
+// ── Fetch rates from the internet ────────────────────────────
 async function fetchRates() {
   status = "loading"; render();
   try {
@@ -868,19 +868,17 @@ async function fetchRates() {
 }
 
 // ════════════════════════════════════════════════════════
-//  الاتصال بالـ Backend الجديد (Node.js + Express + PostgreSQL)
+//  Connecting to the backend (Node.js + Express + PostgreSQL)
 //  ─────────────────────────────────────────────────────
-//  ده بديل google.script.run القديم. بدل ما نعدّل كل نداء نداء في
-//  الكود تحت، بنعمل "shim" بنفس الشكل بالظبط (google.script.run
-//  .withSuccessHandler().withFailureHandler().functionName(args))
-//  فيفضل كل الكود القديم شغال زي ما هو من غير أي تعديل تاني، لكن
-//  بدل ما يتصل بجوجل بيتصل بالسيرفر بتاعنا عن طريق REST API عادي.
+//  A thin REST client used by every data-loading/saving call below.
+//  Kept as a single small layer so the transport can change (e.g. hosting
+//  provider) without touching the call sites that use it.
 // ════════════════════════════════════════════════════════
 
-// غيّر الرابط ده لرابط السيرفر بتاعك بعد ما تنشره (Render/Koyeb/إلخ)
-const API_BASE = window.KANZ_API_BASE || "https://kanz-r3wzww8n.b4a.run/api/";
+// Change this to your deployed server URL (see README for deployment)
+const API_BASE = window.KANZ_API_BASE || "https://kanz-snowy.vercel.app/api";
 
-// خريطة: اسم الدالة القديمة → طريقة الاتصال الحقيقية بالسيرفر الجديد
+// Map: RPC-style name → the actual REST call to the server
 const RPC_MAP = {
   signUp:               (u, p)            => ({ method: "POST",   path: "/auth/signup", body: { username: u, password: p } }),
   logIn:                (u, p)            => ({ method: "POST",   path: "/auth/login",  body: { username: u, password: p } }),
@@ -912,9 +910,9 @@ async function rpcCall(fnName, args) {
   return res.json();
 }
 
-// شِم بنفس واجهة google.script.run القديمة تمامًا — كل الكود القديم
-// اللي بينادي google.script.run.withSuccessHandler(...).withFailureHandler(...).xxx(...)
-// هيفضل شغال من غير أي تعديل.
+// Small wrapper exposing an RPC-style call for each backend function name.
+// Every call site below simply awaits rpcCall("functionName", [...args]).
+
 function makeRpcProxy(onSuccess, onFailure) {
   return new Proxy({}, {
     get(_target, fnName) {
@@ -925,15 +923,16 @@ function makeRpcProxy(onSuccess, onFailure) {
   });
 }
 
-const google = {
-  script: {
-    run: {
-      withSuccessHandler(onSuccess) {
-        return { withFailureHandler: (onFailure) => makeRpcProxy(onSuccess, onFailure) };
-      },
-      withFailureHandler(onFailure) {
-        return { withSuccessHandler: (onSuccess) => makeRpcProxy(onSuccess, onFailure) };
-      },
+// Legacy-style callback wrapper, kept so every call site below reads as
+// `rpc.run.withSuccessHandler(...).withFailureHandler(...).functionName(args)`
+// without each one needing its own .then()/.catch() boilerplate.
+const rpc = {
+  run: {
+    withSuccessHandler(onSuccess) {
+      return { withFailureHandler: (onFailure) => makeRpcProxy(onSuccess, onFailure) };
+    },
+    withFailureHandler(onFailure) {
+      return { withSuccessHandler: (onSuccess) => makeRpcProxy(onSuccess, onFailure) };
     },
   },
 };
@@ -1008,7 +1007,7 @@ function submitAuth(ev) {
   btn.textContent = "…";
 
   const fn = authMode === "login" ? "logIn" : "signUp";
-  google.script.run
+  rpc.run
     .withSuccessHandler(function(j) {
       btn.disabled = false;
       if (j.ok) {
@@ -1029,12 +1028,12 @@ function submitAuth(ev) {
     [fn](username, password);
 }
 
-// بيتنادى بعد أي تسجيل دخول/حساب جديد ناجح. بيطلب توكن الجلسة الأول
-// وينتظره (await) قبل ما يبدأ يحمّل أي بيانات — عشان نضمن إن كل طلب
-// للسيرفر بعد كده يبقى معاه توكن صالح من أول لحظة.
+// Called after any successful login/signup. Waits for the session token
+// before loading any data, guaranteeing every subsequent server request
+// already has a valid token from the very first moment.
 async function completeLogin(username, token, expiresAt) {
   currentUser = username;
-  sessionToken = token; // التوكن راجع مباشرة من رد signUp/logIn، مفيش داعي لنداء إضافي للسيرفر
+  sessionToken = token; // returned directly from the signUp/logIn response, no extra round trip needed
   try { sessionStorage.setItem("kanz_user", currentUser); } catch(e) {}
 
   const rememberEl = document.getElementById("auth-remember-me");
@@ -1047,7 +1046,7 @@ async function completeLogin(username, token, expiresAt) {
     } catch(e) {}
   }
 
-  // إعادة تهيئة كاملة للـ state عشان نتجنب بيانات يوزر سابق
+// Full state reset to avoid leaking data from a previous user
   qty = {}; order = []; customAssets = []; excludedBaseIds = new Set(); baseOverrides = {};
   historyData = []; theme = "dark"; lang = "en"; savingsGoal = 0;
   priceAlertsSettings = { email: "", goldTarget: 0, usdEgpTarget: 0 };
@@ -1059,8 +1058,8 @@ async function completeLogin(username, token, expiresAt) {
 }
 
 function logout() {
-  // JWT توكن ذاتي التحقق (self-verifying) — مفيش حالة محفوظة على السيرفر
-  // نلغيها، فمسح النسخة المحلية بس كافي تمامًا.
+// JWTs are self-verifying — there's no server-side session to revoke,
+// so clearing the local copy is entirely sufficient.
   currentUser = null;
   sessionToken = null;
   try { sessionStorage.removeItem("kanz_user"); } catch(e) {}
@@ -1073,10 +1072,10 @@ function logout() {
   renderAuth();
 }
 
-// ── نظام "تذكرني" (7 أيام) ───────────────────────────────
-// بعد أي تسجيل دخول ناجح، بنطلب توكن جديد من السيرفر ونخزّنه في
-// localStorage. المرة الجاية اللي المستخدم يفتح فيها الموقع، بنحاول
-// نتحقق من التوكن ده تلقائيًا قبل ما نعرض شاشة الدخول خالص.
+// ── "Remember me" (7 days) ───────────────────────────────
+// After a successful login, we request a fresh token from the server and
+// store it in localStorage. Next time the user opens the site, we try to
+// verify that token automatically before ever showing the login screen.
 
 function attemptAutoLogin() {
   let saved = null;
@@ -1086,21 +1085,21 @@ function attemptAutoLogin() {
   } catch(e) {}
 
   if (!saved || !saved.username || !saved.token) {
-    render(); // مفيش توكن محفوظ — اعرض شاشة الدخول عادي
+    render(); // no saved token — show the login screen as usual
     return;
   }
 
-  // شاشة تحميل بسيطة لحد ما نتأكد من صلاحية التوكن مع السيرفر
+// Simple loading screen while we verify the token with the server
   const appEl = document.getElementById("app");
   if (appEl) {
     appEl.innerHTML = `<div class="wt-auth-screen"><div class="wt-status"><span class="wt-dot loading"></span><span>${t("signingIn")}</span></div></div>`;
   }
 
-  google.script.run
+  rpc.run
     .withSuccessHandler(function(j) {
       if (j && j.ok) {
         currentUser = j.username;
-        sessionToken = saved.token; // نفس التوكن المحفوظ، بما إنه اتأكد إنه صالح دلوقتي
+        sessionToken = saved.token; // same saved token, now confirmed valid
         try { sessionStorage.setItem("kanz_user", currentUser); } catch(e) {}
         qty = {}; order = []; customAssets = []; excludedBaseIds = new Set(); baseOverrides = {};
         historyData = [];
@@ -1121,13 +1120,13 @@ function attemptAutoLogin() {
     .loginWithToken(saved.username, saved.token);
 }
 
-// ── تحميل البيانات من الـ Apps Script backend ──────────
-// البيانات بترجع كـ: { ok, data, customAssets, excludedBaseIds, baseOverrides }
+// ── Loading data from the backend ─────────
+// Response shape: { ok, data, customAssets, excludedBaseIds, baseOverrides }
 function sheetsLoad() {
   if (!currentUser) return;
-  isLoadingData = true; // منع scheduleSave أثناء التحميل
+  isLoadingData = true; // block scheduleSave while loading
   syncStatus = "loading"; renderSyncBadge();
-  google.script.run
+  rpc.run
     .withSuccessHandler(function(j) {
       if (j && j.ok) {
         if (Array.isArray(j.customAssets))    customAssets = j.customAssets;
@@ -1166,13 +1165,13 @@ function sheetsLoad() {
     .loadDataForClient(currentUser, sessionToken);
 }
 
-// ── حفظ البيانات في الـ Apps Script backend ────────────
+// ── Saving data to the backend ────────────
 function sheetsSave() {
   if (!currentUser) return;
   syncStatus = "saving"; renderSyncBadge();
   const data = {};
   ASSETS.forEach(a => { data[a.id] = qty[a.id] || 0; });
-  google.script.run
+  rpc.run
     .withSuccessHandler(function() {
       syncStatus = "synced";
       renderSyncBadge();
@@ -1185,11 +1184,11 @@ function sheetsSave() {
     .saveDataFromClient(currentUser, data, customAssets, [...excludedBaseIds], baseOverrides, theme, lang, order, savingsGoal, sessionToken);
 }
 
-let isLoadingData = false; // guard عشان نمنع scheduleSave يشتغل أثناء الـ load
+let isLoadingData = false; // guard to prevent scheduleSave firing during a load
 
-// ── تصدير نسخة احتياطية كاملة (JSON) — أصولك + السجل التاريخي كله ──────
-// ملف بسيط تقدر تفتحه بأي محرر نصوص أو تستورده يدويًا لو احتجت، من غير
-// أي اعتماد على جوجل شيت
+// ── Export a full backup (JSON) — all assets + entire history ──────────
+// A plain file you can open in any text editor or import manually if
+// needed, with zero external dependency
 function exportBackup() {
   const backup = {
     exportedAt: new Date().toISOString(),
@@ -1215,7 +1214,7 @@ function exportBackup() {
 }
 
 function scheduleSave() {
-  if (isLoadingData) return; // مش بنحفظ أثناء تحميل البيانات
+  if (isLoadingData) return; // don't save while data is loading
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => sheetsSave(), 1200);
 }
@@ -1235,7 +1234,7 @@ function renderSyncBadge() {
   el.className  = "wt-sync-badge " + s.cls;
 }
 
-// ── إجراءات عامة ────────────────────────────────────────
+// ── General actions ────────────────────────────────────────
 function setQty(id, v) {
   qty[id] = parseFloat(v) || 0;
   updateTotals();
@@ -1251,10 +1250,10 @@ function move(id, dir) {
   scheduleSave();
 }
 
-// ── إضافة / تعديل / حذف بنود ────────────────────────────
+// ── Add / edit / delete assets ────────────────────────────
 let selectedIcon = ICON_PALETTE[0];
 
-// ── تنبيهات الأسعار بالإيميل ──────────────────────────────
+// ── Email price alerts ──────────────────────────────
 function openAlertsModal() {
   alertsModalOpen = true;
   render();
@@ -1275,7 +1274,7 @@ function submitAlertsSettings(ev) {
   const btn = document.getElementById("alerts-save-btn");
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
 
-  google.script.run
+  rpc.run
     .withSuccessHandler(function(j) {
       if (j && j.ok) {
         priceAlertsSettings = { email, goldTarget, usdEgpTarget, goldFired: false, usdEgpFired: false };
@@ -1321,7 +1320,7 @@ function renderAlertsModal() {
   </div>`;
 }
 
-// ── هدف الادخار ─────────────────────────────────────────
+// ── Savings goal ─────────────────────────────────────────
 function openGoalModal() {
   goalModalOpen = true;
   render();
@@ -1396,7 +1395,7 @@ function closeAddModal() {
 function pickIcon(icon) {
   selectedIcon = icon;
   render();
-  // نرجّع التركيز للفورم بعد إعادة الرسم
+// Return focus to the form after re-rendering
   setTimeout(() => {
     const ar = document.getElementById("new-asset-name-ar");
     const en = document.getElementById("new-asset-name-en");
@@ -1428,11 +1427,11 @@ function submitAddAsset(ev) {
   }
 
   if (editingId) {
-    // ── وضع التعديل ──────────────────────────────────────
+// ── Edit mode ──────────────────────────────────────
     const isBase = BASE_ASSETS.some(b => b.id === editingId);
     if (isBase) {
       baseOverrides[editingId] = { name_ar: nameAr, name_en: nameEn, icon: selectedIcon };
-      // ملاحظة: العملة الأصلية مش بتتغيّر للبنود الأساسية حفاظاً على دقة الحسابات القديمة
+// Note: the original currency of built-in assets never changes, to keep old calculations accurate
     } else {
       const idx = customAssets.findIndex(c => c.id === editingId);
       if (idx !== -1) {
@@ -1448,7 +1447,7 @@ function submitAddAsset(ev) {
     return;
   }
 
-  // ── وضع الإضافة ────────────────────────────────────────
+// ── Add mode ────────────────────────────────────────
   let id = slugify(nameEn);
   if (ASSETS.some(a => a.id === id)) {
     let n = 2;
@@ -1466,7 +1465,7 @@ function submitAddAsset(ev) {
   scheduleSave();
 }
 
-// ── حذف بند: أي بند ممكن يتمسح، سواء أصلي أو مضاف ──────
+// ── Delete an asset: any asset can be removed, built-in or custom ──────
 function deleteAsset(id) {
   const a = ASSETS.find(x => x.id === id);
   if (!a) return;
@@ -1474,7 +1473,7 @@ function deleteAsset(id) {
 
   const isBase = BASE_ASSETS.some(b => b.id === id);
   if (isBase) {
-    // بند أصلي: بنحط استبعاد بدل ما نمسح تعريفه (عشان لو حد افتح من جهاز تاني يفضل ظاهر إلا لو استبعده هو كمان)
+// Built-in asset: mark it excluded instead of deleting its definition (so it
     excludedBaseIds.add(id);
   } else {
     customAssets = customAssets.filter(c => c.id !== id);
@@ -1489,9 +1488,9 @@ function deleteAsset(id) {
   scheduleSave();
 }
 
-// ── تبديل تصنيف البند: كاش سائل ⇄ أصل ثابت ──────────────
-// التصنيف ده منفصل تماماً عن العملة، عشان أي بند (حتى لو جنيه)
-// يقدر يتحط في فئة "أصول" بدل "جنيه مصري" في الـ breakdown والسجل.
+// ── Toggle asset category: liquid cash ⇄ fixed asset ──────────
+// This category is entirely separate from currency — any asset (even EGP)
+// can be classified as an "asset" instead of "EGP" in the breakdown and history.
 function toggleAssetCategory(id) {
   const a = ASSETS.find(x => x.id === id);
   if (!a) return;
@@ -1533,16 +1532,16 @@ function updateTotals() {
 
 function themeIconSvg() {
   if (theme === "dark") {
-    // أيقونة شمس (نعرضها عشان نرمز للتبديل للوضع الفاتح)
+// Sun icon (shown to indicate switching to light mode)
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`;
   }
-  // أيقونة قمر (للرجوع للوضع الغامق)
+// Moon icon (to switch back to dark mode)
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
 }
 
-// ── Render الرئيسي ──────────────────────────────────────
+// ── Main render ──────────────────────────────────────
 function render() {
-  // لو مفيش session، اعرض شاشة الـ Auth بدل المحتوى
+// No session? Show the auth screen instead of the app content
   if (!currentUser) { renderAuth(); return; }
 
   const isFetching  = status === "loading";
@@ -1865,7 +1864,7 @@ function renderBreakdown() {
   document.getElementById("bk-inner-sub").textContent = iEmpty ? "—"  : innerBig.n;
 }
 
-// ── السجل التاريخي اليومي ────────────────────────────────
+// ── Daily history log ────────────────────────────────
 function openHistoryModal() {
   historyModalOpen = true;
   histRate = null;
@@ -1875,7 +1874,7 @@ function openHistoryModal() {
   setTimeout(() => {
     const f = document.getElementById("hist-date");
     if (f) f.focus();
-    onHistDateChange(); // نجيب سعر الصرف مباشرة للتاريخ الافتراضي (اليوم)
+    onHistDateChange(); // fetch the rate for the default date (today) right away
   }, 50);
 }
 
@@ -1884,15 +1883,15 @@ function closeHistoryModal() {
   renderHistory();
 }
 
-// إجمالي جرامات الذهب اللي المستخدم داخلها دلوقتي (كل البنود بعملة GOLD)
-// بنستخدمها كقيمة افتراضية في مودال اللقطة التاريخية عشان يبقى سهل عليه
+// Total grams of gold the user currently holds (all GOLD-currency assets)
+// used as the default value in the historical snapshot modal for convenience
 function currentGoldGrams() {
   return ASSETS
     .filter(a => a.currency === "GOLD")
     .reduce((s, a) => s + (parseFloat(qty[a.id]) || 0), 0);
 }
 
-// فتح بحث جوجل عن سعر الأونصة في نفس اليوم المُختار في المودال
+// Opens a Google search for that day's ounce gold price
 function searchGoldPriceGoogle() {
   const dateEl = document.getElementById("hist-date");
   const date = dateEl ? dateEl.value : "";
@@ -1900,9 +1899,9 @@ function searchGoldPriceGoogle() {
   window.open("https://www.google.com/search?q=" + encodeURIComponent(q), "_blank");
 }
 
-// ── سعر الصرف التاريخي (جنيه/دولار) ─────────────────────
-// بيتجاب من الـ backend (APILayer) لحظة ما اليوزر يختار تاريخ،
-// وبيتخزن في histRate عشان نستخدمه في تحويل حقول الجنيه لدولار.
+// ── Historical exchange rate (EGP/USD) ─────────────────────
+// Fetched from the backend (APILayer) the moment the user picks a date,
+// and cached in histRate to convert EGP fields to USD
 function onHistDateChange() {
   const dateEl = document.getElementById("hist-date");
   const date = dateEl ? dateEl.value : "";
@@ -1913,7 +1912,7 @@ function onHistDateChange() {
   histRateError = "";
   renderHistRateBadge();
 
-  google.script.run
+  rpc.run
     .withSuccessHandler(function(j) {
       if (j && j.ok) {
         histRate = { egpPerUsd: j.egpPerUsd, date: j.date };
@@ -1956,7 +1955,7 @@ function renderHistRateBadge() {
   }
 }
 
-// تحويل مبلغ بالجنيه لدولار حسب سعر الصرف التاريخي المتاح حالياً
+// Converts an EGP amount to USD using the currently available historical rate
 function egpToUsdHist(egpAmount) {
   if (!histRate || !histRate.egpPerUsd) return null;
   return egpAmount / histRate.egpPerUsd;
@@ -1980,7 +1979,7 @@ function updateHistAssetsPreview() {
   prevEl.innerHTML = usd === null ? t("histPreviewEmpty") : "≈ <b>" + fmtUsd(usd) + "</b>";
 }
 
-// تحديث القيمة المحسوبة (بالدولار) لحظيًا وهو بيكتب سعر الأونصة/كمية الجرامات
+// Live-updates the computed USD value as the user types the ounce price/gram quantity
 function updateHistGoldPreview() {
   const ozEl    = document.getElementById("hist-gold-oz");
   const gramsEl = document.getElementById("hist-gold-grams");
@@ -1993,7 +1992,7 @@ function updateHistGoldPreview() {
   updateHistTotalPreview();
 }
 
-// إجمالي تقديري لكل الفئات مجمّعة — بيتحدث لحظياً في أسفل المودال
+// Running total across all categories — updates live at the bottom of the modal
 function updateHistTotalPreview() {
   const totalEl = document.getElementById("hist-total-value");
   if (!totalEl) return;
@@ -2120,8 +2119,8 @@ function submitHistoryEntry(ev) {
   const goldGrams     = parseFloat(document.getElementById("hist-gold-grams").value) || 0;
   const goldUsd        = (goldOz / OUNCE_TO_GRAM) * goldGrams;
 
-  // لو المستخدم داخل مبلغ بالجنيه (سواء في الفئة دي أو الأصول) لازم يكون عندنا
-  // سعر صرف تاريخي جاهز، وإلا مش هنعرف نحوّله بدقة
+// If the user entered an EGP amount (in this category or in assets), we need a
+// historical exchange rate ready, otherwise we can't convert it accurately
   let egpUsd = 0, assetsUsd = 0;
   if (egpAmount > 0 || assetsAmount > 0) {
     if (!histRate || !histRate.egpPerUsd) {
@@ -2137,11 +2136,11 @@ function submitHistoryEntry(ev) {
 
   if (totalUsd === 0) { errEl.textContent = t("errHistoryEmpty"); errEl.style.display = "block"; return; }
 
-  google.script.run
+  rpc.run
     .withSuccessHandler(function(j) {
       if (j && j.ok) {
         historyModalOpen = false;
-        loadHistory(); // إعادة تحميل السجل كامل بعد الإضافة
+        loadHistory(); // reload the full history after adding
       } else {
         errEl.textContent = (j && j.error) ? t(j.error) : t("genericError");
         errEl.style.display = "block";
@@ -2156,7 +2155,7 @@ function submitHistoryEntry(ev) {
 
 function loadHistory() {
   if (!currentUser) return;
-  google.script.run
+  rpc.run
     .withSuccessHandler(function(j) {
       if (j && j.ok && Array.isArray(j.history)) {
         historyData = j.history.sort((a, b) => a.date.localeCompare(b.date));
@@ -2171,16 +2170,16 @@ function loadHistory() {
     .loadHistoryForClient(currentUser, sessionToken);
 }
 
-// ── إدارة السجل (جدول تفاعلي زي إكسيل: عرض/تعديل/حذف مباشرة) ──
-let historyManagerEdits = {}; // { date: {egpUsd, hardUsd, goldUsd, assetsUsd} } — تعديلات على صفوف موجودة، لسه متحفظتش
-let historyManagerDrafts = []; // [{ tempId, date, egpUsd, hardUsd, goldUsd, assetsUsd }] — صفوف جديدة (مكررة أو فاضية) لسه متحفظتش
-let historyManagerStatus = null; // { ok: true/false, text } — رسالة تأكيد بعد الحفظ، بتختفي لوحدها بعد شوية
-let historyManagerFilter = ""; // فلترة الجدول بحث بالتاريخ (زي "2026-06" يعرض شهر يونيو بس)
+// ── History manager (Excel-like interactive table: view/edit/delete inline) ──
+let historyManagerEdits = {}; // { date: {egpUsd, hardUsd, goldUsd, assetsUsd} } — unsaved edits to existing rows
+let historyManagerDrafts = []; // [{ tempId, date, egpUsd, hardUsd, goldUsd, assetsUsd }] — new unsaved rows
+let historyManagerStatus = null; // { ok: true/false, text } — save confirmation, disappears on its own
+let historyManagerFilter = ""; // date search filter for the table (e.g. "2026-06" shows just June)
 
-// تغليف google.script.run بـ Promise عشان نقدر نستخدم await في حفظ عدة صفوف بالتتابع
+// Wraps rpcCall in a Promise so we can await it when saving several rows in sequence
 function callServer(fnName, ...args) {
   return new Promise((resolve, reject) => {
-    google.script.run
+    rpc.run
       .withSuccessHandler(resolve)
       .withFailureHandler(reject)
       [fnName](...args);
@@ -2207,7 +2206,7 @@ function closeHistoryManager() {
 
 function deleteHistoryEntryUi(date) {
   if (!confirm(t("confirmDeleteEntry")(date))) return;
-  google.script.run
+  rpc.run
     .withSuccessHandler(function(j) {
       if (j && j.ok) {
         historyData = (j.history || []).sort((a, b) => a.date.localeCompare(b.date));
@@ -2222,8 +2221,8 @@ function deleteHistoryEntryUi(date) {
     .deleteHistoryEntry(currentUser, date, sessionToken);
 }
 
-// بتتنادى مع كل تعديل في أي خانة رقمية لصف موجود بالفعل — بتحدّث القيمة في
-// الذاكرة وتحدّث إجمالي الصف فورًا من غير إعادة رسم كامل (عشان الفوكس متضيعش)
+// Called on every numeric-cell edit for an existing row — updates the in-memory
+// value and the row total instantly, without a full re-render (to avoid losing focus)
 function onHistCellEdit(date, field, value) {
   const num = parseFloat(value) || 0;
   const original = historyData.find(h => h.date === date) || {};
@@ -2249,9 +2248,9 @@ function onHistCellEdit(date, field, value) {
   updateHistmgrSaveButton();
 }
 
-// ── تكرار صف (موجود أو مسودة) — زي "Duplicate row" في إكسيل ────────────
-// بينسخ القيم الأربعة، ويقترح تاريخ اليوم اللي بعد المصدر مباشرة (قابل
-// للتعديل طبعًا)، ويضيف الصف الجديد كـ"مسودة" فوق الجدول لحد ما يتحفظ
+// ── Duplicate a row (existing or draft) — like "Duplicate row" in Excel ────
+// Copies the four values, suggests the day right after the source date (still
+// editable), and inserts the new row as a "draft" above the table until saved
 function duplicateHistoryRow(sourceKey) {
   let source;
   let baseDateStr = "";
@@ -2284,7 +2283,7 @@ function duplicateHistoryRow(sourceKey) {
   renderHistory();
 }
 
-// ── إضافة صف جديد فاضي تمامًا (زي إدراج صف جديد في إكسيل) ──────────────
+// ── Insert a brand-new empty row (like inserting a row in Excel) ──────
 function addBlankDraftRow() {
   historyManagerDrafts.push({
     tempId: "draft_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
@@ -2318,9 +2317,9 @@ function onDraftCellEdit(tempId, field, value) {
   updateHistmgrSaveButton();
 }
 
-// بتتنادى مع كل حرف يتكتب في خانة البحث — بتعمل إعادة رسم كامل للجدول
-// (لازم عشان الفلترة)، وبعدين ترجّع الفوكس ومكان الكيرسور لخانة البحث
-// نفسها فورًا عشان الكتابة تحس إنها مستمرة من غير قطع
+// Called on every keystroke in the search box — needs a full table re-render
+// (required for filtering), then restores focus and cursor position to the
+// search box itself so typing feels uninterrupted
 function onHistmgrFilterChange(value) {
   historyManagerFilter = value;
   renderHistory();
@@ -2342,7 +2341,7 @@ function updateHistmgrSaveButton() {
   btn.textContent = t("saveChanges") + (count > 0 ? " (" + count + ")" : "");
 }
 
-// بتحفظ كل الصفوف المعدّلة والمسودات الصالحة بالتتابع، وبعدين تعمل إعادة تحميل كاملة
+// Saves all edited rows and valid drafts in sequence, then does a full reload
 async function saveAllHistoryEdits() {
   const editDates   = Object.keys(historyManagerEdits);
   const validDrafts = historyManagerDrafts.filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d.date));
@@ -2390,9 +2389,9 @@ async function saveAllHistoryEdits() {
     ? { ok: true,  text: t("historySaveSuccess")(successCount) }
     : { ok: false, text: t("historySavePartialFail")(successCount, failCount) };
 
-  loadHistory(); // إعادة تحميل السجل كامل وتحديث كل الشاشة (بما فيها الجدول لو لسه مفتوح)
+  loadHistory(); // reload the full history and refresh the whole screen (including the table if open)
 
-  // الرسالة بتختفي لوحدها بعد شوية، من غير ما تحتاج المستخدم يعمل حاجة
+// The message disappears on its own after a bit, no user action needed
   setTimeout(() => {
     historyManagerStatus = null;
     if (historyManagerOpen) renderHistory();
@@ -2486,8 +2485,8 @@ function setHistoryChartPeriod(period) {
   renderHistory();
 }
 
-// تاريخ بداية الفترة المعروضة في الرسم البياني، بنفس منطق حساب النمو
-// عشان الرسم والأرقام يفضلوا متطابقين مع بعض
+// Start date of the chart's visible window, using the same growth-calculation
+// logic so the chart and the numbers stay consistent
 function getChartPeriodStartDate(period) {
   if (period === "7d")  { const c = getGrowthCandidate(7);  return c ? c.date : null; }
   if (period === "30d") { const c = getGrowthCandidate(30); return c ? c.date : null; }
@@ -2551,7 +2550,7 @@ function renderHistory() {
 
   const periodStart = getChartPeriodStartDate(historyChartPeriod);
   let filteredHistory = periodStart ? historyData.filter(h => h.date >= periodStart) : historyData;
-  if (filteredHistory.length === 0) filteredHistory = historyData; // fallback لو الفلترة رجّعت فاضية لأي سبب
+  if (filteredHistory.length === 0) filteredHistory = historyData; // fallback if filtering returned empty for any reason
 
   const labels = filteredHistory.map(h => h.date);
   const totals = filteredHistory.map(h => h.totalUsd);
@@ -2560,12 +2559,12 @@ function renderHistory() {
   const goldSeries   = filteredHistory.map(h => h.goldUsd);
   const assetsSeries = filteredHistory.map(h => h.assetsUsd);
 
-  // ── تحليل التغيير: كل فئة اتغيرت بكام في الفترة المختارة ──
+// ── Change breakdown: how much each category moved in the selected period ──
   renderChangeAnalysis(filteredHistory);
 
-  // ── الرسم الأساسي: الإجمالي بس، عشان التحركات الحقيقية تبان واضحة ──
-  // (لو حطينا خطوط الفئات الأربعة كمان على نفس المقياس، محور Y بيتمدد
-  // عشان يستوعب أصغر فئة، فالتحرك الفعلي في الإجمالي بيضيع بصريًا)
+// ── Main chart: total only, so the real movement is clearly visible ──
+// (plotting all four category lines on the same scale would stretch the Y axis
+// to fit the smallest category, visually flattening the actual total movement)
   if (historyChart) { historyChart.destroy(); historyChart = null; }
   const ctx = document.getElementById("history-chart");
   const gold = getComputedStyle(document.getElementById("bodyRoot")).getPropertyValue("--wt-gold-light").trim();
@@ -2605,7 +2604,7 @@ function renderHistory() {
   if (showBenchmark) loadAndOverlayBenchmark(labels, totals);
 }
 
-// ── مقارنة بمؤشر S&P 500 (اختياري) ──────────────────────
+// ── S&P 500 benchmark comparison (optional) ──────────────────────
 function toggleBenchmark() {
   showBenchmark = !showBenchmark;
   renderHistory();
@@ -2616,7 +2615,7 @@ function loadAndOverlayBenchmark(labels, totals) {
   const fromDate = labels[0];
   const toDate   = labels[labels.length - 1];
 
-  google.script.run
+  rpc.run
     .withSuccessHandler(function(j) {
       if (!j || !j.ok || !historyChart) return;
 
@@ -2624,7 +2623,7 @@ function loadAndOverlayBenchmark(labels, totals) {
       j.series.forEach(p => { spxByDate[p.date] = p.close; });
       const sortedSpxDates = j.series.map(p => p.date).sort();
 
-      // آخر سعر معروف بتاريخ <= التاريخ المطلوب (carry-forward لأيام إجازات البورصة)
+// Latest known price on or before the requested date (carries forward over market holidays)
       function closestSpxClose(targetDate) {
         let best = null;
         for (const d of sortedSpxDates) {
@@ -2635,7 +2634,7 @@ function loadAndOverlayBenchmark(labels, totals) {
 
       const firstClose = closestSpxClose(labels[0]);
       if (!firstClose) return;
-      const scale = totals[0] / firstClose; // تطبيع عشان الخطين يبدأوا من نفس النقطة، والمقارنة تبقى بالنسبة المئوية للنمو
+      const scale = totals[0] / firstClose; // normalize so both lines start at the same point, comparing % growth
 
       const benchmarkData = labels.map(dt => {
         const c = closestSpxClose(dt);
@@ -2664,9 +2663,9 @@ function loadAndOverlayBenchmark(labels, totals) {
     .fetchBenchmarkSeries(fromDate, toDate);
 }
 
-// ── تحليل التغيير: كل فئة اتغيرت بكام دولار وبكام % في الفترة المعروضة ──
-// بيقارن أول لقطة وآخر لقطة في الفترة المفلترة، ويرتب الفئات من الأكتر
-// تأثير على التغيير للأقل، عشان يبان بوضوح "مين اللي حرّك الرقم"
+// ── Change breakdown: how much each category moved, in $ and %, over the shown period ──
+// Compares the first and last snapshot in the filtered period, ranked from
+// biggest to smallest mover, to make clear "what moved the number"
 function renderChangeAnalysis(filteredHistory) {
   const root = document.getElementById("wt-change-analysis-root");
   if (!root) return;
@@ -2704,10 +2703,10 @@ function renderChangeAnalysis(filteredHistory) {
   }).join("")}`;
 }
 
-// ── تشغيل أولي ─────────────────────────────────────────
+// ── Initial run ─────────────────────────────────────────
 applyTheme();
 applyLang();
-attemptAutoLogin(); // بيتحقق من توكن "تذكرني" مع السيرفر، وبيعرض شاشة الدخول أو التطبيق حسب النتيجة
+attemptAutoLogin(); // verifies the "remember me" token with the server, then shows login or the app accordingly
 </script>
 </body>
 </html>

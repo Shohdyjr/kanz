@@ -1,5 +1,3 @@
-// نقطة الدخول بتاعة Vercel — كل الطلبات بتتوجّه هنا (شوف vercel.json rewrites)
-// وبتتنفذ عن طريق نفس تطبيق Express اللي في app.js، من غير أي تغيير في المنطق.
-const app = require("../app");
-
-module.exports = app;
+// Vercel routes every request here (see vercel.json rewrites); it's the same
+// Express app used for local development in server.js.
+module.exports = require("../app");

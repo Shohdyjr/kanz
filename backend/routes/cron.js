@@ -1,10 +1,12 @@
 const express = require("express");
+const env = require("../config/env");
+const { safeEqual } = require("../lib/auth");
 const { takeDailySnapshot } = require("../cron/dailySnapshot");
 const { checkPriceAlerts } = require("../cron/priceAlerts");
 
 const router = express.Router();
 
-// بيتنادى تلقائيًا من Vercel Cron (مرة يوميًا — مفعّل في vercel.json)
+// Triggered by Vercel Cron once a day (see vercel.json).
 router.all("/daily-snapshot", async (req, res) => {
   try {
     await takeDailySnapshot();
@@ -15,13 +17,10 @@ router.all("/daily-snapshot", async (req, res) => {
   }
 });
 
-// بيتنادى من خدمة خارجية مجانية (زي cron-job.org) كل 3 ساعات، لأن خطة Vercel
-// المجانية بتسمح بمهمة Cron مدمجة مرة واحدة باليوم بس.
-// لازم تحط ?secret=... في الرابط اللي هتحطه في cron-job.org (مش هيتحط في الكود
-// نفسه عشان السر يفضل مخفي حتى لو الـ repo عام على GitHub).
+// Triggered by an external scheduler (e.g. cron-job.org) every 3 hours, since
+// Vercel's free tier only allows one built-in cron run per day.
 router.all("/price-alerts", async (req, res) => {
-  const expected = process.env.CRON_SECRET;
-  if (expected && req.query.secret !== expected) {
+  if (env.cronSecret && !safeEqual(req.query.secret || "", env.cronSecret)) {
     return res.status(401).json({ ok: false, error: "unauthorized" });
   }
   try {

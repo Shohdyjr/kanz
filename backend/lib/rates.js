@@ -1,11 +1,15 @@
 const OUNCE_TO_GRAM = 31.1034768;
 
+/** Currency each built-in ("base") asset is denominated in. */
 const BASE_ASSET_CURRENCY = {
   thunder_save: "EGP", thunder_invest: "EGP", tilda_invest: "EGP",
   ahli: "EGP", mashreq: "EGP", car: "EGP",
   usd: "USD", eur: "EUR", sar: "SAR", gold: "GOLD",
 };
 
+const HARD_CURRENCIES = ["USD", "EUR", "SAR"];
+
+/** Default portfolio shape for a newly created user. */
 function defaultUserData() {
   const customAssets = [
     { id: "default_bank",  name_ar: "بنك",        name_en: "Bank",          icon: "🏦", currency: "EGP"  },
@@ -28,9 +32,9 @@ async function fetchHourlyRates() {
   try {
     const res = await fetch("https://api.exchangerate.fun/latest?base=USD");
     const json = await res.json();
-    if (!json.rates || !json.rates.EGP) return null;
+    if (!json.rates?.EGP) return null;
     return { egpPerUsd: json.rates.EGP, eurPerUsd: json.rates.EUR, sarPerUsd: json.rates.SAR };
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -41,11 +45,12 @@ async function fetchDailyRatesFallback() {
   return { egpPerUsd: fx.rates.EGP, eurPerUsd: fx.rates.EUR, sarPerUsd: fx.rates.SAR };
 }
 
+/** Fetches current FX rates plus gold price (USD/gram), server-side. */
 async function fetchRatesServerSide() {
   const fx = (await fetchHourlyRates()) || (await fetchDailyRatesFallback());
   const goldRes = await fetch("https://api.gold-api.com/price/XAU");
   const gold = await goldRes.json();
-  fx.goldUsdPerGram = (gold.price || gold.rate || gold.value) / OUNCE_TO_GRAM;
+  fx.goldUsdPerGram = (gold.price ?? gold.rate ?? gold.value) / OUNCE_TO_GRAM;
   return fx;
 }
 
@@ -60,39 +65,38 @@ function priceForServerSide(currency, rates) {
   }
 }
 
+/** Computes a portfolio snapshot (grouped USD totals) for a given day. */
 function computeSnapshot(userData, rates, dateStr) {
   const excludedIds  = userData.excludedBaseIds || [];
   const overrides    = userData.baseOverrides || {};
   const customAssets = (userData.customAssets || []).map((c) => ({ id: c.id, currency: c.currency, isAsset: !!c.isAsset }));
   const qty          = userData.qty || {};
-  const HARD_CURRENCIES = ["USD", "EUR", "SAR"];
 
   const baseAssets = Object.keys(BASE_ASSET_CURRENCY)
-    .filter((id) => excludedIds.indexOf(id) === -1)
+    .filter((id) => !excludedIds.includes(id))
     .map((id) => {
-      const isAssetDefault = id === "car";
       const override = overrides[id];
       return {
         id,
         currency: BASE_ASSET_CURRENCY[id],
-        isAsset: override && typeof override.isAsset === "boolean" ? override.isAsset : isAssetDefault,
+        isAsset: typeof override?.isAsset === "boolean" ? override.isAsset : id === "car",
       };
     });
 
   const totals = { egpUsd: 0, hardUsd: 0, goldUsd: 0, assetsUsd: 0 };
 
-  baseAssets.concat(customAssets).forEach((asset) => {
+  for (const asset of [...baseAssets, ...customAssets]) {
     const value = (parseFloat(qty[asset.id]) || 0) * priceForServerSide(asset.currency, rates);
-    if (asset.isAsset)                                       totals.assetsUsd += value;
-    else if (asset.currency === "EGP")                       totals.egpUsd    += value;
-    else if (asset.currency === "GOLD")                      totals.goldUsd   += value;
-    else if (HARD_CURRENCIES.indexOf(asset.currency) !== -1)  totals.hardUsd   += value;
-  });
+    if (asset.isAsset) totals.assetsUsd += value;
+    else if (asset.currency === "EGP") totals.egpUsd += value;
+    else if (asset.currency === "GOLD") totals.goldUsd += value;
+    else if (HARD_CURRENCIES.includes(asset.currency)) totals.hardUsd += value;
+  }
 
   return {
     date: dateStr,
     totalUsd: totals.egpUsd + totals.hardUsd + totals.goldUsd + totals.assetsUsd,
-    egpUsd: totals.egpUsd, hardUsd: totals.hardUsd, goldUsd: totals.goldUsd, assetsUsd: totals.assetsUsd,
+    ...totals,
   };
 }
 
