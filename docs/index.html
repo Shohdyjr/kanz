@@ -319,6 +319,7 @@ let historyModalOpen = false; // open/close the "add manual snapshot" modal
 let historyManagerOpen = false; // open/close the history manager panel (view/edit/delete)
 let historyChartPeriod = "mtd"; // "7d" | "30d" | "mtd" | "ytd" | "all" — chart's visible period
 let showBenchmark = false; // whether to overlay the S&P 500 comparison line
+let benchmarkError = null; // user-visible message when the benchmark fetch fails
 let histRate       = null;   // { egpPerUsd, date } — historical exchange rate, once fetched
 let histRateStatus = "idle"; // idle | loading | ok | error
 let histRateError  = "";
@@ -432,6 +433,8 @@ const I18N = {
     alertsUsdEgpLabel: "نبّهني لو سعر الدولار وصل لـ (جنيه)",
     benchmarkToggle: "📈 قارن بـ S&P 500",
     benchmarkLabel: "S&P 500",
+    benchmarkUnavailable: "تعذّر تحميل بيانات S&P 500 حاليًا، جرب تاني بعد شوية",
+    benchmarkNeedsData: "محتاج فترة زمنية أطول (نقطتين بيانات على الأقل) عشان تقدر تقارن",
     thOrder: "الترتيب",
     thAsset: "الأصل",
     thQty: "الكمية",
@@ -593,6 +596,8 @@ const I18N = {
     alertsUsdEgpLabel: "Notify me when USD reaches (EGP)",
     benchmarkToggle: "📈 Compare to S&P 500",
     benchmarkLabel: "S&P 500",
+    benchmarkUnavailable: "Couldn't load S&P 500 data right now — try again in a bit",
+    benchmarkNeedsData: "Needs a longer time range (at least 2 data points) to compare",
     thOrder: "Order",
     thAsset: "Asset",
     thQty: "Quantity",
@@ -2539,6 +2544,7 @@ function renderHistory() {
       <button class="wt-chart-period-btn ${historyChartPeriod==='all'?'active':''}" onclick="setHistoryChartPeriod('all')">${t("chartPeriodAll")}</button>
       <button class="wt-chart-period-btn ${showBenchmark?'active':''}" onclick="toggleBenchmark()" style="margin-inline-start:auto">${t("benchmarkToggle")}</button>
     </div>
+    ${benchmarkError ? `<div style="color:var(--wt-red,#e5484d);font-size:12px;margin-bottom:6px">${benchmarkError}</div>` : ""}
     <div style="position:relative;height:220px">
       <canvas id="history-chart"></canvas>
     </div>
@@ -2607,17 +2613,22 @@ function renderHistory() {
 // ── S&P 500 benchmark comparison (optional) ──────────────────────
 function toggleBenchmark() {
   showBenchmark = !showBenchmark;
+  benchmarkError = null;
   renderHistory();
 }
 
 function loadAndOverlayBenchmark(labels, totals) {
-  if (!labels || labels.length < 2) return;
+  if (!labels || labels.length < 2) { benchmarkError = t("benchmarkNeedsData"); renderHistory(); return; }
   const fromDate = labels[0];
   const toDate   = labels[labels.length - 1];
 
   rpc.run
     .withSuccessHandler(function(j) {
-      if (!j || !j.ok || !historyChart) return;
+      if (!j || !j.ok || !historyChart) {
+        benchmarkError = (j && j.error) ? t(j.error) : t("benchmarkUnavailable");
+        renderHistory();
+        return;
+      }
 
       const spxByDate = {};
       j.series.forEach(p => { spxByDate[p.date] = p.close; });
@@ -2633,7 +2644,7 @@ function loadAndOverlayBenchmark(labels, totals) {
       }
 
       const firstClose = closestSpxClose(labels[0]);
-      if (!firstClose) return;
+      if (!firstClose) { benchmarkError = t("benchmarkUnavailable"); renderHistory(); return; }
       const scale = totals[0] / firstClose; // normalize so both lines start at the same point, comparing % growth
 
       const benchmarkData = labels.map(dt => {
@@ -2659,6 +2670,8 @@ function loadAndOverlayBenchmark(labels, totals) {
     })
     .withFailureHandler(function(err) {
       console.warn("Benchmark fetch failed:", err);
+      benchmarkError = t("benchmarkUnavailable");
+      renderHistory();
     })
     .fetchBenchmarkSeries(fromDate, toDate);
 }
