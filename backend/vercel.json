@@ -1,4 +1,4 @@
 {
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
-  "crons": [{ "path": "/api/cron/daily-snapshot", "schedule": "0 * * * *" }]
+  "crons": [{ "path": "/api/cron/daily-snapshot", "schedule": "0 0 * * *" }]
 }
