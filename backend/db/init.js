@@ -24,6 +24,12 @@ async function initDb() {
   await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS legacy_hash TEXT;`);
   await pool.query(`ALTER TABLE kanz_users ALTER COLUMN password_hash DROP NOT NULL;`);
 
+  // Net money the user manually added/withdrew in a period (e.g. "salary minus
+  // expenses this month"). Kept separate from `history` so the growth
+  // calculations on the client can tell "I added money" apart from "what I
+  // already had grew in value" — see docs/js/helpers.js computeGrowth().
+  await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS contributions JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+
   // Small durable key/value cache, currently used to remember the last
   // successfully-fetched gold price so a live API outage degrades gracefully
   // instead of failing the whole daily snapshot (see lib/rates.js).

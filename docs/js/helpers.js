@@ -61,6 +61,33 @@ function getGrowthCandidate(days) {
   return candidate;
 }
 
+// ── Split a wealth delta into "money the user added" vs "assets actually
+// grew in value" ────────────────────────────────────────────────────
+// Salary being bigger than expenses means wealth goes up every month even if
+// nothing you already own changed in value at all — that's saving, not
+// growth. This sums the contributions logged in docs/js/contributions.js
+// that fall strictly after `sinceDateExclusive` and up to `untilDateInclusive`,
+// so it can be subtracted from a raw diff to isolate the real, price-driven change.
+function sumContributionsBetween(sinceDateExclusive, untilDateInclusive) {
+  if (!contributionsData || contributionsData.length === 0) return 0;
+  return contributionsData
+    .filter((c) => (!sinceDateExclusive || c.date > sinceDateExclusive) && c.date <= untilDateInclusive)
+    .reduce((sum, c) => sum + (parseFloat(c.amountUsd) || 0), 0);
+}
+
+// Attaches `contributed`/`realDiff`/`realPct` to a { diff, pct } growth result,
+// using `refDate` (the snapshot being compared against) as the window start.
+function attachRealGrowth(result, refDate) {
+  if (!result) return null;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const contributed = sumContributionsBetween(refDate, todayStr);
+  // realDiff/realPct answer "how much would my wealth have changed if I
+  // hadn't added or withdrawn anything this period" — i.e. price movement only.
+  const realDiff = result.diff - contributed;
+  const realPct = result.candidateTotal ? (realDiff / result.candidateTotal) * 100 : 0;
+  return { ...result, contributed, realDiff, realPct };
+}
+
 // ── Compute the change % vs. the closest snapshot N days ago ─────────
 function computeGrowth(days, currentTotal) {
   const candidate = getGrowthCandidate(days);
@@ -68,7 +95,7 @@ function computeGrowth(days, currentTotal) {
 
   const diff = currentTotal - candidate.totalUsd;
   const pct = (diff / candidate.totalUsd) * 100;
-  return { diff, pct };
+  return attachRealGrowth({ diff, pct, candidateTotal: candidate.totalUsd }, candidate.date);
 }
 
 // ── Compute the change % since a fixed date (e.g. start of year) ───
@@ -88,7 +115,7 @@ function computeGrowthSince(sinceDate, currentTotal) {
 
   const diff = currentTotal - candidate.totalUsd;
   const pct = (diff / candidate.totalUsd) * 100;
-  return { diff, pct };
+  return attachRealGrowth({ diff, pct, candidateTotal: candidate.totalUsd }, candidate.date);
 }
 
 // ── Compute the change % since the very first snapshot in the whole history ──
@@ -99,7 +126,7 @@ function computeGrowthAllTime(currentTotal) {
 
   const diff = currentTotal - candidate.totalUsd;
   const pct = (diff / candidate.totalUsd) * 100;
-  return { diff, pct };
+  return attachRealGrowth({ diff, pct, candidateTotal: candidate.totalUsd }, candidate.date);
 }
 
 // ── Fetch exchange rates: hourly source first, falling back to daily ─

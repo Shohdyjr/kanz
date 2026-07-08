@@ -33,6 +33,9 @@ const RPC_MAP = {
   loadHistoryForClient: (u, tok) => ({ method: "GET", path: "/history", bearer: tok }),
   addManualHistoryEntry: (u, entry, tok) => ({ method: "POST", path: "/history", bearer: tok, body: { entry } }),
   deleteHistoryEntry: (u, date, tok) => ({ method: "DELETE", path: "/history", bearer: tok, body: { date } }),
+  loadContributionsForClient: (u, tok) => ({ method: "GET", path: "/contributions", bearer: tok }),
+  addContribution: (u, entry, tok) => ({ method: "POST", path: "/contributions", bearer: tok, body: entry }),
+  deleteContribution: (u, date, tok) => ({ method: "DELETE", path: "/contributions", bearer: tok, body: { date } }),
   getHistoricalRate: (dateStr) => ({ method: "GET", path: "/historical-rate?date=" + encodeURIComponent(dateStr) }),
   fetchBenchmarkSeries: (from, to) => ({
     method: "GET",

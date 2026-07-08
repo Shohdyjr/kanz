@@ -124,7 +124,65 @@ router.delete("/history", async (req, res) => {
   res.json({ ok: true, history });
 });
 
-// The router remains the default export used by app.js. isFiniteNumberMap is
-// attached as a property purely so it can be unit tested in isolation.
+// ── Contributions (net money manually added/withdrawn in a period) ─────
+// Kept as their own table column (not mixed into `history`) so the client can
+// subtract them from a wealth delta and isolate "real" growth — i.e. how much
+// existing assets moved in value, separate from money the user simply added.
+async function getContributionsRow(username) {
+  const { rows } = await pool.query("SELECT contributions FROM kanz_users WHERE username = $1", [username]);
+  return rows[0] || null;
+}
+
+const isValidDateStr = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
+
+router.get("/contributions", async (req, res) => {
+  const user = await getContributionsRow(req.username);
+  if (!user) return res.json({ ok: false, error: "userNotFound" });
+  res.json({ ok: true, contributions: user.contributions || [] });
+});
+
+router.post("/contributions", async (req, res) => {
+  const { date, amountUsd, note } = req.body;
+  if (!isValidDateStr(date)) return res.json({ ok: false, error: "invalidDate" });
+
+  const amount = +amountUsd;
+  if (!Number.isFinite(amount)) return res.json({ ok: false, error: "invalidData" });
+
+  const user = await getContributionsRow(req.username);
+  if (!user) return res.json({ ok: false, error: "userNotFound" });
+
+  // One contribution entry per date — logging the same date again (e.g. the
+  // user corrects a typo) replaces it rather than creating a duplicate.
+  const contributions = user.contributions || [];
+  const entry = { date, amountUsd: amount, note: typeof note === "string" ? note.slice(0, 200) : "" };
+  const idx = contributions.findIndex((c) => c.date === date);
+  idx >= 0 ? (contributions[idx] = entry) : contributions.push(entry);
+  contributions.sort((a, b) => a.date.localeCompare(b.date));
+
+  await pool.query("UPDATE kanz_users SET contributions = $1 WHERE username = $2", [
+    JSON.stringify(contributions),
+    req.username,
+  ]);
+  res.json({ ok: true });
+});
+
+router.delete("/contributions", async (req, res) => {
+  const date = req.body.date;
+  if (!isValidDateStr(date)) return res.json({ ok: false, error: "invalidDate" });
+
+  const user = await getContributionsRow(req.username);
+  if (!user) return res.json({ ok: false, error: "userNotFound" });
+
+  const contributions = (user.contributions || []).filter((c) => c.date !== date);
+  await pool.query("UPDATE kanz_users SET contributions = $1 WHERE username = $2", [
+    JSON.stringify(contributions),
+    req.username,
+  ]);
+  res.json({ ok: true, contributions });
+});
+
+// The router remains the default export used by app.js. isFiniteNumberMap and
+// isValidDateStr are attached as properties purely so they can be unit tested in isolation.
 module.exports = router;
 module.exports.isFiniteNumberMap = isFiniteNumberMap;
+module.exports.isValidDateStr = isValidDateStr;

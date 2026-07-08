@@ -39,3 +39,11 @@ test("isCairoTargetHour: matches only when Africa/Cairo's local hour is the targ
   );
   assert.equal(cronRouter.isCairoTargetHour(), cairoHourNow === 3);
 });
+
+test("isValidDateStr: accepts strict YYYY-MM-DD strings only", () => {
+  assert.equal(dataRouter.isValidDateStr("2026-07-09"), true);
+  assert.equal(dataRouter.isValidDateStr("2026-7-9"), false);
+  assert.equal(dataRouter.isValidDateStr("09-07-2026"), false);
+  assert.equal(dataRouter.isValidDateStr(""), false);
+  assert.equal(dataRouter.isValidDateStr(undefined), false);
+});

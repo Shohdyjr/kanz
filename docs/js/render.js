@@ -83,9 +83,22 @@ function render() {
           const color = up ? "var(--wt-green)" : "var(--wt-red)";
           const arrow = up ? "▲" : "▼";
           const sign = up ? "+" : "";
+          // Only show the "real growth" line when contributions were actually
+          // logged for this period — otherwise it's identical to the total
+          // and just adds noise for users who don't bother logging them.
+          const hasContribution = Math.abs(g.contributed || 0) > 0.005;
+          const realUp = (g.realDiff || 0) >= 0;
+          const realColor = realUp ? "var(--wt-green)" : "var(--wt-red)";
+          const realArrow = realUp ? "▲" : "▼";
+          const realSign = realUp ? "+" : "";
           return `<div class="wt-growth-chip" style="color:${color}">
             <span>${arrow} ${sign}${g.pct.toFixed(1)}%</span>
             <span class="wt-growth-sub">(${sign}${fmtUsd(g.diff)}) ${label}</span>
+            ${
+              hasContribution
+                ? `<span class="wt-growth-real" style="color:${realColor}">${t("realGrowthPrefix")} ${realArrow} ${realSign}${g.realPct.toFixed(1)}%</span>`
+                : ""
+            }
           </div>`;
         };
         return `<div class="wt-growth-row">${chip(w, t("growthWeek"))}${chip(m, t("growthMonth"))}${chip(mtd, t("growthMtd"))}${chip(y, t("growthYtd")(currentYear))}${chip(a, t("growthAllTime"))}</div>`;
@@ -99,6 +112,7 @@ function render() {
           : ""
       }
       <button class="wt-theme-btn" style="margin-top:12px;position:relative" onclick="openGoalModal()">${savingsGoal > 0 ? t("editGoalBtn") : t("setGoalBtn")}</button>
+      <button class="wt-theme-btn" style="margin-top:12px;position:relative" onclick="openContribModal()">${t("logContribBtn")}</button>
     </div>
 
     <div id="wt-bk-root"></div>
@@ -219,6 +233,7 @@ function render() {
         : ""
     }
     ${goalModalOpen ? renderGoalModal() : ""}
+    ${contribModalOpen ? renderContribModal() : ""}
   `;
 
   renderSyncBadge();

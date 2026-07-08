@@ -116,6 +116,12 @@ let sessionToken = null; // authorizes every sensitive server request — memory
 let savingsGoal = 0; // savings goal in USD — 0 means no goal set
 let goalModalOpen = false;
 
+// Net money manually added/withdrawn (e.g. "salary minus expenses this
+// month"), kept separate from `historyData` so growth % can be split into
+// "money I added" vs "my assets actually grew in value" — see helpers.js.
+let contributionsData = [];
+let contribModalOpen = false;
+
 function slugify(s) {
   return (
     String(s)
