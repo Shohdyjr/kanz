@@ -1,0 +1,17 @@
+{
+  "name": "kanz",
+  "private": true,
+  "description": "Repo-wide dev tooling (ESLint + Prettier) for the Kanz backend and frontend. Runtime dependencies live in backend/package.json.",
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write ."
+  },
+  "devDependencies": {
+    "eslint": "^9.9.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.9.0",
+    "prettier": "^3.3.3"
+  }
+}

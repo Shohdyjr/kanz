@@ -10,7 +10,11 @@ const router = express.Router();
 router.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false }));
 
 const fail = (res, error) => res.json({ ok: false, error });
-const cleanUsername = (raw) => (raw || "").trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+const cleanUsername = (raw) =>
+  (raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, "");
 
 router.post("/signup", async (req, res) => {
   try {
@@ -24,10 +28,11 @@ router.post("/signup", async (req, res) => {
     if (exists.rows.length > 0) return fail(res, "usernameTaken");
 
     const passwordHash = await hashPassword(password);
-    await pool.query(
-      "INSERT INTO kanz_users (username, password_hash, data) VALUES ($1, $2, $3)",
-      [username, passwordHash, JSON.stringify(defaultUserData())]
-    );
+    await pool.query("INSERT INTO kanz_users (username, password_hash, data) VALUES ($1, $2, $3)", [
+      username,
+      passwordHash,
+      JSON.stringify(defaultUserData()),
+    ]);
 
     // Sign the user in immediately so the client doesn't need a second round trip.
     const { token, expiresAt } = issueToken(username);
@@ -44,7 +49,9 @@ router.post("/login", async (req, res) => {
     const password = req.body.password || "";
     if (!username || !password) return fail(res, "enterCredentials");
 
-    const { rows } = await pool.query("SELECT password_hash, legacy_hash FROM kanz_users WHERE username = $1", [username]);
+    const { rows } = await pool.query("SELECT password_hash, legacy_hash FROM kanz_users WHERE username = $1", [
+      username,
+    ]);
     if (rows.length === 0) return fail(res, "usernameNotFound");
 
     const { password_hash, legacy_hash } = rows[0];
@@ -55,7 +62,10 @@ router.post("/login", async (req, res) => {
     if (!match && legacy_hash && sha256HexLegacy(password) === legacy_hash) {
       match = true;
       const upgraded = await hashPassword(password);
-      await pool.query("UPDATE kanz_users SET password_hash = $1, legacy_hash = NULL WHERE username = $2", [upgraded, username]);
+      await pool.query("UPDATE kanz_users SET password_hash = $1, legacy_hash = NULL WHERE username = $2", [
+        upgraded,
+        username,
+      ]);
     }
 
     if (!match) return fail(res, "wrongPassword");
@@ -75,4 +85,7 @@ router.post("/verify", (req, res) => {
   res.json({ ok: true, username });
 });
 
+// The router remains the default export used by app.js. cleanUsername is
+// attached as a property purely so it can be unit tested in isolation.
 module.exports = router;
+module.exports.cleanUsername = cleanUsername;

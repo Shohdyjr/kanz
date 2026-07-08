@@ -17,7 +17,10 @@ async function takeDailySnapshot() {
       const idx = history.findIndex((h) => h.date === todayStr);
       idx >= 0 ? (history[idx] = snapshot) : history.push(snapshot);
 
-      await pool.query("UPDATE kanz_users SET history = $1 WHERE username = $2", [JSON.stringify(history), row.username]);
+      await pool.query("UPDATE kanz_users SET history = $1 WHERE username = $2", [
+        JSON.stringify(history),
+        row.username,
+      ]);
       count++;
     } catch (err) {
       console.error(`Snapshot failed for ${row.username}:`, err.message);

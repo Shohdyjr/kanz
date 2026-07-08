@@ -23,6 +23,17 @@ async function initDb() {
   `);
   await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS legacy_hash TEXT;`);
   await pool.query(`ALTER TABLE kanz_users ALTER COLUMN password_hash DROP NOT NULL;`);
+
+  // Small durable key/value cache, currently used to remember the last
+  // successfully-fetched gold price so a live API outage degrades gracefully
+  // instead of failing the whole daily snapshot (see lib/rates.js).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kanz_settings (
+      key        TEXT PRIMARY KEY,
+      value      JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }
 
 module.exports = initDb;

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-format:
+    name: Lint & format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root tooling (ESLint + Prettier)
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Prettier --check
+        run: npm run format
+
+  backend-tests:
+    name: Backend unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run tests
+        working-directory: backend
+        # Only pure-logic tests run here — no live DATABASE_URL is available in
+        # CI, so anything touching Postgres (kanz_settings gold-price cache,
+        # user rows, etc.) is intentionally left as manual/integration testing.
+        env:
+          DATABASE_URL: postgres://ci:ci@localhost:5432/kanz_ci
+          JWT_SECRET: ci-only-secret-not-used-in-production
+        run: npm test

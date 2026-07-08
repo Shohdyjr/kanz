@@ -17,8 +17,20 @@ router.use(requireAuth);
  */
 const DANGEROUS_KEYS = ["__proto__", "constructor", "prototype"];
 const isSafePlainObject = (v) =>
-  v !== null && typeof v === "object" && !Array.isArray(v) &&
+  v !== null &&
+  typeof v === "object" &&
+  !Array.isArray(v) &&
   DANGEROUS_KEYS.every((k) => !Object.prototype.hasOwnProperty.call(v, k));
+
+/**
+ * `qty` drives every money calculation on both the client and the daily
+ * snapshot cron, so a non-finite value (NaN, Infinity, a stray string) saved
+ * here would silently corrupt totals with no visible error. The client
+ * already only ever sends real numbers (parseFloat(v) || 0), so this just
+ * rejects anything that couldn't have come from a well-behaved client.
+ */
+const isFiniteNumberMap = (v) =>
+  isSafePlainObject(v) && Object.values(v).every((n) => typeof n === "number" && Number.isFinite(n));
 
 async function getUserRow(username) {
   const { rows } = await pool.query("SELECT data, history FROM kanz_users WHERE username = $1", [username]);
@@ -48,8 +60,9 @@ router.put("/data", async (req, res) => {
   if (!user) return res.json({ ok: false, error: "userNotFound" });
 
   const { qty, customAssets, excludedBaseIds, baseOverrides, theme, lang, order, savingsGoal } = req.body;
-  if (qty !== undefined && !isSafePlainObject(qty)) return res.json({ ok: false, error: "invalidData" });
-  if (baseOverrides !== undefined && !isSafePlainObject(baseOverrides)) return res.json({ ok: false, error: "invalidData" });
+  if (qty !== undefined && !isFiniteNumberMap(qty)) return res.json({ ok: false, error: "invalidData" });
+  if (baseOverrides !== undefined && !isSafePlainObject(baseOverrides))
+    return res.json({ ok: false, error: "invalidData" });
 
   const existing = user.data || {};
   const updated = {
@@ -111,4 +124,7 @@ router.delete("/history", async (req, res) => {
   res.json({ ok: true, history });
 });
 
+// The router remains the default export used by app.js. isFiniteNumberMap is
+// attached as a property purely so it can be unit tested in isolation.
 module.exports = router;
+module.exports.isFiniteNumberMap = isFiniteNumberMap;

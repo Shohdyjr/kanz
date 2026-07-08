@@ -21,10 +21,12 @@ app.use((req, res, next) => {
 let dbReady = null;
 app.use((req, res, next) => {
   dbReady ??= initDb();
-  dbReady.then(() => next()).catch((err) => {
-    console.error("initDb failed:", err);
-    res.status(500).json({ ok: false, error: "dbInitFailed" });
-  });
+  dbReady
+    .then(() => next())
+    .catch((err) => {
+      console.error("initDb failed:", err);
+      res.status(500).json({ ok: false, error: "dbInitFailed" });
+    });
 });
 
 app.get("/", (req, res) => res.json({ ok: true, service: "kanz-backend" }));
@@ -32,8 +34,8 @@ app.get("/api/health", (req, res) => res.json({ ok: true }));
 app.get("/favicon.ico", (req, res) => res.status(204).end()); // API only, no favicon — avoids noisy 404s in logs
 
 app.use("/api/auth", require("./routes/auth"));
-app.use("/api/cron", require("./routes/cron"));   // public (secret-protected via query param)
-app.use("/api", require("./routes/rates"));       // public: /api/historical-rate, /api/benchmark
-app.use("/api", require("./routes/data"));        // protected: /api/data, /api/history, /api/alerts — mounted last on purpose
+app.use("/api/cron", require("./routes/cron")); // public (secret-protected via query param)
+app.use("/api", require("./routes/rates")); // public: /api/historical-rate, /api/benchmark
+app.use("/api", require("./routes/data")); // protected: /api/data, /api/history, /api/alerts — mounted last on purpose
 
 module.exports = app;
