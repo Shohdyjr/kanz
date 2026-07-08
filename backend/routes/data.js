@@ -3,6 +3,10 @@ const pool = require("../db/pool");
 const { requireAuth } = require("../lib/auth");
 
 const router = express.Router();
+// IMPORTANT: this router is mounted at "/api" in app.js, and requireAuth below
+// applies to every path that reaches it. It must be the LAST "/api"-mounted
+// router in app.js, after any public routes (cron, rates) — otherwise those
+// public endpoints get incorrectly blocked by this auth check.
 router.use(requireAuth);
 
 /** Rejects `__proto__`/`constructor`/`prototype` keys to prevent prototype pollution. */
