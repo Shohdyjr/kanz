@@ -22,6 +22,7 @@ app.use((req, res, next) => {
 
 app.get("/", (req, res) => res.json({ ok: true, service: "kanz-backend" }));
 app.get("/api/health", (req, res) => res.json({ ok: true }));
+app.get("/favicon.ico", (req, res) => res.status(204).end()); // API only, no favicon — avoids noisy 404s in logs
 
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api", require("./routes/data"));   // /api/data, /api/history, /api/alerts
