@@ -19,8 +19,7 @@ single line of application code.
 - **Backend:** Express, deployed on Vercel as serverless functions
 - **Database:** PostgreSQL (tested against [Neon](https://neon.tech)'s free tier)
 - **Auth:** JWT (stateless — no server-side session storage)
-- **Scheduled jobs:** Vercel Cron (daily) + an external pinger for the
-  3-hourly job (see below)
+- **Scheduled jobs:** Vercel Cron — one daily run for the 3 AM wealth snapshot
 
 ## Local development
 
@@ -53,14 +52,9 @@ Settings → Pages → Deploy from branch `main`, folder `/docs`.
 
 Update `API_BASE` in `docs/index.html` to your Vercel URL + `/api`.
 
-### 4. Price-alert scheduling
-Vercel's free tier only runs a built-in cron job once a day (used here for
-the 3 AM daily snapshot). For the 3-hourly price-alert check, use a free
-external scheduler such as [cron-job.org](https://cron-job.org) to hit:
-
-```
-https://your-app.vercel.app/api/cron/price-alerts?secret=YOUR_CRON_SECRET
-```
+### 4. Scheduling
+The daily 3 AM wealth snapshot runs automatically via Vercel Cron (configured
+in `vercel.json`, protected by `CRON_SECRET`). No external service needed.
 
 ## Security notes
 

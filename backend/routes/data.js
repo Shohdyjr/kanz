@@ -34,7 +34,6 @@ router.get("/data", async (req, res) => {
     lang: d.lang || "en",
     order: d.order || [],
     savingsGoal: d.savingsGoal || 0,
-    priceAlerts: d.priceAlerts || null,
   });
 });
 
@@ -104,26 +103,6 @@ router.delete("/history", async (req, res) => {
   const history = (user.history || []).filter((h) => h.date !== date);
   await pool.query("UPDATE kanz_users SET history = $1 WHERE username = $2", [JSON.stringify(history), req.username]);
   res.json({ ok: true, history });
-});
-
-router.post("/alerts", async (req, res) => {
-  const settings = req.body.settings || {};
-  const user = await getUserRow(req.username);
-  if (!user) return res.json({ ok: false, error: "userNotFound" });
-
-  const data = {
-    ...(user.data || {}),
-    priceAlerts: {
-      email: settings.email || "",
-      goldTarget: +settings.goldTarget || 0,
-      usdEgpTarget: +settings.usdEgpTarget || 0,
-      goldFired: false,
-      usdEgpFired: false,
-    },
-  };
-
-  await pool.query("UPDATE kanz_users SET data = $1 WHERE username = $2", [JSON.stringify(data), req.username]);
-  res.json({ ok: true });
 });
 
 module.exports = router;

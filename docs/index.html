@@ -342,8 +342,6 @@ let currentUser = null; // only set after a real login or a successful "remember
 let sessionToken = null; // authorizes every sensitive server request — memory only, persisted only if "remember me" is on
 let savingsGoal = 0;   // savings goal in USD — 0 means no goal set
 let goalModalOpen = false;
-let alertsModalOpen = false;
-let priceAlertsSettings = { email: "", goldTarget: 0, usdEgpTarget: 0 };
 
 function slugify(s) {
   return String(s).trim().toLowerCase()
@@ -426,11 +424,6 @@ const I18N = {
     editGoalBtn: "🎯 تعديل الهدف",
     goalModalTitle: "هدف الادخار",
     goalInputLabel: "المبلغ المستهدف (دولار)",
-    priceAlertsTitle: "تنبيهات الأسعار بالإيميل",
-    priceAlertsHint: "هتوصلك رسالة مرة واحدة لما السعر يوصل للهدف. اسيب الخانة فاضية لو مش عايز تنبيه للفئة دي.",
-    alertsEmailLabel: "الإيميل",
-    alertsGoldLabel: "نبّهني لو سعر جرام الذهب وصل لـ (دولار)",
-    alertsUsdEgpLabel: "نبّهني لو سعر الدولار وصل لـ (جنيه)",
     benchmarkToggle: "📈 قارن بـ S&P 500",
     benchmarkLabel: "S&P 500",
     benchmarkUnavailable: "تعذّر تحميل بيانات S&P 500 حاليًا، جرب تاني بعد شوية",
@@ -589,11 +582,6 @@ const I18N = {
     editGoalBtn: "🎯 Edit goal",
     goalModalTitle: "Savings goal",
     goalInputLabel: "Target amount (USD)",
-    priceAlertsTitle: "Email price alerts",
-    priceAlertsHint: "You'll get a one-time email when the price reaches your target. Leave a field empty to skip that alert.",
-    alertsEmailLabel: "Email",
-    alertsGoldLabel: "Notify me when gold/gram reaches (USD)",
-    alertsUsdEgpLabel: "Notify me when USD reaches (EGP)",
     benchmarkToggle: "📈 Compare to S&P 500",
     benchmarkLabel: "S&P 500",
     benchmarkUnavailable: "Couldn't load S&P 500 data right now — try again in a bit",
@@ -896,7 +884,6 @@ const RPC_MAP = {
   loadHistoryForClient: (u, tok)          => ({ method: "GET",    path: "/history", bearer: tok }),
   addManualHistoryEntry:(u, entry, tok)   => ({ method: "POST",   path: "/history", bearer: tok, body: { entry } }),
   deleteHistoryEntry:   (u, date, tok)    => ({ method: "DELETE", path: "/history", bearer: tok, body: { date } }),
-  saveAlertSettings:    (u, settings, tok)=> ({ method: "POST",   path: "/alerts", bearer: tok, body: { settings } }),
   getHistoricalRate:    (dateStr)         => ({ method: "GET",    path: "/historical-rate?date=" + encodeURIComponent(dateStr) }),
   fetchBenchmarkSeries: (from, to)        => ({ method: "GET",    path: "/benchmark?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to) }),
 };
@@ -1054,7 +1041,6 @@ async function completeLogin(username, token, expiresAt) {
 // Full state reset to avoid leaking data from a previous user
   qty = {}; order = []; customAssets = []; excludedBaseIds = new Set(); baseOverrides = {};
   historyData = []; theme = "dark"; lang = "en"; savingsGoal = 0;
-  priceAlertsSettings = { email: "", goldTarget: 0, usdEgpTarget: 0 };
   ASSETS.forEach(a => qty[a.id] = 0);
   render();
   fetchRates();
@@ -1072,7 +1058,6 @@ function logout() {
   qty = {}; order = []; customAssets = []; excludedBaseIds = new Set(); baseOverrides = {};
   historyData = []; historyChart = null; outerChart = null; innerChart = null;
   savingsGoal = 0; goalModalOpen = false;
-  priceAlertsSettings = { email: "", goldTarget: 0, usdEgpTarget: 0 }; alertsModalOpen = false;
   authMode = "login";
   renderAuth();
 }
@@ -1140,7 +1125,6 @@ function sheetsLoad() {
         if (j.theme === "light" || j.theme === "dark") theme = j.theme;
         if (j.lang === "ar" || j.lang === "en")        lang  = j.lang;
         savingsGoal = (typeof j.savingsGoal === "number") ? j.savingsGoal : 0;
-        if (j.priceAlerts) priceAlertsSettings = j.priceAlerts;
 
         rebuildAssets();
         order = Array.isArray(j.order) && j.order.length ? j.order : ASSETS.map(a => a.id);
@@ -1257,73 +1241,6 @@ function move(id, dir) {
 
 // ── Add / edit / delete assets ────────────────────────────
 let selectedIcon = ICON_PALETTE[0];
-
-// ── Email price alerts ──────────────────────────────
-function openAlertsModal() {
-  alertsModalOpen = true;
-  render();
-  setTimeout(() => { const f = document.getElementById("alerts-email"); if (f) f.focus(); }, 50);
-}
-
-function closeAlertsModal() {
-  alertsModalOpen = false;
-  render();
-}
-
-function submitAlertsSettings(ev) {
-  ev.preventDefault();
-  const email        = (document.getElementById("alerts-email").value || "").trim();
-  const goldTarget   = parseFloat(document.getElementById("alerts-gold").value)    || 0;
-  const usdEgpTarget = parseFloat(document.getElementById("alerts-usdegp").value)  || 0;
-
-  const btn = document.getElementById("alerts-save-btn");
-  if (btn) { btn.disabled = true; btn.textContent = "…"; }
-
-  rpc.run
-    .withSuccessHandler(function(j) {
-      if (j && j.ok) {
-        priceAlertsSettings = { email, goldTarget, usdEgpTarget, goldFired: false, usdEgpFired: false };
-        alertsModalOpen = false;
-        render();
-      } else if (btn) {
-        btn.disabled = false;
-        btn.textContent = t("saveChanges");
-      }
-    })
-    .withFailureHandler(function() {
-      if (btn) { btn.disabled = false; btn.textContent = t("saveChanges"); }
-    })
-    .saveAlertSettings(currentUser, { email, goldTarget, usdEgpTarget }, sessionToken);
-}
-
-function renderAlertsModal() {
-  const s = priceAlertsSettings || {};
-  return `
-  <div class="wt-modal-overlay" onclick="if(event.target===this)closeAlertsModal()">
-    <div class="wt-modal">
-      <h3>${t("priceAlertsTitle")}</h3>
-      <p style="font-size:12px;color:var(--wt-text-dim);margin:-8px 0 14px">${t("priceAlertsHint")}</p>
-      <form onsubmit="submitAlertsSettings(event)">
-        <div class="wt-field">
-          <label for="alerts-email">${t("alertsEmailLabel")}</label>
-          <input type="text" id="alerts-email" value="${s.email || ""}" placeholder="you@example.com" dir="ltr">
-        </div>
-        <div class="wt-field">
-          <label for="alerts-gold">${t("alertsGoldLabel")}</label>
-          <input type="number" id="alerts-gold" min="0" step="any" value="${s.goldTarget || ""}" placeholder="90" dir="ltr">
-        </div>
-        <div class="wt-field">
-          <label for="alerts-usdegp">${t("alertsUsdEgpLabel")}</label>
-          <input type="number" id="alerts-usdegp" min="0" step="any" value="${s.usdEgpTarget || ""}" placeholder="52" dir="ltr">
-        </div>
-        <div class="wt-modal-actions">
-          <button type="button" class="wt-btn-ghost" onclick="closeAlertsModal()">${t("cancel")}</button>
-          <button type="submit" class="wt-btn" id="alerts-save-btn">${t("saveChanges")}</button>
-        </div>
-      </form>
-    </div>
-  </div>`;
-}
 
 // ── Savings goal ─────────────────────────────────────────
 function openGoalModal() {
@@ -1584,7 +1501,6 @@ function render() {
           <div class="wt-status"><span class="wt-dot ${statusState}"></span><span>${statusText}</span></div>
           <button class="wt-theme-btn" onclick="toggleLang()" title="${t("langToggleTitle")}">${lang === "ar" ? "EN" : "AR"}</button>
           <button class="wt-theme-btn" onclick="toggleTheme()" title="${t("themeToggleTitle")}">${themeIconSvg()}</button>
-          <button class="wt-theme-btn" onclick="openAlertsModal()" title="${t("priceAlertsTitle")}">🔔</button>
         </div>
         <div class="wt-top-row">
           <span class="wt-user-badge">@${currentUser}</span>
@@ -1744,7 +1660,6 @@ function render() {
     </div>`;
     })() : ""}
     ${goalModalOpen ? renderGoalModal() : ""}
-    ${alertsModalOpen ? renderAlertsModal() : ""}
   `;
 
   renderSyncBadge();
