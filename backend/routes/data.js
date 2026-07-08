@@ -9,10 +9,16 @@ const router = express.Router();
 // public endpoints get incorrectly blocked by this auth check.
 router.use(requireAuth);
 
-/** Rejects `__proto__`/`constructor`/`prototype` keys to prevent prototype pollution. */
+/**
+ * Rejects objects with an own `__proto__`/`constructor`/`prototype` key to
+ * prevent prototype pollution, without false-positiving on ordinary objects
+ * (the `in` operator matches *inherited* properties too — every plain object
+ * has an inherited `__proto__`/`constructor`, so it must not be used here).
+ */
+const DANGEROUS_KEYS = ["__proto__", "constructor", "prototype"];
 const isSafePlainObject = (v) =>
   v !== null && typeof v === "object" && !Array.isArray(v) &&
-  !("__proto__" in v) && !("constructor" in v) && !("prototype" in v);
+  DANGEROUS_KEYS.every((k) => !Object.prototype.hasOwnProperty.call(v, k));
 
 async function getUserRow(username) {
   const { rows } = await pool.query("SELECT data, history FROM kanz_users WHERE username = $1", [username]);

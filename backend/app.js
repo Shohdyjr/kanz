@@ -9,6 +9,13 @@ app.use(helmet());
 app.use(express.json({ limit: "100kb" })); // small, generous cap — blocks oversized payload abuse
 app.use(cors({ origin: env.frontendOrigin }));
 
+// This API serves per-user data — it must never be cached by the browser,
+// a CDN, or Vercel's edge network, or a refresh can show stale values.
+app.use((req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
+
 // Lazy DB init: on Vercel the process is re-created per cold start, so we
 // run initDb() once per instance (on first request) instead of at boot.
 let dbReady = null;

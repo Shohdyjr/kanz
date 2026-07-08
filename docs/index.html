@@ -897,6 +897,7 @@ async function rpcCall(fnName, args) {
   const res = await fetch(API_BASE + cfg.path, {
     method: cfg.method,
     headers,
+    cache: "no-store", // never let the browser serve a stale cached response for personal data
     body: cfg.method !== "GET" ? JSON.stringify(cfg.body || {}) : undefined,
   });
   return res.json();
@@ -1161,8 +1162,13 @@ function sheetsSave() {
   const data = {};
   ASSETS.forEach(a => { data[a.id] = qty[a.id] || 0; });
   rpc.run
-    .withSuccessHandler(function() {
-      syncStatus = "synced";
+    .withSuccessHandler(function(j) {
+      if (j && j.ok) {
+        syncStatus = "synced";
+      } else {
+        syncStatus = "error";
+        console.error("sheetsSave: server rejected the save", j && j.error);
+      }
       renderSyncBadge();
     })
     .withFailureHandler(function(err) {
