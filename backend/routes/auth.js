@@ -22,7 +22,7 @@ router.post("/signup", async (req, res) => {
     const password = req.body.password || "";
 
     if (username.length < 3) return fail(res, "usernameTooShort");
-    if (password.length < 8) return fail(res, "passwordTooShort");
+    if (password.length < 12) return fail(res, "passwordTooShort");
 
     const exists = await pool.query("SELECT 1 FROM kanz_users WHERE username = $1", [username]);
     if (exists.rows.length > 0) return fail(res, "usernameTaken");
@@ -79,10 +79,14 @@ router.post("/login", async (req, res) => {
 });
 
 // Used by the client to silently re-validate a saved "remember me" token.
+// Returns a freshly-signed token so the 1-day expiry effectively auto-renews
+// on every page load — the user only gets logged out if they stay away for
+// more than one full day without opening the app.
 router.post("/verify", (req, res) => {
   const username = verifyTokenValue(req.body.token || "");
   if (!username) return fail(res, "tokenInvalid");
-  res.json({ ok: true, username });
+  const { token, expiresAt } = issueToken(username);
+  res.json({ ok: true, username, token, expiresAt });
 });
 
 // The router remains the default export used by app.js. cleanUsername is

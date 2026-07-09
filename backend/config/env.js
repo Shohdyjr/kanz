@@ -16,7 +16,7 @@ const env = {
   jwtSecret: required("JWT_SECRET"),
   cronSecret: process.env.CRON_SECRET || null,
   frontendOrigin: process.env.FRONTEND_ORIGIN || "*",
-  rememberTokenDays: parseInt(process.env.REMEMBER_TOKEN_DAYS || "7", 10),
+  rememberTokenDays: parseInt(process.env.REMEMBER_TOKEN_DAYS || "1", 10),
   port: parseInt(process.env.PORT || "3000", 10),
   apiLayerKey: process.env.APILAYER_KEY || null,
 };

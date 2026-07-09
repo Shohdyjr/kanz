@@ -1455,3 +1455,45 @@ body {
     gap: 12px;
   }
 }
+
+/* ── Contributions full-screen overlay ── */
+.wt-contrib-fullscreen {
+  position: fixed;
+  inset: 0;
+  background: var(--wt-bg-gradient);
+  z-index: 200;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.wt-contrib-fs-inner {
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 28px 20px 48px;
+}
+.wt-contrib-fs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--wt-line);
+}
+.wt-contrib-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+@media (max-width: 700px) {
+  .wt-contrib-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 420px) {
+  .wt-contrib-grid {
+    grid-template-columns: 1fr;
+  }
+}

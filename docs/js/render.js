@@ -112,8 +112,7 @@ function render() {
           : ""
       }
       <button class="wt-theme-btn" style="margin-top:12px;position:relative" onclick="openGoalModal()">${savingsGoal > 0 ? t("editGoalBtn") : t("setGoalBtn")}</button>
-      <button class="wt-theme-btn" style="margin-top:12px;position:relative" onclick="openContribModal()">${t("logContribBtn")}</button>
-    </div>
+      <button class="wt-theme-btn" style="margin-top:12px;position:relative" onclick="openContribModal()">${t("logContribBtn")}</button>    </div>
 
     <div id="wt-bk-root"></div>
 

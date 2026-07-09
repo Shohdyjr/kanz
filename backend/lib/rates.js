@@ -67,8 +67,14 @@ async function fetchGoldUsdPerOunce() {
   try {
     const res = await fetch("https://api.gold-api.com/price/XAU");
     const json = await res.json();
-    const price = json.price ?? json.rate ?? json.value;
-    if (typeof price === "number" && price > 0) return price;
+    // Prefer `price`, fall back to `rate` / `value` — field names have varied
+    // across gold-api.com responses over time. Guard with isFinite and a
+    // plausibility range ($500–$15 000/oz) so a malformed response (e.g.
+    // the API returning 0 or a string) doesn't corrupt every user's snapshot.
+    const raw = json?.price ?? json?.rate ?? json?.value;
+    const price = typeof raw === "string" ? parseFloat(raw) : raw;
+    if (Number.isFinite(price) && price > 500 && price < 15000) return price;
+    console.warn("fetchGoldUsdPerOunce: primary source returned unexpected value:", raw);
   } catch (err) {
     console.warn("fetchGoldUsdPerOunce: primary source (gold-api.com) failed:", err.message);
   }
@@ -77,8 +83,10 @@ async function fetchGoldUsdPerOunce() {
     // goldprice.org's public data feed — unofficial, but free and keyless.
     const res = await fetch("https://data-asg.goldprice.org/dbXRates/USD");
     const json = await res.json();
-    const price = json?.items?.[0]?.xauPrice;
-    if (typeof price === "number" && price > 0) return price;
+    const raw = json?.items?.[0]?.xauPrice;
+    const price = typeof raw === "string" ? parseFloat(raw) : raw;
+    if (Number.isFinite(price) && price > 500 && price < 15000) return price;
+    console.warn("fetchGoldUsdPerOunce: fallback source returned unexpected value:", raw);
   } catch (err) {
     console.warn("fetchGoldUsdPerOunce: fallback source (goldprice.org) failed:", err.message);
   }

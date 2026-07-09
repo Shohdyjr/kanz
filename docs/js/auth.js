@@ -41,7 +41,7 @@ function renderAuth() {
         </div>
         <div class="wt-field">
           <label for="auth-password">${lang === "en" ? "Password" : "الباسورد"}</label>
-          <input type="password" id="auth-password" name="kanz_login_password" placeholder="${lang === "en" ? "at least 4 characters" : "٤ أحرف على الأقل"}" autocomplete="${isLogin ? "current-password" : "new-password"}" dir="ltr">
+          <input type="password" id="auth-password" name="kanz_login_password" placeholder="${lang === "en" ? "at least 12 characters" : "١٢ حرف على الأقل"}" autocomplete="${isLogin ? "current-password" : "new-password"}" dir="ltr">
         </div>
         <p id="auth-err" class="wt-auth-err"></p>
         <label class="wt-auth-remember">
@@ -186,9 +186,18 @@ function attemptAutoLogin() {
     .withSuccessHandler(function (j) {
       if (j && j.ok) {
         currentUser = j.username;
-        sessionToken = saved.token; // same saved token, now confirmed valid
+        // The server issues a fresh 1-day token on every verify call so the
+        // session auto-renews on each page load. Save it immediately so the
+        // next page load picks up the new expiry.
+        const freshToken = j.token || saved.token;
+        const freshExpiry = j.expiresAt || saved.expiresAt;
+        sessionToken = freshToken;
         try {
           sessionStorage.setItem("kanz_user", currentUser);
+          localStorage.setItem(
+            "kanz_remember",
+            JSON.stringify({ username: currentUser, token: freshToken, expiresAt: freshExpiry })
+          );
         } catch (e) {}
         qty = {};
         order = [];

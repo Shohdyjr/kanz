@@ -1,8 +1,14 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const pool = require("../db/pool");
 const { requireAuth } = require("../lib/auth");
-
+const { validate } = require("../lib/validate");
 const router = express.Router();
+
+// All /api/data, /api/history, /api/contributions endpoints are auth-gated;
+// this limiter is a second layer against token-leakage abuse — 100 reqs / 15 min.
+router.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 100, standardHeaders: true, legacyHeaders: false }));
+
 // IMPORTANT: this router is mounted at "/api" in app.js, and requireAuth below
 // applies to every path that reaches it. It must be the LAST "/api"-mounted
 // router in app.js, after any public routes (cron, rates) — otherwise those
@@ -108,7 +114,13 @@ router.post("/history", async (req, res) => {
   idx >= 0 ? (history[idx] = snapshot) : history.push(snapshot);
   history.sort((a, b) => a.date.localeCompare(b.date));
 
-  await pool.query("UPDATE kanz_users SET history = $1 WHERE username = $2", [JSON.stringify(history), req.username]);
+  // Keep the most recent 730 daily snapshots (2 years). The array is already
+  // sorted ascending, so slicing from the end gives the newest entries.
+  // This caps the JSONB column size so GET /history never returns an
+  // unbounded payload even for very old accounts.
+  const trimmed = history.length > 730 ? history.slice(-730) : history;
+
+  await pool.query("UPDATE kanz_users SET history = $1 WHERE username = $2", [JSON.stringify(trimmed), req.username]);
   res.json({ ok: true });
 });
 
@@ -142,11 +154,14 @@ router.get("/contributions", async (req, res) => {
 });
 
 router.post("/contributions", async (req, res) => {
-  const { date, amountUsd, note } = req.body;
-  if (!isValidDateStr(date)) return res.json({ ok: false, error: "invalidDate" });
+  const { ok, errors } = validate(req.body, {
+    date: { type: "string", match: /^\d{4}-\d{2}-\d{2}$/ },
+    amountUsd: { type: "number", finite: true, nonzero: true },
+    note: { type: "string", optional: true, maxLength: 200 },
+  });
+  if (!ok) return res.json({ ok: false, error: errors[0] || "invalidData" });
 
-  const amount = +amountUsd;
-  if (!Number.isFinite(amount)) return res.json({ ok: false, error: "invalidData" });
+  const { date, amountUsd, note } = req.body;
 
   const user = await getContributionsRow(req.username);
   if (!user) return res.json({ ok: false, error: "userNotFound" });
@@ -154,7 +169,7 @@ router.post("/contributions", async (req, res) => {
   // One contribution entry per date — logging the same date again (e.g. the
   // user corrects a typo) replaces it rather than creating a duplicate.
   const contributions = user.contributions || [];
-  const entry = { date, amountUsd: amount, note: typeof note === "string" ? note.slice(0, 200) : "" };
+  const entry = { date, amountUsd, note: typeof note === "string" ? note.slice(0, 200) : "" };
   const idx = contributions.findIndex((c) => c.date === date);
   idx >= 0 ? (contributions[idx] = entry) : contributions.push(entry);
   contributions.sort((a, b) => a.date.localeCompare(b.date));
