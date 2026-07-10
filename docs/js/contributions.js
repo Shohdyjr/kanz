@@ -129,7 +129,11 @@ function saveContribEntry(yearMonth, type, rawAmt, currency, note, onDone) {
     .withFailureHandler(function () {
       onDone && onDone("connectionError");
     })
-    .addContribution(currentUser, { date, amountUsd, amountOriginal, currency: cur, note: note || "", type }, sessionToken);
+    .addContribution(
+      currentUser,
+      { date, amountUsd, amountOriginal, currency: cur, note: note || "", type },
+      sessionToken
+    );
 }
 
 function deleteContrib(date) {

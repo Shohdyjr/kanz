@@ -69,7 +69,8 @@ router.get("/data", async (req, res) => {
 // and rejecting anything outside that range keeps a typo (e.g. 2000 instead
 // of 20) from silently compounding a wildly wrong balance every night.
 const isValidApyMap = (v) =>
-  isSafePlainObject(v) && Object.values(v).every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100);
+  isSafePlainObject(v) &&
+  Object.values(v).every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100);
 
 router.put("/data", async (req, res) => {
   const user = await getUserRow(req.username);
