@@ -78,7 +78,7 @@ function render() {
         const y = computeGrowthSince(currentYear + "-01-01", totalUsd);
         const a = computeGrowthAllTime(totalUsd);
         if (!w && !m && !mtd && !y && !a) return "";
-        const chip = (g, label) => {
+        const chip = (g, label, showReal = true) => {
           if (!g) return "";
           const up = g.diff >= 0;
           const color = up ? "var(--wt-green)" : "var(--wt-red)";
@@ -87,7 +87,13 @@ function render() {
           // Only show the "real growth" line when contributions were actually
           // logged for this period — otherwise it's identical to the total
           // and just adds noise for users who don't bother logging them.
-          const hasContribution = Math.abs(g.contributed || 0) > 0.005;
+          // Also gated by `showReal`: contributions are logged with monthly
+          // granularity (always the 1st of the month — see contributions.js),
+          // so splitting a rolling 7/30-day window into "added vs grew" isn't
+          // meaningful — a contribution can't be attributed to a specific
+          // week within its month. Only MTD/YTD/all-time (whole-month-aligned
+          // windows) get the split.
+          const hasContribution = showReal && Math.abs(g.contributed || 0) > 0.005;
           const realUp = (g.realDiff || 0) >= 0;
           const realColor = realUp ? "var(--wt-green)" : "var(--wt-red)";
           const realArrow = realUp ? "▲" : "▼";
@@ -102,7 +108,7 @@ function render() {
             }
           </div>`;
         };
-        return `<div class="wt-growth-row">${chip(w, t("growthWeek"))}${chip(m, t("growthMonth"))}${chip(mtd, t("growthMtd"))}${chip(y, t("growthYtd")(currentYear))}${chip(a, t("growthAllTime"))}</div>`;
+        return `<div class="wt-growth-row">${chip(w, t("growthWeek"), false)}${chip(m, t("growthMonth"), false)}${chip(mtd, t("growthMtd"))}${chip(y, t("growthYtd")(currentYear))}${chip(a, t("growthAllTime"))}</div>`;
       })()}
       ${
         savingsGoal > 0

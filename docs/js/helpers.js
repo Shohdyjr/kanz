@@ -76,10 +76,17 @@ function getGrowthCandidate(days) {
 // growth. This sums the contributions logged in docs/js/contributions.js
 // that fall strictly after `sinceDateExclusive` and up to `untilDateInclusive`,
 // so it can be subtracted from a raw diff to isolate the real, price-driven change.
-function sumContributionsBetween(sinceDateExclusive, untilDateInclusive) {
+// Kept as a helper name (`*Exclusive`) for historical reasons, but the
+// comparison is actually inclusive (`>=`) on the start date. Contributions
+// are logged with monthly granularity (always the 1st of the month, since
+// the full-screen yearly grid replaced the old free-form date field — see
+// contributions.js), and MTD's window start is exactly that same "1st of
+// the month" date. A strict `>` used to silently exclude the current
+// month's own contribution from its own MTD comparison.
+function sumContributionsBetween(sinceDateInclusive, untilDateInclusive) {
   if (!contributionsData || contributionsData.length === 0) return 0;
   return contributionsData
-    .filter((c) => (!sinceDateExclusive || c.date > sinceDateExclusive) && c.date <= untilDateInclusive)
+    .filter((c) => (!sinceDateInclusive || c.date >= sinceDateInclusive) && c.date <= untilDateInclusive)
     .reduce((sum, c) => sum + (parseFloat(c.amountUsd) || 0), 0);
 }
 
