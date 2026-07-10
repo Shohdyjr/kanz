@@ -2,6 +2,14 @@
 const fmtUsd = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtEgp = (n) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + (lang === "en" ? " EGP" : " ج.م");
+// Generic "amount + currency code" formatter for currencies without their
+// own dedicated formatter above (used by the contributions grid, where the
+// user can log a salary/expense in EGP, USD, EUR, or SAR — see contributions.js).
+const fmtByCurrency = (n, currency) => {
+  if (currency === "USD") return fmtUsd(n);
+  if (currency === "EGP") return fmtEgp(n);
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + currency;
+};
 const fmtNum = (n, d = 4) => n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: d });
 const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);

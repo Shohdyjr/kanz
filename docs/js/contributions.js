@@ -89,16 +89,36 @@ function monthSummary(yearMonth) {
   return { income, expense, net: income - expense };
 }
 
+// Currencies the user can log a salary/expense entry in — kept in sync with
+// CONTRIB_CURRENCIES in backend/routes/data.js.
+const CONTRIB_CURRENCIES = ["EGP", "USD", "EUR", "SAR"];
+
 // ── Save a single entry ──
-function saveContribEntry(yearMonth, type, rawAmt, note, onDone) {
+// `currency` is what the user actually typed the amount in (e.g. a salary in
+// EGP); it's converted to USD here using the same live FX rates the rest of
+// the app already uses (priceFor, from helpers.js) so amountUsd — the figure
+// every growth calculation relies on — stays exactly as before. The original
+// amount+currency are sent along too, purely so the entry can be displayed
+// back in its original currency later.
+function saveContribEntry(yearMonth, type, rawAmt, currency, note, onDone) {
   const amt = Math.abs(parseFloat(rawAmt) || 0);
   if (!amt) {
     onDone && onDone("errContribAmount");
     return;
   }
+  const cur = CONTRIB_CURRENCIES.includes(currency) ? currency : "USD";
+  const rate = priceFor({ currency: cur });
+  if (!rate) {
+    // Rates haven't loaded yet (e.g. called right after login) — better to
+    // ask the user to retry than to silently save a wrong/zero USD amount.
+    onDone && onDone("errContribRate");
+    return;
+  }
   // Use first of the month as key, keep type in the entry for display
   const date = yearMonth + "-01";
-  const amountUsd = type === "expense" ? -amt : amt;
+  const amountUsdMag = amt * rate;
+  const amountUsd = type === "expense" ? -amountUsdMag : amountUsdMag;
+  const amountOriginal = type === "expense" ? -amt : amt;
   rpc.run
     .withSuccessHandler(function (j) {
       if (j && j.ok) {
@@ -109,7 +129,7 @@ function saveContribEntry(yearMonth, type, rawAmt, note, onDone) {
     .withFailureHandler(function () {
       onDone && onDone("connectionError");
     })
-    .addContribution(currentUser, { date, amountUsd, note: note || "", type }, sessionToken);
+    .addContribution(currentUser, { date, amountUsd, amountOriginal, currency: cur, note: note || "", type }, sessionToken);
 }
 
 function deleteContrib(date) {
@@ -128,6 +148,9 @@ function deleteContrib(date) {
 // cycle can show an expanded input row inside the right cell.
 let _editingCell = null; // "YYYY-MM:income" | "YYYY-MM:expense" | null
 let _editErr = null;
+// Remembers the last currency picked in the cell editor for the rest of the
+// session, so choosing "EGP" once doesn't mean re-picking it on every entry.
+let _editCurrency = "EGP";
 
 function openCellEditor(yearMonth, type) {
   _editingCell = yearMonth + ":" + type;
@@ -149,9 +172,12 @@ function submitCellEntry(ev, yearMonth, type) {
   ev.preventDefault();
   const inp = document.getElementById("contrib-cell-input");
   const noteInp = document.getElementById("contrib-cell-note");
+  const curInp = document.getElementById("contrib-cell-currency");
   const amt = inp ? inp.value : "";
   const note = noteInp ? noteInp.value : "";
-  saveContribEntry(yearMonth, type, amt, note, function (err) {
+  const currency = curInp ? curInp.value : _editCurrency;
+  _editCurrency = currency; // remember for next time
+  saveContribEntry(yearMonth, type, amt, currency, note, function (err) {
     if (err) {
       _editErr = err;
       render();
@@ -194,9 +220,14 @@ function renderMonthCard(year, m0) {
           <div style="display:flex;gap:4px;align-items:center">
             <input id="contrib-cell-input" type="number" step="any" min="0"
               placeholder="0.00" dir="ltr"
-              style="width:80px;padding:3px 6px;border-radius:6px;
+              style="width:64px;padding:3px 6px;border-radius:6px;
                      border:1px solid var(--wt-line-strong);background:var(--wt-bg);
                      color:var(--wt-text);font-size:12px;font-family:'JetBrains Mono',monospace">
+            <select id="contrib-cell-currency" dir="ltr"
+              style="padding:3px 4px;border-radius:6px;border:1px solid var(--wt-line-strong);
+                     background:var(--wt-bg);color:var(--wt-text);font-size:11px">
+              ${CONTRIB_CURRENCIES.map((c) => `<option value="${c}" ${c === _editCurrency ? "selected" : ""}>${c}</option>`).join("")}
+            </select>
             <button type="submit" class="wt-btn" style="padding:2px 8px;font-size:11px">${t("add")}</button>
             <button type="button" class="wt-btn-ghost" style="padding:2px 6px;font-size:11px" onclick="closeCellEditor()">✕</button>
           </div>
@@ -225,10 +256,17 @@ function renderMonthCard(year, m0) {
       ${monthEntries
         .map((c) => {
           const pos = (parseFloat(c.amountUsd) || 0) >= 0;
+          // Legacy entries (saved before the currency field existed) have no
+          // `currency`/`amountOriginal` — those just fall back to the USD
+          // figure exactly like before this feature was added.
+          const hasOriginal = c.currency && c.currency !== "USD" && typeof c.amountOriginal === "number";
+          const amountLabel = hasOriginal
+            ? `${fmtByCurrency(Math.abs(c.amountOriginal), c.currency)} <span style="opacity:0.6">(≈${fmtUsd(Math.abs(parseFloat(c.amountUsd) || 0))})</span>`
+            : fmtUsd(Math.abs(parseFloat(c.amountUsd) || 0));
           return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;
                              color:var(--wt-text-dim);padding:1px 0">
           <span style="color:${pos ? "var(--wt-green)" : "var(--wt-red)"}">
-            ${pos ? "▲" : "▼"} ${fmtUsd(Math.abs(parseFloat(c.amountUsd) || 0))}
+            ${pos ? "▲" : "▼"} ${amountLabel}
           </span>
           ${c.note ? `<span style="opacity:0.7;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.note)}</span>` : ""}
           <button onclick="deleteContrib('${esc(c.date)}')"

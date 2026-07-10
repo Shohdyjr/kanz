@@ -98,7 +98,12 @@ let histRateStatus = "idle"; // idle | loading | ok | error
 let histRateError = "";
 let logoAnimated = false;
 let editingId = null;
-let authMode = "login"; // "login" or "signup"
+let authMode = "login"; // "login" | "signup" | "forgot" | "resetOtp"
+// Carried between the two forgot-password steps: the username the code was
+// requested for, and the masked email it was sent to (for the "code sent to
+// a***@gmail.com" message). Reset once the flow completes or is abandoned.
+let forgotFlowUsername = null;
+let forgotFlowEmail = null;
 let theme = "dark"; // updated from the user's data after login
 let lang = "en"; // updated from the user's data after login
 
@@ -121,6 +126,7 @@ let goalModalOpen = false;
 // "money I added" vs "my assets actually grew in value" — see helpers.js.
 let contributionsData = [];
 let contribModalOpen = false;
+let emailModalOpen = false; // recovery-email settings modal, opened from the top bar
 
 function slugify(s) {
   return (

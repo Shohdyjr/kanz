@@ -11,9 +11,16 @@ const API_BASE = window.KANZ_API_BASE || "https://kanz-snowy.vercel.app/api";
 
 // Map: RPC-style name → the actual REST call to the server
 const RPC_MAP = {
-  signUp: (u, p) => ({ method: "POST", path: "/auth/signup", body: { username: u, password: p } }),
+  signUp: (u, p, email) => ({ method: "POST", path: "/auth/signup", body: { username: u, password: p, email } }),
   logIn: (u, p) => ({ method: "POST", path: "/auth/login", body: { username: u, password: p } }),
   loginWithToken: (u, tok) => ({ method: "POST", path: "/auth/verify", body: { token: tok } }),
+  forgotPassword: (u) => ({ method: "POST", path: "/auth/forgot-password", body: { username: u } }),
+  resetPassword: (u, otp, newPassword) => ({
+    method: "POST",
+    path: "/auth/reset-password",
+    body: { username: u, otp, newPassword },
+  }),
+  updateEmail: (email, tok) => ({ method: "PUT", path: "/auth/email", bearer: tok, body: { email } }),
   loadDataForClient: (u, tok) => ({ method: "GET", path: "/data", bearer: tok }),
   saveDataFromClient: (u, qty, ca, ex, ov, th, lg, ord, goal, tok) => ({
     method: "PUT",

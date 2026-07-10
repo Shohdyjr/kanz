@@ -153,15 +153,25 @@ router.get("/contributions", async (req, res) => {
   res.json({ ok: true, contributions: user.contributions || [] });
 });
 
+// Currencies the client's own FX rates (docs/js/helpers.js priceFor) can
+// price — kept in sync with BASE_ASSET_CURRENCY's fiat entries in lib/rates.js.
+const CONTRIB_CURRENCIES = ["EGP", "USD", "EUR", "SAR"];
+
 router.post("/contributions", async (req, res) => {
   const { ok, errors } = validate(req.body, {
     date: { type: "string", match: /^\d{4}-\d{2}-\d{2}$/ },
     amountUsd: { type: "number", finite: true, nonzero: true },
     note: { type: "string", optional: true, maxLength: 200 },
+    // Both optional for backward compatibility with older clients that only
+    // ever sent amountUsd — those entries are treated as plain USD (see the
+    // fallbacks below), matching their original behavior exactly.
+    currency: { type: "string", optional: true, match: /^(EGP|USD|EUR|SAR)$/ },
+    amountOriginal: { type: "number", optional: true, finite: true },
   });
   if (!ok) return res.json({ ok: false, error: errors[0] || "invalidData" });
 
-  const { date, amountUsd, note } = req.body;
+  const { date, amountUsd, note, currency, amountOriginal } = req.body;
+  if (currency && !CONTRIB_CURRENCIES.includes(currency)) return res.json({ ok: false, error: "invalidData" });
 
   const user = await getContributionsRow(req.username);
   if (!user) return res.json({ ok: false, error: "userNotFound" });
@@ -169,7 +179,16 @@ router.post("/contributions", async (req, res) => {
   // One contribution entry per date — logging the same date again (e.g. the
   // user corrects a typo) replaces it rather than creating a duplicate.
   const contributions = user.contributions || [];
-  const entry = { date, amountUsd, note: typeof note === "string" ? note.slice(0, 200) : "" };
+  const entry = {
+    date,
+    amountUsd,
+    note: typeof note === "string" ? note.slice(0, 200) : "",
+    // amountOriginal/currency preserve what the user actually typed (e.g.
+    // "5000 EGP") for display; amountUsd above remains the converted figure
+    // every growth calculation already relies on, so nothing downstream changes.
+    currency: currency || "USD",
+    amountOriginal: typeof amountOriginal === "number" ? amountOriginal : amountUsd,
+  };
   const idx = contributions.findIndex((c) => c.date === date);
   idx >= 0 ? (contributions[idx] = entry) : contributions.push(entry);
   contributions.sort((a, b) => a.date.localeCompare(b.date));

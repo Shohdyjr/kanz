@@ -1070,6 +1070,8 @@ body {
 }
 .wt-field input[type="text"],
 .wt-field input[type="password"],
+.wt-field input[type="email"],
+.wt-field input[type="number"],
 .wt-field select {
   width: 100%;
   background: var(--wt-input-bg);
@@ -1082,9 +1084,30 @@ body {
 }
 .wt-field input[type="text"]:focus,
 .wt-field input[type="password"]:focus,
+.wt-field input[type="email"]:focus,
+.wt-field input[type="number"]:focus,
 .wt-field select:focus {
   outline: none;
   border-color: var(--wt-gold-dim);
+}
+.wt-field-hint {
+  font-size: 11px;
+  color: var(--wt-text-dim);
+  margin: 5px 2px 0;
+}
+/* Plain-text buttons styled as links — "Forgot password?", "Back to login" */
+.wt-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--wt-gold-dim);
+  font-family: "Tajawal", sans-serif;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.wt-link-btn:hover {
+  color: var(--wt-gold);
 }
 .wt-modal-actions {
   display: flex;

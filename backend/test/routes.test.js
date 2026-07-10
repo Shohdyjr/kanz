@@ -32,6 +32,20 @@ test("cleanUsername: lowercases and strips anything but a-z0-9_", () => {
   assert.equal(authRouter.cleanUsername(undefined), "");
 });
 
+test("cleanEmail: trims and lowercases", () => {
+  assert.equal(authRouter.cleanEmail("  Ahmed@Example.COM "), "ahmed@example.com");
+  assert.equal(authRouter.cleanEmail(undefined), "");
+});
+
+test("EMAIL_RE: accepts plausible emails, rejects malformed ones", () => {
+  assert.equal(authRouter.EMAIL_RE.test("ahmed@example.com"), true);
+  assert.equal(authRouter.EMAIL_RE.test("ahmed@sub.example.com"), true);
+  assert.equal(authRouter.EMAIL_RE.test("not-an-email"), false);
+  assert.equal(authRouter.EMAIL_RE.test("missing@tld"), false);
+  assert.equal(authRouter.EMAIL_RE.test("@example.com"), false);
+  assert.equal(authRouter.EMAIL_RE.test("spaces in@example.com"), false);
+});
+
 test("isCairoTargetHour: matches only when Africa/Cairo's local hour is the target hour", () => {
   const cairoHourNow = parseInt(
     new Intl.DateTimeFormat("en-US", { timeZone: "Africa/Cairo", hour: "2-digit", hour12: false }).format(new Date()),

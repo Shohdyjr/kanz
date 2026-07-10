@@ -47,6 +47,7 @@ function render() {
         </div>
         <div class="wt-top-row">
           <span class="wt-user-badge">@${currentUser}</span>
+          <button class="wt-theme-btn" onclick="openEmailModal()" title="${t("emailSettingsBtn")}">✉️</button>
           <button class="wt-logout-btn" onclick="logout()">${lang === "en" ? "Logout" : "خروج"}</button>
           ${rates ? `<span class="wt-fx-badge ${rates.fxSource === "daily" ? "fx-daily" : "fx-hourly"}">${rates.fxSource === "daily" ? t("fxBadgeDaily") : t("fxBadgeHourly")}</span>` : ""}
         </div>
@@ -233,6 +234,7 @@ function render() {
     }
     ${goalModalOpen ? renderGoalModal() : ""}
     ${contribModalOpen ? renderContribModal() : ""}
+    ${emailModalOpen ? renderEmailModal() : ""}
   `;
 
   renderSyncBadge();

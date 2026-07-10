@@ -30,6 +30,29 @@ async function initDb() {
   // already had grew in value" — see docs/js/helpers.js computeGrowth().
   await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS contributions JSONB NOT NULL DEFAULT '[]'::jsonb;`);
 
+  // Optional recovery email — nullable because existing accounts predate this
+  // column and not every user sets one. Used only by the forgot-password OTP
+  // flow (routes/auth.js + lib/otp.js + lib/email.js). Partial unique index
+  // (instead of a plain UNIQUE constraint) so multiple users can each still
+  // have a NULL/unset email.
+  await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS email TEXT;`);
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS kanz_users_email_idx ON kanz_users (email) WHERE email IS NOT NULL;`
+  );
+
+  // One pending reset code per user at a time (PK on username) — requesting a
+  // new code implicitly invalidates any previous one. Short-lived by design:
+  // expires_at is checked (and the row deleted) in lib/otp.js.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kanz_password_resets (
+      username    TEXT PRIMARY KEY REFERENCES kanz_users(username) ON DELETE CASCADE,
+      otp_hash    TEXT NOT NULL,
+      expires_at  TIMESTAMPTZ NOT NULL,
+      attempts    INT NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   // Small durable key/value cache, currently used to remember the last
   // successfully-fetched gold price so a live API outage degrades gracefully
   // instead of failing the whole daily snapshot (see lib/rates.js).
