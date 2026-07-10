@@ -32,7 +32,8 @@ function sheetsSave() {
       lang,
       order,
       savingsGoal,
-      sessionToken
+      sessionToken,
+      apy
     );
 }
 

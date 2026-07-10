@@ -30,6 +30,12 @@ async function initDb() {
   // already had grew in value" — see docs/js/helpers.js computeGrowth().
   await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS contributions JSONB NOT NULL DEFAULT '[]'::jsonb;`);
 
+  // Per-item history: one entry per (itemId, date) whenever the daily cron
+  // applies an item's APY growth. Lets the UI show "this item grew from X to
+  // Y on this date" per item, separate from the aggregate `history` snapshots
+  // and from manually-logged `contributions`. See cron/dailySnapshot.js.
+  await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS item_history JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+
   // Optional recovery email — nullable because existing accounts predate this
   // column and not every user sets one. Used only by the forgot-password OTP
   // flow (routes/auth.js + lib/otp.js + lib/email.js). Partial unique index

@@ -146,6 +146,7 @@ function render() {
           <th class="wt-th-order">${t("thOrder")}</th>
           <th>${t("thAsset")}</th>
           <th>${t("thQty")}</th>
+          <th>${t("thApy")}</th>
           <th class="num">${t("thUnitPrice")}</th>
           <th class="num">${t("thTotal")}</th>
           <th class="wt-th-del"></th>
@@ -168,9 +169,15 @@ function render() {
             <td><input class="wt-qty" type="number" min="0" step="any"
               value="${qty[a.id] || ""}" placeholder="0"
               oninput="setQty('${a.id}',this.value)"></td>
+            <td><input class="wt-apy" type="number" min="0" max="100" step="any"
+              value="${apy[a.id] || ""}" placeholder="0%" title="${t("apyHint")}"
+              oninput="setApy('${a.id}',this.value)"></td>
             <td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>
             <td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>
             <td><div class="wt-row-actions">
+              <button class="wt-hist" onclick="openItemHistoryModal('${a.id}')" title="${t("itemHistoryTitle")}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+              </button>
               <button class="wt-edit" onclick="openEditModal('${a.id}')" title="${t("editTitle")}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
               </button>
@@ -235,6 +242,7 @@ function render() {
     ${goalModalOpen ? renderGoalModal() : ""}
     ${contribModalOpen ? renderContribModal() : ""}
     ${emailModalOpen ? renderEmailModal() : ""}
+    ${itemHistoryModalId ? renderItemHistoryModal() : ""}
   `;
 
   renderSyncBadge();

@@ -78,7 +78,12 @@ let baseOverrides = {};
 let ASSETS = [];
 
 let qty = {};
+// Per-item APY (%), e.g. apy["gold"] = 5 means that item grows 5%/year,
+// compounded daily by the backend cron. Keyed by asset id, like `qty`.
+let apy = {};
 let order = [];
+let itemHistoryModalId = null; // asset id whose history timeline is open, or null
+let itemHistoryEntries = []; // entries loaded for itemHistoryModalId
 let rates = null; // FX/gold rates — plain JS variable, refetched every time, no need to persist
 let status = "loading";
 let syncStatus = "idle";

@@ -260,6 +260,7 @@ async function completeLogin(username, token, expiresAt) {
 
   // Full state reset to avoid leaking data from a previous user
   qty = {};
+  apy = {};
   order = [];
   customAssets = [];
   excludedBaseIds = new Set();
@@ -289,6 +290,7 @@ function logout() {
     localStorage.removeItem("kanz_remember");
   } catch (e) {}
   qty = {};
+  apy = {};
   order = [];
   customAssets = [];
   excludedBaseIds = new Set();
@@ -349,6 +351,7 @@ function attemptAutoLogin() {
           );
         } catch (e) {}
         qty = {};
+        apy = {};
         order = [];
         customAssets = [];
         excludedBaseIds = new Set();
@@ -458,6 +461,7 @@ function sheetsLoad() {
         if (j.theme === "light" || j.theme === "dark") theme = j.theme;
         if (j.lang === "ar" || j.lang === "en") lang = j.lang;
         savingsGoal = typeof j.savingsGoal === "number" ? j.savingsGoal : 0;
+        apy = j.apy && typeof j.apy === "object" ? j.apy : {};
 
         rebuildAssets();
         order = Array.isArray(j.order) && j.order.length ? j.order : ASSETS.map((a) => a.id);

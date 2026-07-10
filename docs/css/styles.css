@@ -486,6 +486,23 @@ body {
   outline: none;
   border-color: var(--wt-gold-dim);
 }
+.wt-apy {
+  width: 100%;
+  max-width: 90px;
+  background: var(--wt-input-bg);
+  border: 1px solid var(--wt-line);
+  color: var(--wt-text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  text-align: left;
+  direction: ltr;
+}
+.wt-apy:focus {
+  outline: none;
+  border-color: var(--wt-gold-dim);
+}
 .wt-price-cell {
   font-family: "JetBrains Mono", monospace;
   color: var(--wt-text-dim);
@@ -638,6 +655,69 @@ body {
 .wt-del svg {
   width: 14px;
   height: 14px;
+}
+.wt-hist {
+  background: transparent;
+  border: none;
+  color: var(--wt-text-dim);
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: 0.15s;
+}
+.wt-hist:hover {
+  color: var(--wt-gold-light);
+  background: rgba(212, 175, 55, 0.1);
+}
+.wt-hist svg {
+  width: 14px;
+  height: 14px;
+}
+.wt-item-hist-modal {
+  max-width: 420px;
+}
+.wt-item-hist-list {
+  max-height: 340px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.wt-item-hist-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--wt-input-bg);
+  border: 1px solid var(--wt-line);
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: "JetBrains Mono", monospace;
+}
+.wt-item-hist-date {
+  color: var(--wt-text-dim);
+  flex-shrink: 0;
+}
+.wt-item-hist-vals {
+  color: var(--wt-text);
+  direction: ltr;
+}
+.wt-item-hist-delta {
+  font-weight: 600;
+  direction: ltr;
+  flex-shrink: 0;
+}
+.wt-item-hist-empty {
+  color: var(--wt-text-dim);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px 8px;
 }
 .wt-row-actions {
   display: flex;

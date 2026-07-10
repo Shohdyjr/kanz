@@ -39,7 +39,9 @@ const isFiniteNumberMap = (v) =>
   isSafePlainObject(v) && Object.values(v).every((n) => typeof n === "number" && Number.isFinite(n));
 
 async function getUserRow(username) {
-  const { rows } = await pool.query("SELECT data, history FROM kanz_users WHERE username = $1", [username]);
+  const { rows } = await pool.query("SELECT data, history, item_history FROM kanz_users WHERE username = $1", [
+    username,
+  ]);
   return rows[0] || null;
 }
 
@@ -58,17 +60,26 @@ router.get("/data", async (req, res) => {
     lang: d.lang || "en",
     order: d.order || [],
     savingsGoal: d.savingsGoal || 0,
+    apy: d.apy || {},
   });
 });
+
+// Sane bounds for a per-item APY: 0% (no growth) up to 100% is already an
+// extremely generous ceiling for any real-world savings/investment product,
+// and rejecting anything outside that range keeps a typo (e.g. 2000 instead
+// of 20) from silently compounding a wildly wrong balance every night.
+const isValidApyMap = (v) =>
+  isSafePlainObject(v) && Object.values(v).every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100);
 
 router.put("/data", async (req, res) => {
   const user = await getUserRow(req.username);
   if (!user) return res.json({ ok: false, error: "userNotFound" });
 
-  const { qty, customAssets, excludedBaseIds, baseOverrides, theme, lang, order, savingsGoal } = req.body;
+  const { qty, customAssets, excludedBaseIds, baseOverrides, theme, lang, order, savingsGoal, apy } = req.body;
   if (qty !== undefined && !isFiniteNumberMap(qty)) return res.json({ ok: false, error: "invalidData" });
   if (baseOverrides !== undefined && !isSafePlainObject(baseOverrides))
     return res.json({ ok: false, error: "invalidData" });
+  if (apy !== undefined && !isValidApyMap(apy)) return res.json({ ok: false, error: "invalidData" });
 
   const existing = user.data || {};
   const updated = {
@@ -81,10 +92,26 @@ router.put("/data", async (req, res) => {
     lang: lang || existing.lang || "en",
     order: Array.isArray(order) ? order : existing.order || [],
     savingsGoal: typeof savingsGoal === "number" ? savingsGoal : existing.savingsGoal || 0,
+    apy: apy || existing.apy || {},
   };
 
   await pool.query("UPDATE kanz_users SET data = $1 WHERE username = $2", [JSON.stringify(updated), req.username]);
   res.json({ ok: true });
+});
+
+// ── Item history (automatic, APY-driven) ───────────────────────────────
+// One entry per (itemId, date), appended by the daily cron whenever an item
+// has an apy set — see cron/dailySnapshot.js applyItemGrowth(). Read-only
+// from the client's point of view; there is no POST/DELETE here on purpose.
+router.get("/item-history", async (req, res) => {
+  const { rows } = await pool.query("SELECT item_history FROM kanz_users WHERE username = $1", [req.username]);
+  const user = rows[0];
+  if (!user) return res.json({ ok: false, error: "userNotFound" });
+
+  const all = user.item_history || [];
+  const itemId = req.query.itemId;
+  const filtered = itemId ? all.filter((e) => e.itemId === itemId) : all;
+  res.json({ ok: true, itemHistory: filtered });
 });
 
 router.get("/history", async (req, res) => {

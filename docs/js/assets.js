@@ -6,6 +6,14 @@ function setQty(id, v) {
   renderBreakdown();
 }
 
+// APY (%) per item — user-set, compounded daily by the backend cron
+// (see backend/cron/dailySnapshot.js applyItemGrowth()). 0/blank = no growth.
+function setApy(id, v) {
+  const n = parseFloat(v);
+  apy[id] = Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 0;
+  scheduleSave();
+}
+
 function move(id, dir) {
   const i = order.indexOf(id),
     j = i + dir;
@@ -196,6 +204,7 @@ function deleteAsset(id) {
   }
 
   delete qty[id];
+  delete apy[id];
   order = order.filter((oid) => oid !== id);
   rebuildAssets();
 
