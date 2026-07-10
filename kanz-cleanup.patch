@@ -1,0 +1,2281 @@
+diff --git a/README.md b/README.md
+index 5a72197..e08bae6 100644
+--- a/README.md
++++ b/README.md
+@@ -1,7 +1,6 @@
+ # Kanz
+ 
+-A personal wealth tracker (EGP, hard currency, gold, and other assets), originally
+-built as a Google Apps Script app and migrated to a standard Node.js stack.
++A personal wealth tracker (EGP, hard currency, gold, and other assets).
+ 
+ ```
+ kanz/
+@@ -90,9 +89,7 @@ in `vercel.json`, protected by `CRON_SECRET`). No external service needed.
+ 
+ ## Security notes
+ 
+-- Passwords are hashed with bcrypt; a `legacy_hash` column supports
+-  transparent upgrade of accounts migrated from the old SHA-256-based
+-  Apps Script version.
++- Passwords are hashed with bcrypt.
+ - Auth endpoints are rate-limited (20 requests / 15 min / IP).
+ - `helmet` sets standard security headers; JSON body size is capped at 100kb.
+ - The cron secret is compared using `crypto.timingSafeEqual` to avoid timing
+@@ -108,13 +105,3 @@ in `vercel.json`, protected by `CRON_SECRET`). No external service needed.
+   the last successfully-fetched price is reused from a small Postgres cache
+   (`kanz_settings`) instead of failing the whole rates fetch (and, on the
+   daily snapshot cron, failing every user's snapshot for the day).
+-
+-## Migrating data from the old Google Sheets version
+-
+-Export the old `kanz_users` sheet as **Tab Separated Values (.tsv)** and
+-insert each row directly into `kanz_users` via Neon's SQL Editor, or in bulk
+-with a small script — see the "Migrating an old account" section in project
+-history/issues for the exact column mapping (`username | password_hash |
+-created_at | data_json | history_json`). Old password hashes are preserved
+-in the `legacy_hash` column and upgraded to bcrypt automatically on first
+-login.
+diff --git a/backend/backend/scripts/reset-password.js b/backend/backend/scripts/reset-password.js
+deleted file mode 100644
+index 0d64743..0000000
+--- a/backend/backend/scripts/reset-password.js
++++ /dev/null
+@@ -1,39 +0,0 @@
+-#!/usr/bin/env node
+-/**
+- * Emergency password reset — run this on your own machine when a user forgets
+- * their password. Requires DATABASE_URL and JWT_SECRET in the environment.
+- *
+- * Usage:
+- *   node scripts/reset-password.js <username> <newPassword>
+- */
+-require("dotenv").config();
+-const { hashPassword } = require("../lib/auth");
+-const pool = require("../db/pool");
+-
+-async function main() {
+-  const [, , username, newPassword] = process.argv;
+-  if (!username || !newPassword) {
+-    console.error("Usage: node scripts/reset-password.js <username> <newPassword>");
+-    process.exit(1);
+-  }
+-  if (newPassword.length < 12) {
+-    console.error("Password must be at least 12 characters.");
+-    process.exit(1);
+-  }
+-  const { rows } = await pool.query("SELECT 1 FROM kanz_users WHERE username = $1", [username]);
+-  if (rows.length === 0) {
+-    console.error(`User "${username}" not found.`);
+-    process.exit(1);
+-  }
+-  const hash = await hashPassword(newPassword);
+-  await pool.query("UPDATE kanz_users SET password_hash = $1, legacy_hash = NULL WHERE username = $2", [
+-    hash,
+-    username,
+-  ]);
+-  console.log(`Password for "${username}" updated successfully.`);
+-  await pool.end();
+-}
+-main().catch((err) => {
+-  console.error("Error:", err.message);
+-  process.exit(1);
+-});
+diff --git a/backend/db/init.js b/backend/db/init.js
+index 52f7687..e2ea22f 100644
+--- a/backend/db/init.js
++++ b/backend/db/init.js
+@@ -4,10 +4,6 @@ const pool = require("./pool");
+  * Creates the users table if it doesn't exist, and applies additive
+  * migrations (safe to run on every cold start — all statements are
+  * idempotent).
+- *
+- * legacy_hash: holds a SHA-256 password hash for accounts imported from the
+- * legacy Google Apps Script version. Cleared automatically the first time
+- * that user logs in successfully (see routes/auth.js).
+  */
+ async function initDb() {
+   await pool.query(`
+@@ -15,13 +11,15 @@ async function initDb() {
+       id            SERIAL PRIMARY KEY,
+       username      TEXT UNIQUE NOT NULL,
+       password_hash TEXT,
+-      legacy_hash   TEXT,
+       created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+       data          JSONB NOT NULL DEFAULT '{}'::jsonb,
+       history       JSONB NOT NULL DEFAULT '[]'::jsonb
+     );
+   `);
+-  await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS legacy_hash TEXT;`);
++  // One-time cleanup: drops the old Apps-Script-era legacy_hash column, now
++  // that every account has logged in at least once since the bcrypt upgrade
++  // (see git history if this ever needs to come back).
++  await pool.query(`ALTER TABLE kanz_users DROP COLUMN IF EXISTS legacy_hash;`);
+   await pool.query(`ALTER TABLE kanz_users ALTER COLUMN password_hash DROP NOT NULL;`);
+ 
+   // Net money the user manually added/withdrew in a period (e.g. "salary minus
+diff --git a/backend/lib/auth.js b/backend/lib/auth.js
+index 0c8fef9..0336442 100644
+--- a/backend/lib/auth.js
++++ b/backend/lib/auth.js
+@@ -6,9 +6,6 @@ const env = require("../config/env");
+ const hashPassword = (password) => bcrypt.hash(password, 10);
+ const comparePassword = (password, hash) => bcrypt.compare(password, hash);
+ 
+-/** Matches the legacy Apps Script hashing scheme (unsalted SHA-256 hex). */
+-const sha256HexLegacy = (password) => crypto.createHash("sha256").update(password, "utf8").digest("hex");
+-
+ /** Issues a stateless JWT. No server-side session storage needed. */
+ function issueToken(username) {
+   const expiresInSec = env.rememberTokenDays * 24 * 60 * 60;
+@@ -44,7 +41,6 @@ function safeEqual(a, b) {
+ module.exports = {
+   hashPassword,
+   comparePassword,
+-  sha256HexLegacy,
+   issueToken,
+   verifyTokenValue,
+   requireAuth,
+diff --git a/backend/package.json b/backend/package.json
+index acc62bc..c054c45 100644
+--- a/backend/package.json
++++ b/backend/package.json
+@@ -6,7 +6,7 @@
+   "scripts": {
+     "start": "node server.js",
+     "dev": "node --watch server.js",
+-    "test": "node --test test/",
++    "test": "node --test",
+     "lint": "eslint ."
+   },
+   "dependencies": {
+diff --git a/backend/routes/auth.js b/backend/routes/auth.js
+index 3aad302..4ca96da 100644
+--- a/backend/routes/auth.js
++++ b/backend/routes/auth.js
+@@ -1,14 +1,7 @@
+ const express = require("express");
+ const rateLimit = require("express-rate-limit");
+ const pool = require("../db/pool");
+-const {
+-  hashPassword,
+-  comparePassword,
+-  sha256HexLegacy,
+-  issueToken,
+-  verifyTokenValue,
+-  requireAuth,
+-} = require("../lib/auth");
++const { hashPassword, comparePassword, issueToken, verifyTokenValue, requireAuth } = require("../lib/auth");
+ const { defaultUserData } = require("../lib/rates");
+ const { generateOtp, storeOtp, verifyAndConsumeOtp } = require("../lib/otp");
+ const { sendOtpEmail } = require("../lib/email");
+@@ -76,25 +69,11 @@ router.post("/login", async (req, res) => {
+     const password = req.body.password || "";
+     if (!username || !password) return fail(res, "enterCredentials");
+ 
+-    const { rows } = await pool.query("SELECT password_hash, legacy_hash FROM kanz_users WHERE username = $1", [
+-      username,
+-    ]);
++    const { rows } = await pool.query("SELECT password_hash FROM kanz_users WHERE username = $1", [username]);
+     if (rows.length === 0) return fail(res, "usernameNotFound");
+ 
+-    const { password_hash, legacy_hash } = rows[0];
+-    let match = password_hash ? await comparePassword(password, password_hash) : false;
+-
+-    // Account migrated from the legacy Google Apps Script version — verify against
+-    // the old SHA-256 hash once, then transparently upgrade to bcrypt.
+-    if (!match && legacy_hash && sha256HexLegacy(password) === legacy_hash) {
+-      match = true;
+-      const upgraded = await hashPassword(password);
+-      await pool.query("UPDATE kanz_users SET password_hash = $1, legacy_hash = NULL WHERE username = $2", [
+-        upgraded,
+-        username,
+-      ]);
+-    }
+-
++    const { password_hash } = rows[0];
++    const match = password_hash ? await comparePassword(password, password_hash) : false;
+     if (!match) return fail(res, "wrongPassword");
+ 
+     const { token, expiresAt } = issueToken(username);
+@@ -158,10 +137,7 @@ router.post("/reset-password", resetLimiter, async (req, res) => {
+     if (!check.ok) return fail(res, check.error);
+ 
+     const passwordHash = await hashPassword(newPassword);
+-    await pool.query("UPDATE kanz_users SET password_hash = $1, legacy_hash = NULL WHERE username = $2", [
+-      passwordHash,
+-      username,
+-    ]);
++    await pool.query("UPDATE kanz_users SET password_hash = $1 WHERE username = $2", [passwordHash, username]);
+ 
+     // Log the user straight in, same as signup/login, so they don't have to
+     // re-enter the password they just set.
+diff --git a/backend/scripts/reset-password.js b/backend/scripts/reset-password.js
+index 0d64743..bb1ec06 100644
+--- a/backend/scripts/reset-password.js
++++ b/backend/scripts/reset-password.js
+@@ -26,10 +26,7 @@ async function main() {
+     process.exit(1);
+   }
+   const hash = await hashPassword(newPassword);
+-  await pool.query("UPDATE kanz_users SET password_hash = $1, legacy_hash = NULL WHERE username = $2", [
+-    hash,
+-    username,
+-  ]);
++  await pool.query("UPDATE kanz_users SET password_hash = $1 WHERE username = $2", [hash, username]);
+   console.log(`Password for "${username}" updated successfully.`);
+   await pool.end();
+ }
+diff --git a/backend/test/auth.test.js b/backend/test/auth.test.js
+index ece92f8..31fe072 100644
+--- a/backend/test/auth.test.js
++++ b/backend/test/auth.test.js
+@@ -4,14 +4,7 @@ process.env.REMEMBER_TOKEN_DAYS = process.env.REMEMBER_TOKEN_DAYS || "7";
+ 
+ const test = require("node:test");
+ const assert = require("node:assert/strict");
+-const {
+-  hashPassword,
+-  comparePassword,
+-  sha256HexLegacy,
+-  issueToken,
+-  verifyTokenValue,
+-  safeEqual,
+-} = require("../lib/auth");
++const { hashPassword, comparePassword, issueToken, verifyTokenValue, safeEqual } = require("../lib/auth");
+ 
+ test("hashPassword/comparePassword: round-trips correctly", async () => {
+   const hash = await hashPassword("correct horse battery staple");
+@@ -19,12 +12,6 @@ test("hashPassword/comparePassword: round-trips correctly", async () => {
+   assert.equal(await comparePassword("wrong password", hash), false);
+ });
+ 
+-test("sha256HexLegacy: matches the known legacy Apps Script hashing scheme", () => {
+-  // Known SHA-256 hex digest of the literal string "password" (unsalted, utf8) —
+-  // this is a fixed vector, not something that should ever change.
+-  assert.equal(sha256HexLegacy("password"), "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8");
+-});
+-
+ test("issueToken/verifyTokenValue: round-trips the username", () => {
+   const { token, expiresAt } = issueToken("ahmed123");
+   assert.equal(verifyTokenValue(token), "ahmed123");
+diff --git a/contributions.js b/contributions.js
+deleted file mode 100644
+index 799bc91..0000000
+--- a/contributions.js
++++ /dev/null
+@@ -1,310 +0,0 @@
+-// ── Contributions — full-screen yearly grid ───────────────────────────
+-// Replaces the old small modal. Shows a 4×3 grid of all 12 months of the
+-// current year. Each cell has two rows:
+-//   + income (green)  — money that came IN this month (salary, bonus, etc.)
+-//   - expenses (red)  — money that went OUT (spent, withdrawn)
+-// The net (income − expenses) is what gets passed to helpers.js so growth
+-// calculations can subtract it from raw wealth deltas.
+-
+-// ── State ──
+-// Each contribution entry now has:
+-//   { date, type: "income"|"expense", amountUsd, note }
+-// The server/backend model stays the same (stores any amountUsd — positive
+-// or negative) so old net entries still display; new UI writes two separate
+-// signed entries instead.
+-
+-function openContribModal() {
+-  contribModalOpen = true;
+-  render();
+-}
+-
+-function closeContribModal() {
+-  contribModalOpen = false;
+-  render();
+-}
+-
+-function loadContributions() {
+-  if (!currentUser) return;
+-  rpc.run
+-    .withSuccessHandler(function (j) {
+-      if (j && j.ok && Array.isArray(j.contributions)) {
+-        contributionsData = j.contributions.sort((a, b) => a.date.localeCompare(b.date));
+-      }
+-      render();
+-    })
+-    .withFailureHandler(function (err) {
+-      console.error("loadContributions:", err);
+-    })
+-    .loadContributionsForClient(currentUser, sessionToken);
+-}
+-
+-// ── Helpers ──
+-
+-const MONTH_NAMES_AR = [
+-  "يناير",
+-  "فبراير",
+-  "مارس",
+-  "أبريل",
+-  "مايو",
+-  "يونيو",
+-  "يوليو",
+-  "أغسطس",
+-  "سبتمبر",
+-  "أكتوبر",
+-  "نوفمبر",
+-  "ديسمبر",
+-];
+-const MONTH_NAMES_EN = [
+-  "January",
+-  "February",
+-  "March",
+-  "April",
+-  "May",
+-  "June",
+-  "July",
+-  "August",
+-  "September",
+-  "October",
+-  "November",
+-  "December",
+-];
+-
+-function monthLabel(m0) {
+-  // m0 is 0-indexed
+-  return lang === "ar" ? MONTH_NAMES_AR[m0] : MONTH_NAMES_EN[m0];
+-}
+-
+-// Returns {income, expense, net} for YYYY-MM
+-function monthSummary(yearMonth) {
+-  let income = 0,
+-    expense = 0;
+-  (contributionsData || []).forEach((c) => {
+-    if (!c.date.startsWith(yearMonth)) return;
+-    // Support both old-style net entries (amountUsd positive=income, negative=expense)
+-    // and new-style entries with explicit type field.
+-    const amt = parseFloat(c.amountUsd) || 0;
+-    if (c.type === "income" || (!c.type && amt > 0)) income += Math.abs(amt);
+-    else if (c.type === "expense" || (!c.type && amt < 0)) expense += Math.abs(amt);
+-  });
+-  return { income, expense, net: income - expense };
+-}
+-
+-// ── Save a single entry ──
+-function saveContribEntry(yearMonth, type, rawAmt, note, onDone) {
+-  const amt = Math.abs(parseFloat(rawAmt) || 0);
+-  if (!amt) {
+-    onDone && onDone("errContribAmount");
+-    return;
+-  }
+-  // Use first of the month as key, keep type in the entry for display
+-  const date = yearMonth + "-01";
+-  const amountUsd = type === "expense" ? -amt : amt;
+-  rpc.run
+-    .withSuccessHandler(function (j) {
+-      if (j && j.ok) {
+-        loadContributions();
+-        onDone && onDone(null);
+-      } else onDone && onDone(j?.error || "genericError");
+-    })
+-    .withFailureHandler(function () {
+-      onDone && onDone("connectionError");
+-    })
+-    .addContribution(currentUser, { date, amountUsd, note: note || "", type }, sessionToken);
+-}
+-
+-function deleteContrib(date) {
+-  rpc.run
+-    .withSuccessHandler(function (j) {
+-      if (j && j.ok) loadContributions();
+-    })
+-    .withFailureHandler(function (err) {
+-      console.error("deleteContrib:", err);
+-    })
+-    .deleteContribution(currentUser, date, sessionToken);
+-}
+-
+-// ── Per-cell inline editor ──
+-// We keep a tiny piece of ephemeral state in a global so the full render()
+-// cycle can show an expanded input row inside the right cell.
+-let _editingCell = null; // "YYYY-MM:income" | "YYYY-MM:expense" | null
+-let _editErr = null;
+-
+-function openCellEditor(yearMonth, type) {
+-  _editingCell = yearMonth + ":" + type;
+-  _editErr = null;
+-  render();
+-  setTimeout(() => {
+-    const el = document.getElementById("contrib-cell-input");
+-    if (el) el.focus();
+-  }, 40);
+-}
+-
+-function closeCellEditor() {
+-  _editingCell = null;
+-  _editErr = null;
+-  render();
+-}
+-
+-function submitCellEntry(ev, yearMonth, type) {
+-  ev.preventDefault();
+-  const inp = document.getElementById("contrib-cell-input");
+-  const noteInp = document.getElementById("contrib-cell-note");
+-  const amt = inp ? inp.value : "";
+-  const note = noteInp ? noteInp.value : "";
+-  saveContribEntry(yearMonth, type, amt, note, function (err) {
+-    if (err) {
+-      _editErr = err;
+-      render();
+-    } else {
+-      _editingCell = null;
+-      _editErr = null;
+-    }
+-  });
+-}
+-
+-// ── Render a single month card ──
+-function renderMonthCard(year, m0) {
+-  const m1 = String(m0 + 1).padStart(2, "0");
+-  const yearMonth = year + "-" + m1;
+-  const { income, expense, net } = monthSummary(yearMonth);
+-
+-  const isCurrentMonth = new Date().getFullYear() === year && new Date().getMonth() === m0;
+-  const netColor = net >= 0 ? "var(--wt-green)" : "var(--wt-red)";
+-  const netSign = net >= 0 ? "+" : "";
+-  const hasData = income > 0 || expense > 0;
+-
+-  const borderStyle = isCurrentMonth ? "border:1.5px solid var(--wt-gold-dim)" : "border:1px solid var(--wt-line)";
+-
+-  // Entries for this month (for the per-entry delete list)
+-  const monthEntries = (contributionsData || []).filter((c) => c.date.startsWith(yearMonth));
+-
+-  const editingIncome = _editingCell === yearMonth + ":income";
+-  const editingExpense = _editingCell === yearMonth + ":expense";
+-
+-  function rowHTML(type, amount, color, icon, labelKey) {
+-    const editing = _editingCell === yearMonth + ":" + type;
+-    const amtDisplay =
+-      amount > 0
+-        ? `<span style="color:${color};font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600">${icon}${fmtUsd(amount)}</span>`
+-        : `<span style="color:var(--wt-text-dim);font-size:10px;opacity:0.5">${t(labelKey)}</span>`;
+-
+-    if (editing) {
+-      return `
+-        <form onsubmit="submitCellEntry(event,'${yearMonth}','${type}')" style="margin:4px 0">
+-          <div style="display:flex;gap:4px;align-items:center">
+-            <input id="contrib-cell-input" type="number" step="any" min="0"
+-              placeholder="0.00" dir="ltr"
+-              style="width:80px;padding:3px 6px;border-radius:6px;
+-                     border:1px solid var(--wt-line-strong);background:var(--wt-bg);
+-                     color:var(--wt-text);font-size:12px;font-family:'JetBrains Mono',monospace">
+-            <button type="submit" class="wt-btn" style="padding:2px 8px;font-size:11px">${t("add")}</button>
+-            <button type="button" class="wt-btn-ghost" style="padding:2px 6px;font-size:11px" onclick="closeCellEditor()">✕</button>
+-          </div>
+-          <input id="contrib-cell-note" type="text" maxlength="100"
+-            placeholder="${t("contribNotePh")}"
+-            style="margin-top:3px;width:100%;padding:2px 6px;border-radius:5px;
+-                   border:1px solid var(--wt-line);background:var(--wt-bg);
+-                   color:var(--wt-text);font-size:10px">
+-          ${_editErr ? `<p style="color:var(--wt-red);font-size:10px;margin:2px 0 0">${t(_editErr) || _editErr}</p>` : ""}
+-        </form>`;
+-    }
+-    return `
+-      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;
+-                  padding:2px 0;border-radius:4px"
+-           onclick="openCellEditor('${yearMonth}','${type}')">
+-        ${amtDisplay}
+-        <span style="font-size:10px;color:var(--wt-text-dim);opacity:0.6;padding-left:4px">+</span>
+-      </div>`;
+-  }
+-
+-  // Compact entry list (for deleting old entries)
+-  const entryList =
+-    monthEntries.length > 0
+-      ? `
+-    <div style="margin-top:6px;border-top:1px solid var(--wt-line);padding-top:5px">
+-      ${monthEntries
+-        .map((c) => {
+-          const pos = (parseFloat(c.amountUsd) || 0) >= 0;
+-          return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;
+-                             color:var(--wt-text-dim);padding:1px 0">
+-          <span style="color:${pos ? "var(--wt-green)" : "var(--wt-red)"}">
+-            ${pos ? "▲" : "▼"} ${fmtUsd(Math.abs(parseFloat(c.amountUsd) || 0))}
+-          </span>
+-          ${c.note ? `<span style="opacity:0.7;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.note)}</span>` : ""}
+-          <button onclick="deleteContrib('${esc(c.date)}')"
+-            style="background:none;border:none;cursor:pointer;color:var(--wt-red);
+-                   font-size:10px;padding:0 2px;line-height:1">×</button>
+-        </div>`;
+-        })
+-        .join("")}
+-    </div>`
+-      : "";
+-
+-  return `
+-    <div style="border-radius:var(--wt-radius);${borderStyle};
+-                background:rgba(255,255,255,0.02);padding:12px 12px 10px;
+-                display:flex;flex-direction:column;gap:4px;position:relative;
+-                min-height:100px;transition:border-color .2s">
+-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+-        <span style="font-size:12px;font-weight:600;color:${isCurrentMonth ? "var(--wt-gold)" : "var(--wt-text)"}">
+-          ${monthLabel(m0)}
+-        </span>
+-        ${hasData ? `<span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:${netColor}">${netSign}${fmtUsd(Math.abs(net))}</span>` : ""}
+-      </div>
+-
+-      ${rowHTML("income", income, "var(--wt-green)", "▲ ", "contribIncomeLabel")}
+-      ${rowHTML("expense", expense, "var(--wt-red)", "▼ ", "contribExpenseLabel")}
+-
+-      ${entryList}
+-    </div>`;
+-}
+-
+-// ── Full-screen overlay ──
+-function renderContribModal() {
+-  const year = new Date().getFullYear();
+-  const months = Array.from({ length: 12 }, (_, i) => i);
+-
+-  // Year-level totals
+-  const yearIncome = months.reduce((s, m) => s + monthSummary(year + "-" + String(m + 1).padStart(2, "0")).income, 0);
+-  const yearExpense = months.reduce((s, m) => s + monthSummary(year + "-" + String(m + 1).padStart(2, "0")).expense, 0);
+-  const yearNet = yearIncome - yearExpense;
+-  const netColor = yearNet >= 0 ? "var(--wt-green)" : "var(--wt-red)";
+-
+-  return `
+-  <div class="wt-contrib-fullscreen">
+-    <div class="wt-contrib-fs-inner">
+-
+-      <!-- header -->
+-      <div class="wt-contrib-fs-header">
+-        <div>
+-          <h2 style="margin:0;font-size:18px;font-weight:700">${year} — ${t("contribScreenTitle")}</h2>
+-          <p style="margin:4px 0 0;font-size:12px;color:var(--wt-text-dim)">${t("contribScreenHint")}</p>
+-        </div>
+-        <div style="display:flex;gap:24px;align-items:flex-end">
+-          <div style="text-align:center">
+-            <div style="font-size:10px;color:var(--wt-text-dim);margin-bottom:2px">${t("contribTotalIncome")}</div>
+-            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--wt-green)">▲ ${fmtUsd(yearIncome)}</div>
+-          </div>
+-          <div style="text-align:center">
+-            <div style="font-size:10px;color:var(--wt-text-dim);margin-bottom:2px">${t("contribTotalExpense")}</div>
+-            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--wt-red)">▼ ${fmtUsd(yearExpense)}</div>
+-          </div>
+-          <div style="text-align:center">
+-            <div style="font-size:10px;color:var(--wt-text-dim);margin-bottom:2px">${t("contribTotalNet")}</div>
+-            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:${netColor}">${yearNet >= 0 ? "+" : ""}${fmtUsd(yearNet)}</div>
+-          </div>
+-          <button class="wt-btn-ghost" style="align-self:center" onclick="closeContribModal()">✕ ${t("close")}</button>
+-        </div>
+-      </div>
+-
+-      <!-- 4×3 grid -->
+-      <div class="wt-contrib-grid">
+-        ${months.map((m) => renderMonthCard(year, m)).join("")}
+-      </div>
+-
+-      <p style="font-size:11px;color:var(--wt-text-dim);margin-top:12px;text-align:center">
+-        ${t("contribClickHint")}
+-      </p>
+-    </div>
+-  </div>`;
+-}
+diff --git a/kanz-7fixes-grid.patch b/kanz-7fixes-grid.patch
+deleted file mode 100644
+index 9c81333..0000000
+--- a/kanz-7fixes-grid.patch
++++ /dev/null
+@@ -1,1024 +0,0 @@
+-diff --git a/backend/config/env.js b/backend/config/env.js
+-index d331b81..3f5e415 100644
+---- a/backend/config/env.js
+-+++ b/backend/config/env.js
+-@@ -16,7 +16,7 @@ const env = {
+-   jwtSecret: required("JWT_SECRET"),
+-   cronSecret: process.env.CRON_SECRET || null,
+-   frontendOrigin: process.env.FRONTEND_ORIGIN || "*",
+--  rememberTokenDays: parseInt(process.env.REMEMBER_TOKEN_DAYS || "7", 10),
+-+  rememberTokenDays: parseInt(process.env.REMEMBER_TOKEN_DAYS || "1", 10),
+-   port: parseInt(process.env.PORT || "3000", 10),
+-   apiLayerKey: process.env.APILAYER_KEY || null,
+- };
+-diff --git a/backend/db/init.js b/backend/db/init.js
+-index 8a140e1..68917ff 100644
+---- a/backend/db/init.js
+-+++ b/backend/db/init.js
+-@@ -24,6 +24,12 @@ async function initDb() {
+-   await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS legacy_hash TEXT;`);
+-   await pool.query(`ALTER TABLE kanz_users ALTER COLUMN password_hash DROP NOT NULL;`);
+- 
+-+  // Net money the user manually added/withdrew in a period (e.g. "salary minus
+-+  // expenses this month"). Kept separate from `history` so the growth
+-+  // calculations on the client can tell "I added money" apart from "what I
+-+  // already had grew in value" — see docs/js/helpers.js computeGrowth().
+-+  await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS contributions JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+-+
+-   // Small durable key/value cache, currently used to remember the last
+-   // successfully-fetched gold price so a live API outage degrades gracefully
+-   // instead of failing the whole daily snapshot (see lib/rates.js).
+-diff --git a/backend/lib/rates.js b/backend/lib/rates.js
+-index 752f1fe..a0cd2c1 100644
+---- a/backend/lib/rates.js
+-+++ b/backend/lib/rates.js
+-@@ -67,8 +67,14 @@ async function fetchGoldUsdPerOunce() {
+-   try {
+-     const res = await fetch("https://api.gold-api.com/price/XAU");
+-     const json = await res.json();
+--    const price = json.price ?? json.rate ?? json.value;
+--    if (typeof price === "number" && price > 0) return price;
+-+    // Prefer `price`, fall back to `rate` / `value` — field names have varied
+-+    // across gold-api.com responses over time. Guard with isFinite and a
+-+    // plausibility range ($500–$15 000/oz) so a malformed response (e.g.
+-+    // the API returning 0 or a string) doesn't corrupt every user's snapshot.
+-+    const raw = json?.price ?? json?.rate ?? json?.value;
+-+    const price = typeof raw === "string" ? parseFloat(raw) : raw;
+-+    if (Number.isFinite(price) && price > 500 && price < 15000) return price;
+-+    console.warn("fetchGoldUsdPerOunce: primary source returned unexpected value:", raw);
+-   } catch (err) {
+-     console.warn("fetchGoldUsdPerOunce: primary source (gold-api.com) failed:", err.message);
+-   }
+-@@ -77,8 +83,10 @@ async function fetchGoldUsdPerOunce() {
+-     // goldprice.org's public data feed — unofficial, but free and keyless.
+-     const res = await fetch("https://data-asg.goldprice.org/dbXRates/USD");
+-     const json = await res.json();
+--    const price = json?.items?.[0]?.xauPrice;
+--    if (typeof price === "number" && price > 0) return price;
+-+    const raw = json?.items?.[0]?.xauPrice;
+-+    const price = typeof raw === "string" ? parseFloat(raw) : raw;
+-+    if (Number.isFinite(price) && price > 500 && price < 15000) return price;
+-+    console.warn("fetchGoldUsdPerOunce: fallback source returned unexpected value:", raw);
+-   } catch (err) {
+-     console.warn("fetchGoldUsdPerOunce: fallback source (goldprice.org) failed:", err.message);
+-   }
+-diff --git a/backend/lib/validate.js b/backend/lib/validate.js
+-new file mode 100644
+-index 0000000..c2847cd
+---- /dev/null
+-+++ b/backend/lib/validate.js
+-@@ -0,0 +1,70 @@
+-+/**
+-+ * Minimal schema validation — avoids a heavy Zod/Joi dependency while still
+-+ * giving every route a single source of truth for its expected shape.
+-+ *
+-+ * Usage:
+-+ *   const { ok, errors } = validate(req.body, {
+-+ *     date:      { type: "string", match: /^\d{4}-\d{2}-\d{2}$/ },
+-+ *     amountUsd: { type: "number", finite: true, nonzero: true },
+-+ *     note:      { type: "string", optional: true, maxLength: 200 },
+-+ *   });
+-+ *   if (!ok) return res.json({ ok: false, error: errors[0] });
+-+ */
+-+
+-+/**
+-+ * @param {unknown} body
+-+ * @param {Record<string, {
+-+ *   type?: "string"|"number"|"boolean",
+-+ *   optional?: boolean,
+-+ *   match?: RegExp,
+-+ *   minLength?: number,
+-+ *   maxLength?: number,
+-+ *   finite?: boolean,
+-+ *   nonzero?: boolean,
+-+ *   min?: number,
+-+ *   max?: number,
+-+ * }>} schema
+-+ * @returns {{ ok: boolean, errors: string[] }}
+-+ */
+-+function validate(body, schema) {
+-+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+-+    return { ok: false, errors: ["invalidBody"] };
+-+  }
+-+  const errors = [];
+-+  for (const [key, rules] of Object.entries(schema)) {
+-+    const val = body[key];
+-+    const missing = val === undefined || val === null || val === "";
+-+    if (missing) {
+-+      if (!rules.optional) errors.push(`missing:${key}`);
+-+      continue;
+-+    }
+-+    if (rules.type && typeof val !== rules.type) {
+-+      errors.push(`type:${key}`);
+-+      continue;
+-+    }
+-+    if (rules.match && typeof val === "string" && !rules.match.test(val)) {
+-+      errors.push(`format:${key}`);
+-+    }
+-+    if (rules.minLength !== undefined && typeof val === "string" && val.length < rules.minLength) {
+-+      errors.push(`tooShort:${key}`);
+-+    }
+-+    if (rules.maxLength !== undefined && typeof val === "string" && val.length > rules.maxLength) {
+-+      errors.push(`tooLong:${key}`);
+-+    }
+-+    if (rules.finite && typeof val === "number" && !Number.isFinite(val)) {
+-+      errors.push(`notFinite:${key}`);
+-+    }
+-+    if (rules.nonzero && typeof val === "number" && val === 0) {
+-+      errors.push(`zero:${key}`);
+-+    }
+-+    if (rules.min !== undefined && typeof val === "number" && val < rules.min) {
+-+      errors.push(`tooSmall:${key}`);
+-+    }
+-+    if (rules.max !== undefined && typeof val === "number" && val > rules.max) {
+-+      errors.push(`tooBig:${key}`);
+-+    }
+-+  }
+-+  return { ok: errors.length === 0, errors };
+-+}
+-+
+-+module.exports = { validate };
+-diff --git a/backend/routes/auth.js b/backend/routes/auth.js
+-index f2f02f9..144f6ed 100644
+---- a/backend/routes/auth.js
+-+++ b/backend/routes/auth.js
+-@@ -22,7 +22,7 @@ router.post("/signup", async (req, res) => {
+-     const password = req.body.password || "";
+- 
+-     if (username.length < 3) return fail(res, "usernameTooShort");
+--    if (password.length < 8) return fail(res, "passwordTooShort");
+-+    if (password.length < 12) return fail(res, "passwordTooShort");
+- 
+-     const exists = await pool.query("SELECT 1 FROM kanz_users WHERE username = $1", [username]);
+-     if (exists.rows.length > 0) return fail(res, "usernameTaken");
+-@@ -79,10 +79,14 @@ router.post("/login", async (req, res) => {
+- });
+- 
+- // Used by the client to silently re-validate a saved "remember me" token.
+-+// Returns a freshly-signed token so the 1-day expiry effectively auto-renews
+-+// on every page load — the user only gets logged out if they stay away for
+-+// more than one full day without opening the app.
+- router.post("/verify", (req, res) => {
+-   const username = verifyTokenValue(req.body.token || "");
+-   if (!username) return fail(res, "tokenInvalid");
+--  res.json({ ok: true, username });
+-+  const { token, expiresAt } = issueToken(username);
+-+  res.json({ ok: true, username, token, expiresAt });
+- });
+- 
+- // The router remains the default export used by app.js. cleanUsername is
+-diff --git a/backend/routes/data.js b/backend/routes/data.js
+-index de03e80..fe47472 100644
+---- a/backend/routes/data.js
+-+++ b/backend/routes/data.js
+-@@ -1,8 +1,14 @@
+- const express = require("express");
+-+const rateLimit = require("express-rate-limit");
+- const pool = require("../db/pool");
+- const { requireAuth } = require("../lib/auth");
+--
+-+const { validate } = require("../lib/validate");
+- const router = express.Router();
+-+
+-+// All /api/data, /api/history, /api/contributions endpoints are auth-gated;
+-+// this limiter is a second layer against token-leakage abuse — 100 reqs / 15 min.
+-+router.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 100, standardHeaders: true, legacyHeaders: false }));
+-+
+- // IMPORTANT: this router is mounted at "/api" in app.js, and requireAuth below
+- // applies to every path that reaches it. It must be the LAST "/api"-mounted
+- // router in app.js, after any public routes (cron, rates) — otherwise those
+-@@ -108,7 +114,13 @@ router.post("/history", async (req, res) => {
+-   idx >= 0 ? (history[idx] = snapshot) : history.push(snapshot);
+-   history.sort((a, b) => a.date.localeCompare(b.date));
+- 
+--  await pool.query("UPDATE kanz_users SET history = $1 WHERE username = $2", [JSON.stringify(history), req.username]);
+-+  // Keep the most recent 730 daily snapshots (2 years). The array is already
+-+  // sorted ascending, so slicing from the end gives the newest entries.
+-+  // This caps the JSONB column size so GET /history never returns an
+-+  // unbounded payload even for very old accounts.
+-+  const trimmed = history.length > 730 ? history.slice(-730) : history;
+-+
+-+  await pool.query("UPDATE kanz_users SET history = $1 WHERE username = $2", [JSON.stringify(trimmed), req.username]);
+-   res.json({ ok: true });
+- });
+- 
+-@@ -124,7 +136,68 @@ router.delete("/history", async (req, res) => {
+-   res.json({ ok: true, history });
+- });
+- 
+--// The router remains the default export used by app.js. isFiniteNumberMap is
+--// attached as a property purely so it can be unit tested in isolation.
+-+// ── Contributions (net money manually added/withdrawn in a period) ─────
+-+// Kept as their own table column (not mixed into `history`) so the client can
+-+// subtract them from a wealth delta and isolate "real" growth — i.e. how much
+-+// existing assets moved in value, separate from money the user simply added.
+-+async function getContributionsRow(username) {
+-+  const { rows } = await pool.query("SELECT contributions FROM kanz_users WHERE username = $1", [username]);
+-+  return rows[0] || null;
+-+}
+-+
+-+const isValidDateStr = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
+-+
+-+router.get("/contributions", async (req, res) => {
+-+  const user = await getContributionsRow(req.username);
+-+  if (!user) return res.json({ ok: false, error: "userNotFound" });
+-+  res.json({ ok: true, contributions: user.contributions || [] });
+-+});
+-+
+-+router.post("/contributions", async (req, res) => {
+-+  const { ok, errors } = validate(req.body, {
+-+    date: { type: "string", match: /^\d{4}-\d{2}-\d{2}$/ },
+-+    amountUsd: { type: "number", finite: true, nonzero: true },
+-+    note: { type: "string", optional: true, maxLength: 200 },
+-+  });
+-+  if (!ok) return res.json({ ok: false, error: errors[0] || "invalidData" });
+-+
+-+  const { date, amountUsd, note } = req.body;
+-+
+-+  const user = await getContributionsRow(req.username);
+-+  if (!user) return res.json({ ok: false, error: "userNotFound" });
+-+
+-+  // One contribution entry per date — logging the same date again (e.g. the
+-+  // user corrects a typo) replaces it rather than creating a duplicate.
+-+  const contributions = user.contributions || [];
+-+  const entry = { date, amountUsd, note: typeof note === "string" ? note.slice(0, 200) : "" };
+-+  const idx = contributions.findIndex((c) => c.date === date);
+-+  idx >= 0 ? (contributions[idx] = entry) : contributions.push(entry);
+-+  contributions.sort((a, b) => a.date.localeCompare(b.date));
+-+
+-+  await pool.query("UPDATE kanz_users SET contributions = $1 WHERE username = $2", [
+-+    JSON.stringify(contributions),
+-+    req.username,
+-+  ]);
+-+  res.json({ ok: true });
+-+});
+-+
+-+router.delete("/contributions", async (req, res) => {
+-+  const date = req.body.date;
+-+  if (!isValidDateStr(date)) return res.json({ ok: false, error: "invalidDate" });
+-+
+-+  const user = await getContributionsRow(req.username);
+-+  if (!user) return res.json({ ok: false, error: "userNotFound" });
+-+
+-+  const contributions = (user.contributions || []).filter((c) => c.date !== date);
+-+  await pool.query("UPDATE kanz_users SET contributions = $1 WHERE username = $2", [
+-+    JSON.stringify(contributions),
+-+    req.username,
+-+  ]);
+-+  res.json({ ok: true, contributions });
+-+});
+-+
+-+// The router remains the default export used by app.js. isFiniteNumberMap and
+-+// isValidDateStr are attached as properties purely so they can be unit tested in isolation.
+- module.exports = router;
+- module.exports.isFiniteNumberMap = isFiniteNumberMap;
+-+module.exports.isValidDateStr = isValidDateStr;
+-diff --git a/backend/scripts/reset-password.js b/backend/scripts/reset-password.js
+-new file mode 100644
+-index 0000000..0d64743
+---- /dev/null
+-+++ b/backend/scripts/reset-password.js
+-@@ -0,0 +1,39 @@
+-+#!/usr/bin/env node
+-+/**
+-+ * Emergency password reset — run this on your own machine when a user forgets
+-+ * their password. Requires DATABASE_URL and JWT_SECRET in the environment.
+-+ *
+-+ * Usage:
+-+ *   node scripts/reset-password.js <username> <newPassword>
+-+ */
+-+require("dotenv").config();
+-+const { hashPassword } = require("../lib/auth");
+-+const pool = require("../db/pool");
+-+
+-+async function main() {
+-+  const [, , username, newPassword] = process.argv;
+-+  if (!username || !newPassword) {
+-+    console.error("Usage: node scripts/reset-password.js <username> <newPassword>");
+-+    process.exit(1);
+-+  }
+-+  if (newPassword.length < 12) {
+-+    console.error("Password must be at least 12 characters.");
+-+    process.exit(1);
+-+  }
+-+  const { rows } = await pool.query("SELECT 1 FROM kanz_users WHERE username = $1", [username]);
+-+  if (rows.length === 0) {
+-+    console.error(`User "${username}" not found.`);
+-+    process.exit(1);
+-+  }
+-+  const hash = await hashPassword(newPassword);
+-+  await pool.query("UPDATE kanz_users SET password_hash = $1, legacy_hash = NULL WHERE username = $2", [
+-+    hash,
+-+    username,
+-+  ]);
+-+  console.log(`Password for "${username}" updated successfully.`);
+-+  await pool.end();
+-+}
+-+main().catch((err) => {
+-+  console.error("Error:", err.message);
+-+  process.exit(1);
+-+});
+-diff --git a/backend/test/routes.test.js b/backend/test/routes.test.js
+-index f38d69c..38c6f2f 100644
+---- a/backend/test/routes.test.js
+-+++ b/backend/test/routes.test.js
+-@@ -39,3 +39,11 @@ test("isCairoTargetHour: matches only when Africa/Cairo's local hour is the targ
+-   );
+-   assert.equal(cronRouter.isCairoTargetHour(), cairoHourNow === 3);
+- });
+-+
+-+test("isValidDateStr: accepts strict YYYY-MM-DD strings only", () => {
+-+  assert.equal(dataRouter.isValidDateStr("2026-07-09"), true);
+-+  assert.equal(dataRouter.isValidDateStr("2026-7-9"), false);
+-+  assert.equal(dataRouter.isValidDateStr("09-07-2026"), false);
+-+  assert.equal(dataRouter.isValidDateStr(""), false);
+-+  assert.equal(dataRouter.isValidDateStr(undefined), false);
+-+});
+-diff --git a/docs/css/styles.css b/docs/css/styles.css
+-index cb3ba22..3851ad2 100644
+---- a/docs/css/styles.css
+-+++ b/docs/css/styles.css
+-@@ -294,6 +294,47 @@ body {
+-   direction: rtl;
+-   unicode-bidi: plaintext;
+- }
+-+.wt-growth-real {
+-+  font-family: "Tajawal", sans-serif;
+-+  font-size: 10.5px;
+-+  font-weight: 400;
+-+  opacity: 0.75;
+-+  direction: rtl;
+-+  unicode-bidi: plaintext;
+-+}
+-+.wt-contrib-list {
+-+  display: flex;
+-+  flex-direction: column;
+-+  gap: 6px;
+-+  max-height: 180px;
+-+  overflow-y: auto;
+-+}
+-+.wt-contrib-row {
+-+  display: flex;
+-+  align-items: center;
+-+  gap: 10px;
+-+  font-size: 12px;
+-+  padding: 6px 4px;
+-+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+-+}
+-+.wt-contrib-date {
+-+  font-family: "JetBrains Mono", monospace;
+-+  color: var(--wt-text-dim);
+-+  flex-shrink: 0;
+-+}
+-+.wt-contrib-amount {
+-+  font-family: "JetBrains Mono", monospace;
+-+  font-weight: 600;
+-+  flex-shrink: 0;
+-+}
+-+.wt-contrib-note {
+-+  color: var(--wt-text-dim);
+-+  opacity: 0.85;
+-+  overflow: hidden;
+-+  text-overflow: ellipsis;
+-+  white-space: nowrap;
+-+  flex: 1;
+-+}
+- .wt-goal-bar-wrap {
+-   margin-top: 16px;
+-   position: relative;
+-@@ -1414,3 +1455,45 @@ body {
+-     gap: 12px;
+-   }
+- }
+-+
+-+/* ── Contributions full-screen overlay ── */
+-+.wt-contrib-fullscreen {
+-+  position: fixed;
+-+  inset: 0;
+-+  background: var(--wt-bg-gradient);
+-+  z-index: 200;
+-+  overflow-y: auto;
+-+  display: flex;
+-+  flex-direction: column;
+-+}
+-+.wt-contrib-fs-inner {
+-+  max-width: 900px;
+-+  width: 100%;
+-+  margin: 0 auto;
+-+  padding: 28px 20px 48px;
+-+}
+-+.wt-contrib-fs-header {
+-+  display: flex;
+-+  justify-content: space-between;
+-+  align-items: flex-start;
+-+  flex-wrap: wrap;
+-+  gap: 16px;
+-+  margin-bottom: 24px;
+-+  padding-bottom: 18px;
+-+  border-bottom: 1px solid var(--wt-line);
+-+}
+-+.wt-contrib-grid {
+-+  display: grid;
+-+  grid-template-columns: repeat(4, 1fr);
+-+  gap: 12px;
+-+}
+-+@media (max-width: 700px) {
+-+  .wt-contrib-grid {
+-+    grid-template-columns: repeat(2, 1fr);
+-+  }
+-+}
+-+@media (max-width: 420px) {
+-+  .wt-contrib-grid {
+-+    grid-template-columns: 1fr;
+-+  }
+-+}
+-diff --git a/docs/index.html b/docs/index.html
+-index 46ff11f..86c6590 100644
+---- a/docs/index.html
+-+++ b/docs/index.html
+-@@ -20,6 +20,7 @@
+- <script src="js/auth.js"></script>
+- <script src="js/sync.js"></script>
+- <script src="js/assets.js"></script>
+-+<script src="js/contributions.js"></script>
+- <script src="js/render.js"></script>
+- <script src="js/breakdown-charts.js"></script>
+- <script src="js/history-log.js"></script>
+-diff --git a/docs/js/api.js b/docs/js/api.js
+-index 54bf86d..3231d29 100644
+---- a/docs/js/api.js
+-+++ b/docs/js/api.js
+-@@ -33,6 +33,9 @@ const RPC_MAP = {
+-   loadHistoryForClient: (u, tok) => ({ method: "GET", path: "/history", bearer: tok }),
+-   addManualHistoryEntry: (u, entry, tok) => ({ method: "POST", path: "/history", bearer: tok, body: { entry } }),
+-   deleteHistoryEntry: (u, date, tok) => ({ method: "DELETE", path: "/history", bearer: tok, body: { date } }),
+-+  loadContributionsForClient: (u, tok) => ({ method: "GET", path: "/contributions", bearer: tok }),
+-+  addContribution: (u, entry, tok) => ({ method: "POST", path: "/contributions", bearer: tok, body: entry }),
+-+  deleteContribution: (u, date, tok) => ({ method: "DELETE", path: "/contributions", bearer: tok, body: { date } }),
+-   getHistoricalRate: (dateStr) => ({ method: "GET", path: "/historical-rate?date=" + encodeURIComponent(dateStr) }),
+-   fetchBenchmarkSeries: (from, to) => ({
+-     method: "GET",
+-diff --git a/docs/js/auth.js b/docs/js/auth.js
+-index bb2b5c7..1343b5b 100644
+---- a/docs/js/auth.js
+-+++ b/docs/js/auth.js
+-@@ -41,7 +41,7 @@ function renderAuth() {
+-         </div>
+-         <div class="wt-field">
+-           <label for="auth-password">${lang === "en" ? "Password" : "الباسورد"}</label>
+--          <input type="password" id="auth-password" name="kanz_login_password" placeholder="${lang === "en" ? "at least 4 characters" : "٤ أحرف على الأقل"}" autocomplete="${isLogin ? "current-password" : "new-password"}" dir="ltr">
+-+          <input type="password" id="auth-password" name="kanz_login_password" placeholder="${lang === "en" ? "at least 12 characters" : "١٢ حرف على الأقل"}" autocomplete="${isLogin ? "current-password" : "new-password"}" dir="ltr">
+-         </div>
+-         <p id="auth-err" class="wt-auth-err"></p>
+-         <label class="wt-auth-remember">
+-@@ -119,6 +119,7 @@ async function completeLogin(username, token, expiresAt) {
+-   excludedBaseIds = new Set();
+-   baseOverrides = {};
+-   historyData = [];
+-+  contributionsData = [];
+-   theme = "dark";
+-   lang = "en";
+-   savingsGoal = 0;
+-@@ -127,6 +128,7 @@ async function completeLogin(username, token, expiresAt) {
+-   fetchRates();
+-   sheetsLoad();
+-   loadHistory();
+-+  loadContributions();
+- }
+- 
+- function logout() {
+-@@ -146,11 +148,13 @@ function logout() {
+-   excludedBaseIds = new Set();
+-   baseOverrides = {};
+-   historyData = [];
+-+  contributionsData = [];
+-   historyChart = null;
+-   outerChart = null;
+-   innerChart = null;
+-   savingsGoal = 0;
+-   goalModalOpen = false;
+-+  contribModalOpen = false;
+-   authMode = "login";
+-   renderAuth();
+- }
+-@@ -182,9 +186,18 @@ function attemptAutoLogin() {
+-     .withSuccessHandler(function (j) {
+-       if (j && j.ok) {
+-         currentUser = j.username;
+--        sessionToken = saved.token; // same saved token, now confirmed valid
+-+        // The server issues a fresh 1-day token on every verify call so the
+-+        // session auto-renews on each page load. Save it immediately so the
+-+        // next page load picks up the new expiry.
+-+        const freshToken = j.token || saved.token;
+-+        const freshExpiry = j.expiresAt || saved.expiresAt;
+-+        sessionToken = freshToken;
+-         try {
+-           sessionStorage.setItem("kanz_user", currentUser);
+-+          localStorage.setItem(
+-+            "kanz_remember",
+-+            JSON.stringify({ username: currentUser, token: freshToken, expiresAt: freshExpiry })
+-+          );
+-         } catch (e) {}
+-         qty = {};
+-         order = [];
+-@@ -192,11 +205,13 @@ function attemptAutoLogin() {
+-         excludedBaseIds = new Set();
+-         baseOverrides = {};
+-         historyData = [];
+-+        contributionsData = [];
+-         ASSETS.forEach((a) => (qty[a.id] = 0));
+-         render();
+-         fetchRates();
+-         sheetsLoad();
+-         loadHistory();
+-+        loadContributions();
+-       } else {
+-         try {
+-           localStorage.removeItem("kanz_remember");
+-diff --git a/docs/js/contributions.js b/docs/js/contributions.js
+-new file mode 100644
+-index 0000000..799bc91
+---- /dev/null
+-+++ b/docs/js/contributions.js
+-@@ -0,0 +1,310 @@
+-+// ── Contributions — full-screen yearly grid ───────────────────────────
+-+// Replaces the old small modal. Shows a 4×3 grid of all 12 months of the
+-+// current year. Each cell has two rows:
+-+//   + income (green)  — money that came IN this month (salary, bonus, etc.)
+-+//   - expenses (red)  — money that went OUT (spent, withdrawn)
+-+// The net (income − expenses) is what gets passed to helpers.js so growth
+-+// calculations can subtract it from raw wealth deltas.
+-+
+-+// ── State ──
+-+// Each contribution entry now has:
+-+//   { date, type: "income"|"expense", amountUsd, note }
+-+// The server/backend model stays the same (stores any amountUsd — positive
+-+// or negative) so old net entries still display; new UI writes two separate
+-+// signed entries instead.
+-+
+-+function openContribModal() {
+-+  contribModalOpen = true;
+-+  render();
+-+}
+-+
+-+function closeContribModal() {
+-+  contribModalOpen = false;
+-+  render();
+-+}
+-+
+-+function loadContributions() {
+-+  if (!currentUser) return;
+-+  rpc.run
+-+    .withSuccessHandler(function (j) {
+-+      if (j && j.ok && Array.isArray(j.contributions)) {
+-+        contributionsData = j.contributions.sort((a, b) => a.date.localeCompare(b.date));
+-+      }
+-+      render();
+-+    })
+-+    .withFailureHandler(function (err) {
+-+      console.error("loadContributions:", err);
+-+    })
+-+    .loadContributionsForClient(currentUser, sessionToken);
+-+}
+-+
+-+// ── Helpers ──
+-+
+-+const MONTH_NAMES_AR = [
+-+  "يناير",
+-+  "فبراير",
+-+  "مارس",
+-+  "أبريل",
+-+  "مايو",
+-+  "يونيو",
+-+  "يوليو",
+-+  "أغسطس",
+-+  "سبتمبر",
+-+  "أكتوبر",
+-+  "نوفمبر",
+-+  "ديسمبر",
+-+];
+-+const MONTH_NAMES_EN = [
+-+  "January",
+-+  "February",
+-+  "March",
+-+  "April",
+-+  "May",
+-+  "June",
+-+  "July",
+-+  "August",
+-+  "September",
+-+  "October",
+-+  "November",
+-+  "December",
+-+];
+-+
+-+function monthLabel(m0) {
+-+  // m0 is 0-indexed
+-+  return lang === "ar" ? MONTH_NAMES_AR[m0] : MONTH_NAMES_EN[m0];
+-+}
+-+
+-+// Returns {income, expense, net} for YYYY-MM
+-+function monthSummary(yearMonth) {
+-+  let income = 0,
+-+    expense = 0;
+-+  (contributionsData || []).forEach((c) => {
+-+    if (!c.date.startsWith(yearMonth)) return;
+-+    // Support both old-style net entries (amountUsd positive=income, negative=expense)
+-+    // and new-style entries with explicit type field.
+-+    const amt = parseFloat(c.amountUsd) || 0;
+-+    if (c.type === "income" || (!c.type && amt > 0)) income += Math.abs(amt);
+-+    else if (c.type === "expense" || (!c.type && amt < 0)) expense += Math.abs(amt);
+-+  });
+-+  return { income, expense, net: income - expense };
+-+}
+-+
+-+// ── Save a single entry ──
+-+function saveContribEntry(yearMonth, type, rawAmt, note, onDone) {
+-+  const amt = Math.abs(parseFloat(rawAmt) || 0);
+-+  if (!amt) {
+-+    onDone && onDone("errContribAmount");
+-+    return;
+-+  }
+-+  // Use first of the month as key, keep type in the entry for display
+-+  const date = yearMonth + "-01";
+-+  const amountUsd = type === "expense" ? -amt : amt;
+-+  rpc.run
+-+    .withSuccessHandler(function (j) {
+-+      if (j && j.ok) {
+-+        loadContributions();
+-+        onDone && onDone(null);
+-+      } else onDone && onDone(j?.error || "genericError");
+-+    })
+-+    .withFailureHandler(function () {
+-+      onDone && onDone("connectionError");
+-+    })
+-+    .addContribution(currentUser, { date, amountUsd, note: note || "", type }, sessionToken);
+-+}
+-+
+-+function deleteContrib(date) {
+-+  rpc.run
+-+    .withSuccessHandler(function (j) {
+-+      if (j && j.ok) loadContributions();
+-+    })
+-+    .withFailureHandler(function (err) {
+-+      console.error("deleteContrib:", err);
+-+    })
+-+    .deleteContribution(currentUser, date, sessionToken);
+-+}
+-+
+-+// ── Per-cell inline editor ──
+-+// We keep a tiny piece of ephemeral state in a global so the full render()
+-+// cycle can show an expanded input row inside the right cell.
+-+let _editingCell = null; // "YYYY-MM:income" | "YYYY-MM:expense" | null
+-+let _editErr = null;
+-+
+-+function openCellEditor(yearMonth, type) {
+-+  _editingCell = yearMonth + ":" + type;
+-+  _editErr = null;
+-+  render();
+-+  setTimeout(() => {
+-+    const el = document.getElementById("contrib-cell-input");
+-+    if (el) el.focus();
+-+  }, 40);
+-+}
+-+
+-+function closeCellEditor() {
+-+  _editingCell = null;
+-+  _editErr = null;
+-+  render();
+-+}
+-+
+-+function submitCellEntry(ev, yearMonth, type) {
+-+  ev.preventDefault();
+-+  const inp = document.getElementById("contrib-cell-input");
+-+  const noteInp = document.getElementById("contrib-cell-note");
+-+  const amt = inp ? inp.value : "";
+-+  const note = noteInp ? noteInp.value : "";
+-+  saveContribEntry(yearMonth, type, amt, note, function (err) {
+-+    if (err) {
+-+      _editErr = err;
+-+      render();
+-+    } else {
+-+      _editingCell = null;
+-+      _editErr = null;
+-+    }
+-+  });
+-+}
+-+
+-+// ── Render a single month card ──
+-+function renderMonthCard(year, m0) {
+-+  const m1 = String(m0 + 1).padStart(2, "0");
+-+  const yearMonth = year + "-" + m1;
+-+  const { income, expense, net } = monthSummary(yearMonth);
+-+
+-+  const isCurrentMonth = new Date().getFullYear() === year && new Date().getMonth() === m0;
+-+  const netColor = net >= 0 ? "var(--wt-green)" : "var(--wt-red)";
+-+  const netSign = net >= 0 ? "+" : "";
+-+  const hasData = income > 0 || expense > 0;
+-+
+-+  const borderStyle = isCurrentMonth ? "border:1.5px solid var(--wt-gold-dim)" : "border:1px solid var(--wt-line)";
+-+
+-+  // Entries for this month (for the per-entry delete list)
+-+  const monthEntries = (contributionsData || []).filter((c) => c.date.startsWith(yearMonth));
+-+
+-+  const editingIncome = _editingCell === yearMonth + ":income";
+-+  const editingExpense = _editingCell === yearMonth + ":expense";
+-+
+-+  function rowHTML(type, amount, color, icon, labelKey) {
+-+    const editing = _editingCell === yearMonth + ":" + type;
+-+    const amtDisplay =
+-+      amount > 0
+-+        ? `<span style="color:${color};font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600">${icon}${fmtUsd(amount)}</span>`
+-+        : `<span style="color:var(--wt-text-dim);font-size:10px;opacity:0.5">${t(labelKey)}</span>`;
+-+
+-+    if (editing) {
+-+      return `
+-+        <form onsubmit="submitCellEntry(event,'${yearMonth}','${type}')" style="margin:4px 0">
+-+          <div style="display:flex;gap:4px;align-items:center">
+-+            <input id="contrib-cell-input" type="number" step="any" min="0"
+-+              placeholder="0.00" dir="ltr"
+-+              style="width:80px;padding:3px 6px;border-radius:6px;
+-+                     border:1px solid var(--wt-line-strong);background:var(--wt-bg);
+-+                     color:var(--wt-text);font-size:12px;font-family:'JetBrains Mono',monospace">
+-+            <button type="submit" class="wt-btn" style="padding:2px 8px;font-size:11px">${t("add")}</button>
+-+            <button type="button" class="wt-btn-ghost" style="padding:2px 6px;font-size:11px" onclick="closeCellEditor()">✕</button>
+-+          </div>
+-+          <input id="contrib-cell-note" type="text" maxlength="100"
+-+            placeholder="${t("contribNotePh")}"
+-+            style="margin-top:3px;width:100%;padding:2px 6px;border-radius:5px;
+-+                   border:1px solid var(--wt-line);background:var(--wt-bg);
+-+                   color:var(--wt-text);font-size:10px">
+-+          ${_editErr ? `<p style="color:var(--wt-red);font-size:10px;margin:2px 0 0">${t(_editErr) || _editErr}</p>` : ""}
+-+        </form>`;
+-+    }
+-+    return `
+-+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;
+-+                  padding:2px 0;border-radius:4px"
+-+           onclick="openCellEditor('${yearMonth}','${type}')">
+-+        ${amtDisplay}
+-+        <span style="font-size:10px;color:var(--wt-text-dim);opacity:0.6;padding-left:4px">+</span>
+-+      </div>`;
+-+  }
+-+
+-+  // Compact entry list (for deleting old entries)
+-+  const entryList =
+-+    monthEntries.length > 0
+-+      ? `
+-+    <div style="margin-top:6px;border-top:1px solid var(--wt-line);padding-top:5px">
+-+      ${monthEntries
+-+        .map((c) => {
+-+          const pos = (parseFloat(c.amountUsd) || 0) >= 0;
+-+          return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;
+-+                             color:var(--wt-text-dim);padding:1px 0">
+-+          <span style="color:${pos ? "var(--wt-green)" : "var(--wt-red)"}">
+-+            ${pos ? "▲" : "▼"} ${fmtUsd(Math.abs(parseFloat(c.amountUsd) || 0))}
+-+          </span>
+-+          ${c.note ? `<span style="opacity:0.7;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.note)}</span>` : ""}
+-+          <button onclick="deleteContrib('${esc(c.date)}')"
+-+            style="background:none;border:none;cursor:pointer;color:var(--wt-red);
+-+                   font-size:10px;padding:0 2px;line-height:1">×</button>
+-+        </div>`;
+-+        })
+-+        .join("")}
+-+    </div>`
+-+      : "";
+-+
+-+  return `
+-+    <div style="border-radius:var(--wt-radius);${borderStyle};
+-+                background:rgba(255,255,255,0.02);padding:12px 12px 10px;
+-+                display:flex;flex-direction:column;gap:4px;position:relative;
+-+                min-height:100px;transition:border-color .2s">
+-+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+-+        <span style="font-size:12px;font-weight:600;color:${isCurrentMonth ? "var(--wt-gold)" : "var(--wt-text)"}">
+-+          ${monthLabel(m0)}
+-+        </span>
+-+        ${hasData ? `<span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:${netColor}">${netSign}${fmtUsd(Math.abs(net))}</span>` : ""}
+-+      </div>
+-+
+-+      ${rowHTML("income", income, "var(--wt-green)", "▲ ", "contribIncomeLabel")}
+-+      ${rowHTML("expense", expense, "var(--wt-red)", "▼ ", "contribExpenseLabel")}
+-+
+-+      ${entryList}
+-+    </div>`;
+-+}
+-+
+-+// ── Full-screen overlay ──
+-+function renderContribModal() {
+-+  const year = new Date().getFullYear();
+-+  const months = Array.from({ length: 12 }, (_, i) => i);
+-+
+-+  // Year-level totals
+-+  const yearIncome = months.reduce((s, m) => s + monthSummary(year + "-" + String(m + 1).padStart(2, "0")).income, 0);
+-+  const yearExpense = months.reduce((s, m) => s + monthSummary(year + "-" + String(m + 1).padStart(2, "0")).expense, 0);
+-+  const yearNet = yearIncome - yearExpense;
+-+  const netColor = yearNet >= 0 ? "var(--wt-green)" : "var(--wt-red)";
+-+
+-+  return `
+-+  <div class="wt-contrib-fullscreen">
+-+    <div class="wt-contrib-fs-inner">
+-+
+-+      <!-- header -->
+-+      <div class="wt-contrib-fs-header">
+-+        <div>
+-+          <h2 style="margin:0;font-size:18px;font-weight:700">${year} — ${t("contribScreenTitle")}</h2>
+-+          <p style="margin:4px 0 0;font-size:12px;color:var(--wt-text-dim)">${t("contribScreenHint")}</p>
+-+        </div>
+-+        <div style="display:flex;gap:24px;align-items:flex-end">
+-+          <div style="text-align:center">
+-+            <div style="font-size:10px;color:var(--wt-text-dim);margin-bottom:2px">${t("contribTotalIncome")}</div>
+-+            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--wt-green)">▲ ${fmtUsd(yearIncome)}</div>
+-+          </div>
+-+          <div style="text-align:center">
+-+            <div style="font-size:10px;color:var(--wt-text-dim);margin-bottom:2px">${t("contribTotalExpense")}</div>
+-+            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--wt-red)">▼ ${fmtUsd(yearExpense)}</div>
+-+          </div>
+-+          <div style="text-align:center">
+-+            <div style="font-size:10px;color:var(--wt-text-dim);margin-bottom:2px">${t("contribTotalNet")}</div>
+-+            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:${netColor}">${yearNet >= 0 ? "+" : ""}${fmtUsd(yearNet)}</div>
+-+          </div>
+-+          <button class="wt-btn-ghost" style="align-self:center" onclick="closeContribModal()">✕ ${t("close")}</button>
+-+        </div>
+-+      </div>
+-+
+-+      <!-- 4×3 grid -->
+-+      <div class="wt-contrib-grid">
+-+        ${months.map((m) => renderMonthCard(year, m)).join("")}
+-+      </div>
+-+
+-+      <p style="font-size:11px;color:var(--wt-text-dim);margin-top:12px;text-align:center">
+-+        ${t("contribClickHint")}
+-+      </p>
+-+    </div>
+-+  </div>`;
+-+}
+-diff --git a/docs/js/helpers.js b/docs/js/helpers.js
+-index 9d3a0ab..e460863 100644
+---- a/docs/js/helpers.js
+-+++ b/docs/js/helpers.js
+-@@ -61,6 +61,33 @@ function getGrowthCandidate(days) {
+-   return candidate;
+- }
+- 
+-+// ── Split a wealth delta into "money the user added" vs "assets actually
+-+// grew in value" ────────────────────────────────────────────────────
+-+// Salary being bigger than expenses means wealth goes up every month even if
+-+// nothing you already own changed in value at all — that's saving, not
+-+// growth. This sums the contributions logged in docs/js/contributions.js
+-+// that fall strictly after `sinceDateExclusive` and up to `untilDateInclusive`,
+-+// so it can be subtracted from a raw diff to isolate the real, price-driven change.
+-+function sumContributionsBetween(sinceDateExclusive, untilDateInclusive) {
+-+  if (!contributionsData || contributionsData.length === 0) return 0;
+-+  return contributionsData
+-+    .filter((c) => (!sinceDateExclusive || c.date > sinceDateExclusive) && c.date <= untilDateInclusive)
+-+    .reduce((sum, c) => sum + (parseFloat(c.amountUsd) || 0), 0);
+-+}
+-+
+-+// Attaches `contributed`/`realDiff`/`realPct` to a { diff, pct } growth result,
+-+// using `refDate` (the snapshot being compared against) as the window start.
+-+function attachRealGrowth(result, refDate) {
+-+  if (!result) return null;
+-+  const todayStr = new Date().toISOString().slice(0, 10);
+-+  const contributed = sumContributionsBetween(refDate, todayStr);
+-+  // realDiff/realPct answer "how much would my wealth have changed if I
+-+  // hadn't added or withdrawn anything this period" — i.e. price movement only.
+-+  const realDiff = result.diff - contributed;
+-+  const realPct = result.candidateTotal ? (realDiff / result.candidateTotal) * 100 : 0;
+-+  return { ...result, contributed, realDiff, realPct };
+-+}
+-+
+- // ── Compute the change % vs. the closest snapshot N days ago ─────────
+- function computeGrowth(days, currentTotal) {
+-   const candidate = getGrowthCandidate(days);
+-@@ -68,7 +95,7 @@ function computeGrowth(days, currentTotal) {
+- 
+-   const diff = currentTotal - candidate.totalUsd;
+-   const pct = (diff / candidate.totalUsd) * 100;
+--  return { diff, pct };
+-+  return attachRealGrowth({ diff, pct, candidateTotal: candidate.totalUsd }, candidate.date);
+- }
+- 
+- // ── Compute the change % since a fixed date (e.g. start of year) ───
+-@@ -88,7 +115,7 @@ function computeGrowthSince(sinceDate, currentTotal) {
+- 
+-   const diff = currentTotal - candidate.totalUsd;
+-   const pct = (diff / candidate.totalUsd) * 100;
+--  return { diff, pct };
+-+  return attachRealGrowth({ diff, pct, candidateTotal: candidate.totalUsd }, candidate.date);
+- }
+- 
+- // ── Compute the change % since the very first snapshot in the whole history ──
+-@@ -99,7 +126,7 @@ function computeGrowthAllTime(currentTotal) {
+- 
+-   const diff = currentTotal - candidate.totalUsd;
+-   const pct = (diff / candidate.totalUsd) * 100;
+--  return { diff, pct };
+-+  return attachRealGrowth({ diff, pct, candidateTotal: candidate.totalUsd }, candidate.date);
+- }
+- 
+- // ── Fetch exchange rates: hourly source first, falling back to daily ─
+-diff --git a/docs/js/i18n.js b/docs/js/i18n.js
+-index a4ae8c3..03d74fa 100644
+---- a/docs/js/i18n.js
+-+++ b/docs/js/i18n.js
+-@@ -34,6 +34,19 @@ const I18N = {
+-     editGoalBtn: "🎯 تعديل الهدف",
+-     goalModalTitle: "هدف الادخار",
+-     goalInputLabel: "المبلغ المستهدف (دولار)",
+-+    logContribBtn: "💸 الدخل والمصاريف",
+-+    contribScreenTitle: "الدخل والمصاريف",
+-+    contribScreenHint: "اضغط على أي خانة عشان تضيف أو تعدّل — الفايض بيتحسب تلقائيًا ويتطرح من نمو ثروتك.",
+-+    contribIncomeLabel: "دخل +",
+-+    contribExpenseLabel: "مصاريف −",
+-+    contribTotalIncome: "إجمالي الدخل",
+-+    contribTotalExpense: "إجمالي المصاريف",
+-+    contribTotalNet: "صافي الفايض",
+-+    contribClickHint: "اضغط علي أي خانة فاضية عشان تضيف قيمة للشهر ده",
+-+    contribNotePh: "مثال: مرتب يوليو",
+-+    errContribAmount: "اكتب مبلغ صحيح (غير صفر)",
+-+    realGrowthPrefix: "نمو حقيقي (بدون المبالغ المضافة):",
+-+    close: "إغلاق",
+-     benchmarkToggle: "📈 قارن بـ S&P 500",
+-     benchmarkLabel: "S&P 500",
+-     benchmarkUnavailable: "تعذّر تحميل بيانات S&P 500 حاليًا، جرب تاني بعد شوية",
+-@@ -193,6 +206,20 @@ const I18N = {
+-     editGoalBtn: "🎯 Edit goal",
+-     goalModalTitle: "Savings goal",
+-     goalInputLabel: "Target amount (USD)",
+-+    logContribBtn: "💸 Income & Expenses",
+-+    contribScreenTitle: "Income & Expenses",
+-+    contribScreenHint:
+-+      "Tap any cell to log — the net surplus is subtracted from your growth figures to show real asset performance.",
+-+    contribIncomeLabel: "Income +",
+-+    contribExpenseLabel: "Expenses −",
+-+    contribTotalIncome: "Total income",
+-+    contribTotalExpense: "Total expenses",
+-+    contribTotalNet: "Net surplus",
+-+    contribClickHint: "Tap any empty cell to add a value for that month",
+-+    contribNotePh: "e.g. July salary",
+-+    errContribAmount: "Enter a valid, non-zero amount",
+-+    realGrowthPrefix: "Real growth (excl. contributions):",
+-+    close: "Close",
+-     benchmarkToggle: "📈 Compare to S&P 500",
+-     benchmarkLabel: "S&P 500",
+-     benchmarkUnavailable: "Couldn't load S&P 500 data right now — try again in a bit",
+-diff --git a/docs/js/render.js b/docs/js/render.js
+-index ed70f2f..1c57ef5 100644
+---- a/docs/js/render.js
+-+++ b/docs/js/render.js
+-@@ -83,9 +83,22 @@ function render() {
+-           const color = up ? "var(--wt-green)" : "var(--wt-red)";
+-           const arrow = up ? "▲" : "▼";
+-           const sign = up ? "+" : "";
+-+          // Only show the "real growth" line when contributions were actually
+-+          // logged for this period — otherwise it's identical to the total
+-+          // and just adds noise for users who don't bother logging them.
+-+          const hasContribution = Math.abs(g.contributed || 0) > 0.005;
+-+          const realUp = (g.realDiff || 0) >= 0;
+-+          const realColor = realUp ? "var(--wt-green)" : "var(--wt-red)";
+-+          const realArrow = realUp ? "▲" : "▼";
+-+          const realSign = realUp ? "+" : "";
+-           return `<div class="wt-growth-chip" style="color:${color}">
+-             <span>${arrow} ${sign}${g.pct.toFixed(1)}%</span>
+-             <span class="wt-growth-sub">(${sign}${fmtUsd(g.diff)}) ${label}</span>
+-+            ${
+-+              hasContribution
+-+                ? `<span class="wt-growth-real" style="color:${realColor}">${t("realGrowthPrefix")} ${realArrow} ${realSign}${g.realPct.toFixed(1)}%</span>`
+-+                : ""
+-+            }
+-           </div>`;
+-         };
+-         return `<div class="wt-growth-row">${chip(w, t("growthWeek"))}${chip(m, t("growthMonth"))}${chip(mtd, t("growthMtd"))}${chip(y, t("growthYtd")(currentYear))}${chip(a, t("growthAllTime"))}</div>`;
+-@@ -99,7 +112,7 @@ function render() {
+-           : ""
+-       }
+-       <button class="wt-theme-btn" style="margin-top:12px;position:relative" onclick="openGoalModal()">${savingsGoal > 0 ? t("editGoalBtn") : t("setGoalBtn")}</button>
+--    </div>
+-+      <button class="wt-theme-btn" style="margin-top:12px;position:relative" onclick="openContribModal()">${t("logContribBtn")}</button>    </div>
+- 
+-     <div id="wt-bk-root"></div>
+- 
+-@@ -219,6 +232,7 @@ function render() {
+-         : ""
+-     }
+-     ${goalModalOpen ? renderGoalModal() : ""}
+-+    ${contribModalOpen ? renderContribModal() : ""}
+-   `;
+- 
+-   renderSyncBadge();
+-diff --git a/docs/js/state.js b/docs/js/state.js
+-index daca98f..fd1bc20 100644
+---- a/docs/js/state.js
+-+++ b/docs/js/state.js
+-@@ -116,6 +116,12 @@ let sessionToken = null; // authorizes every sensitive server request — memory
+- let savingsGoal = 0; // savings goal in USD — 0 means no goal set
+- let goalModalOpen = false;
+- 
+-+// Net money manually added/withdrawn (e.g. "salary minus expenses this
+-+// month"), kept separate from `historyData` so growth % can be split into
+-+// "money I added" vs "my assets actually grew in value" — see helpers.js.
+-+let contributionsData = [];
+-+let contribModalOpen = false;
+-+
+- function slugify(s) {
+-   return (
+-     String(s)
+diff --git a/kanz-contributions-feature.patch b/kanz-contributions-feature.patch
+deleted file mode 100644
+index 66c5a98..0000000
+--- a/kanz-contributions-feature.patch
++++ /dev/null
+@@ -1,547 +0,0 @@
+-diff --git a/backend/db/init.js b/backend/db/init.js
+-index 8a140e1..68917ff 100644
+---- a/backend/db/init.js
+-+++ b/backend/db/init.js
+-@@ -24,6 +24,12 @@ async function initDb() {
+-   await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS legacy_hash TEXT;`);
+-   await pool.query(`ALTER TABLE kanz_users ALTER COLUMN password_hash DROP NOT NULL;`);
+- 
+-+  // Net money the user manually added/withdrew in a period (e.g. "salary minus
+-+  // expenses this month"). Kept separate from `history` so the growth
+-+  // calculations on the client can tell "I added money" apart from "what I
+-+  // already had grew in value" — see docs/js/helpers.js computeGrowth().
+-+  await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS contributions JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+-+
+-   // Small durable key/value cache, currently used to remember the last
+-   // successfully-fetched gold price so a live API outage degrades gracefully
+-   // instead of failing the whole daily snapshot (see lib/rates.js).
+-diff --git a/backend/routes/data.js b/backend/routes/data.js
+-index de03e80..18df997 100644
+---- a/backend/routes/data.js
+-+++ b/backend/routes/data.js
+-@@ -124,7 +124,65 @@ router.delete("/history", async (req, res) => {
+-   res.json({ ok: true, history });
+- });
+- 
+--// The router remains the default export used by app.js. isFiniteNumberMap is
+--// attached as a property purely so it can be unit tested in isolation.
+-+// ── Contributions (net money manually added/withdrawn in a period) ─────
+-+// Kept as their own table column (not mixed into `history`) so the client can
+-+// subtract them from a wealth delta and isolate "real" growth — i.e. how much
+-+// existing assets moved in value, separate from money the user simply added.
+-+async function getContributionsRow(username) {
+-+  const { rows } = await pool.query("SELECT contributions FROM kanz_users WHERE username = $1", [username]);
+-+  return rows[0] || null;
+-+}
+-+
+-+const isValidDateStr = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
+-+
+-+router.get("/contributions", async (req, res) => {
+-+  const user = await getContributionsRow(req.username);
+-+  if (!user) return res.json({ ok: false, error: "userNotFound" });
+-+  res.json({ ok: true, contributions: user.contributions || [] });
+-+});
+-+
+-+router.post("/contributions", async (req, res) => {
+-+  const { date, amountUsd, note } = req.body;
+-+  if (!isValidDateStr(date)) return res.json({ ok: false, error: "invalidDate" });
+-+
+-+  const amount = +amountUsd;
+-+  if (!Number.isFinite(amount)) return res.json({ ok: false, error: "invalidData" });
+-+
+-+  const user = await getContributionsRow(req.username);
+-+  if (!user) return res.json({ ok: false, error: "userNotFound" });
+-+
+-+  // One contribution entry per date — logging the same date again (e.g. the
+-+  // user corrects a typo) replaces it rather than creating a duplicate.
+-+  const contributions = user.contributions || [];
+-+  const entry = { date, amountUsd: amount, note: typeof note === "string" ? note.slice(0, 200) : "" };
+-+  const idx = contributions.findIndex((c) => c.date === date);
+-+  idx >= 0 ? (contributions[idx] = entry) : contributions.push(entry);
+-+  contributions.sort((a, b) => a.date.localeCompare(b.date));
+-+
+-+  await pool.query("UPDATE kanz_users SET contributions = $1 WHERE username = $2", [
+-+    JSON.stringify(contributions),
+-+    req.username,
+-+  ]);
+-+  res.json({ ok: true });
+-+});
+-+
+-+router.delete("/contributions", async (req, res) => {
+-+  const date = req.body.date;
+-+  if (!isValidDateStr(date)) return res.json({ ok: false, error: "invalidDate" });
+-+
+-+  const user = await getContributionsRow(req.username);
+-+  if (!user) return res.json({ ok: false, error: "userNotFound" });
+-+
+-+  const contributions = (user.contributions || []).filter((c) => c.date !== date);
+-+  await pool.query("UPDATE kanz_users SET contributions = $1 WHERE username = $2", [
+-+    JSON.stringify(contributions),
+-+    req.username,
+-+  ]);
+-+  res.json({ ok: true, contributions });
+-+});
+-+
+-+// The router remains the default export used by app.js. isFiniteNumberMap and
+-+// isValidDateStr are attached as properties purely so they can be unit tested in isolation.
+- module.exports = router;
+- module.exports.isFiniteNumberMap = isFiniteNumberMap;
+-+module.exports.isValidDateStr = isValidDateStr;
+-diff --git a/backend/test/routes.test.js b/backend/test/routes.test.js
+-index f38d69c..38c6f2f 100644
+---- a/backend/test/routes.test.js
+-+++ b/backend/test/routes.test.js
+-@@ -39,3 +39,11 @@ test("isCairoTargetHour: matches only when Africa/Cairo's local hour is the targ
+-   );
+-   assert.equal(cronRouter.isCairoTargetHour(), cairoHourNow === 3);
+- });
+-+
+-+test("isValidDateStr: accepts strict YYYY-MM-DD strings only", () => {
+-+  assert.equal(dataRouter.isValidDateStr("2026-07-09"), true);
+-+  assert.equal(dataRouter.isValidDateStr("2026-7-9"), false);
+-+  assert.equal(dataRouter.isValidDateStr("09-07-2026"), false);
+-+  assert.equal(dataRouter.isValidDateStr(""), false);
+-+  assert.equal(dataRouter.isValidDateStr(undefined), false);
+-+});
+-diff --git a/docs/css/styles.css b/docs/css/styles.css
+-index cb3ba22..15f252f 100644
+---- a/docs/css/styles.css
+-+++ b/docs/css/styles.css
+-@@ -294,6 +294,47 @@ body {
+-   direction: rtl;
+-   unicode-bidi: plaintext;
+- }
+-+.wt-growth-real {
+-+  font-family: "Tajawal", sans-serif;
+-+  font-size: 10.5px;
+-+  font-weight: 400;
+-+  opacity: 0.75;
+-+  direction: rtl;
+-+  unicode-bidi: plaintext;
+-+}
+-+.wt-contrib-list {
+-+  display: flex;
+-+  flex-direction: column;
+-+  gap: 6px;
+-+  max-height: 180px;
+-+  overflow-y: auto;
+-+}
+-+.wt-contrib-row {
+-+  display: flex;
+-+  align-items: center;
+-+  gap: 10px;
+-+  font-size: 12px;
+-+  padding: 6px 4px;
+-+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+-+}
+-+.wt-contrib-date {
+-+  font-family: "JetBrains Mono", monospace;
+-+  color: var(--wt-text-dim);
+-+  flex-shrink: 0;
+-+}
+-+.wt-contrib-amount {
+-+  font-family: "JetBrains Mono", monospace;
+-+  font-weight: 600;
+-+  flex-shrink: 0;
+-+}
+-+.wt-contrib-note {
+-+  color: var(--wt-text-dim);
+-+  opacity: 0.85;
+-+  overflow: hidden;
+-+  text-overflow: ellipsis;
+-+  white-space: nowrap;
+-+  flex: 1;
+-+}
+- .wt-goal-bar-wrap {
+-   margin-top: 16px;
+-   position: relative;
+-diff --git a/docs/index.html b/docs/index.html
+-index 46ff11f..86c6590 100644
+---- a/docs/index.html
+-+++ b/docs/index.html
+-@@ -20,6 +20,7 @@
+- <script src="js/auth.js"></script>
+- <script src="js/sync.js"></script>
+- <script src="js/assets.js"></script>
+-+<script src="js/contributions.js"></script>
+- <script src="js/render.js"></script>
+- <script src="js/breakdown-charts.js"></script>
+- <script src="js/history-log.js"></script>
+-diff --git a/docs/js/api.js b/docs/js/api.js
+-index 54bf86d..3231d29 100644
+---- a/docs/js/api.js
+-+++ b/docs/js/api.js
+-@@ -33,6 +33,9 @@ const RPC_MAP = {
+-   loadHistoryForClient: (u, tok) => ({ method: "GET", path: "/history", bearer: tok }),
+-   addManualHistoryEntry: (u, entry, tok) => ({ method: "POST", path: "/history", bearer: tok, body: { entry } }),
+-   deleteHistoryEntry: (u, date, tok) => ({ method: "DELETE", path: "/history", bearer: tok, body: { date } }),
+-+  loadContributionsForClient: (u, tok) => ({ method: "GET", path: "/contributions", bearer: tok }),
+-+  addContribution: (u, entry, tok) => ({ method: "POST", path: "/contributions", bearer: tok, body: entry }),
+-+  deleteContribution: (u, date, tok) => ({ method: "DELETE", path: "/contributions", bearer: tok, body: { date } }),
+-   getHistoricalRate: (dateStr) => ({ method: "GET", path: "/historical-rate?date=" + encodeURIComponent(dateStr) }),
+-   fetchBenchmarkSeries: (from, to) => ({
+-     method: "GET",
+-diff --git a/docs/js/auth.js b/docs/js/auth.js
+-index bb2b5c7..0da9fb2 100644
+---- a/docs/js/auth.js
+-+++ b/docs/js/auth.js
+-@@ -119,6 +119,7 @@ async function completeLogin(username, token, expiresAt) {
+-   excludedBaseIds = new Set();
+-   baseOverrides = {};
+-   historyData = [];
+-+  contributionsData = [];
+-   theme = "dark";
+-   lang = "en";
+-   savingsGoal = 0;
+-@@ -127,6 +128,7 @@ async function completeLogin(username, token, expiresAt) {
+-   fetchRates();
+-   sheetsLoad();
+-   loadHistory();
+-+  loadContributions();
+- }
+- 
+- function logout() {
+-@@ -146,11 +148,13 @@ function logout() {
+-   excludedBaseIds = new Set();
+-   baseOverrides = {};
+-   historyData = [];
+-+  contributionsData = [];
+-   historyChart = null;
+-   outerChart = null;
+-   innerChart = null;
+-   savingsGoal = 0;
+-   goalModalOpen = false;
+-+  contribModalOpen = false;
+-   authMode = "login";
+-   renderAuth();
+- }
+-@@ -192,11 +196,13 @@ function attemptAutoLogin() {
+-         excludedBaseIds = new Set();
+-         baseOverrides = {};
+-         historyData = [];
+-+        contributionsData = [];
+-         ASSETS.forEach((a) => (qty[a.id] = 0));
+-         render();
+-         fetchRates();
+-         sheetsLoad();
+-         loadHistory();
+-+        loadContributions();
+-       } else {
+-         try {
+-           localStorage.removeItem("kanz_remember");
+-diff --git a/docs/js/contributions.js b/docs/js/contributions.js
+-new file mode 100644
+-index 0000000..4877286
+---- /dev/null
+-+++ b/docs/js/contributions.js
+-@@ -0,0 +1,145 @@
+-+// ── Contributions log ────────────────────────────────
+-+// Lets the user record "net money added this period" (salary minus expenses,
+-+// or a withdrawal as a negative number) separately from the wealth snapshots
+-+// in historyData. The growth calculations in helpers.js subtract these from
+-+// a period's raw wealth delta to isolate real, price-driven growth — see
+-+// computeGrowth()/computeGrowthSince()/computeGrowthAllTime() and attachRealGrowth().
+-+
+-+function openContribModal() {
+-+  contribModalOpen = true;
+-+  render();
+-+  setTimeout(() => {
+-+    const f = document.getElementById("contrib-amount");
+-+    if (f) f.focus();
+-+  }, 50);
+-+}
+-+
+-+function closeContribModal() {
+-+  contribModalOpen = false;
+-+  render();
+-+}
+-+
+-+function loadContributions() {
+-+  if (!currentUser) return;
+-+  rpc.run
+-+    .withSuccessHandler(function (j) {
+-+      if (j && j.ok && Array.isArray(j.contributions)) {
+-+        contributionsData = j.contributions.sort((a, b) => a.date.localeCompare(b.date));
+-+      }
+-+      // Contributions affect the growth chips, so re-render the hero section
+-+      // (and the modal's own recent-entries list, if it's open).
+-+      render();
+-+    })
+-+    .withFailureHandler(function (err) {
+-+      console.error("loadContributions:", err);
+-+    })
+-+    .loadContributionsForClient(currentUser, sessionToken);
+-+}
+-+
+-+function submitContribution(ev) {
+-+  ev.preventDefault();
+-+  const dateEl = document.getElementById("contrib-date");
+-+  const amountEl = document.getElementById("contrib-amount");
+-+  const noteEl = document.getElementById("contrib-note");
+-+  const errEl = document.getElementById("contrib-error");
+-+
+-+  errEl.style.display = "none";
+-+  const date = dateEl.value;
+-+  const amountUsd = parseFloat(amountEl.value);
+-+  const note = (noteEl.value || "").trim();
+-+
+-+  if (!date) {
+-+    errEl.textContent = t("errHistoryDate");
+-+    errEl.style.display = "block";
+-+    return;
+-+  }
+-+  if (!Number.isFinite(amountUsd) || amountUsd === 0) {
+-+    errEl.textContent = t("errContribAmount");
+-+    errEl.style.display = "block";
+-+    return;
+-+  }
+-+
+-+  rpc.run
+-+    .withSuccessHandler(function (j) {
+-+      if (j && j.ok) {
+-+        amountEl.value = "";
+-+        noteEl.value = "";
+-+        loadContributions();
+-+      } else {
+-+        errEl.textContent = j && j.error ? t(j.error) : t("genericError");
+-+        errEl.style.display = "block";
+-+      }
+-+    })
+-+    .withFailureHandler(function () {
+-+      errEl.textContent = t("connectionError");
+-+      errEl.style.display = "block";
+-+    })
+-+    .addContribution(currentUser, { date, amountUsd, note }, sessionToken);
+-+}
+-+
+-+function deleteContribution(date) {
+-+  rpc.run
+-+    .withSuccessHandler(function (j) {
+-+      if (j && j.ok) loadContributions();
+-+    })
+-+    .withFailureHandler(function (err) {
+-+      console.error("deleteContribution:", err);
+-+    })
+-+    .deleteContribution(currentUser, date, sessionToken);
+-+}
+-+
+-+// Most recent entries first, capped so the modal doesn't grow unbounded
+-+function renderRecentContributions() {
+-+  if (!contributionsData || contributionsData.length === 0) {
+-+    return `<p style="color:var(--wt-text-dim);font-size:12px;margin:8px 0 0">${t("contribEmpty")}</p>`;
+-+  }
+-+  const recent = [...contributionsData].reverse().slice(0, 6);
+-+  return `<div class="wt-contrib-list">
+-+    ${recent
+-+      .map((c) => {
+-+        const up = c.amountUsd >= 0;
+-+        const sign = up ? "+" : "";
+-+        const color = up ? "var(--wt-green)" : "var(--wt-red)";
+-+        return `<div class="wt-contrib-row">
+-+        <span class="wt-contrib-date">${esc(c.date)}</span>
+-+        <span class="wt-contrib-amount" style="color:${color}">${sign}${fmtUsd(c.amountUsd)}</span>
+-+        ${c.note ? `<span class="wt-contrib-note">${esc(c.note)}</span>` : ""}
+-+        <button type="button" class="wt-del" title="${t("deleteTitle")}" onclick="deleteContribution('${esc(c.date)}')">×</button>
+-+      </div>`;
+-+      })
+-+      .join("")}
+-+  </div>`;
+-+}
+-+
+-+function renderContribModal() {
+-+  const todayStr = new Date().toISOString().slice(0, 10);
+-+  return `
+-+  <div class="wt-modal-overlay" onclick="if(event.target===this)closeContribModal()">
+-+    <div class="wt-modal">
+-+      <h3>${t("contribModalTitle")}</h3>
+-+      <p style="font-size:12px;color:var(--wt-text-dim);margin:-8px 0 4px">${t("contribModalHint")}</p>
+-+      <form onsubmit="submitContribution(event)">
+-+        <div class="wt-field" style="margin-bottom:6px">
+-+          <label for="contrib-date">${t("historyDateLabel")}</label>
+-+          <input type="date" id="contrib-date" max="${todayStr}" value="${todayStr}">
+-+        </div>
+-+        <div class="wt-field" style="margin-bottom:6px">
+-+          <label for="contrib-amount">${t("contribAmountLabel")}</label>
+-+          <input type="number" id="contrib-amount" step="any" placeholder="500" dir="ltr">
+-+        </div>
+-+        <div class="wt-field">
+-+          <label for="contrib-note">${t("contribNoteLabel")}</label>
+-+          <input type="text" id="contrib-note" maxlength="200" placeholder="${t("contribNotePh")}">
+-+        </div>
+-+        <p id="contrib-error" style="display:none;color:var(--wt-red);font-size:12px;margin:-6px 0 12px"></p>
+-+        <div class="wt-modal-actions">
+-+          <button type="button" class="wt-btn-ghost" onclick="closeContribModal()">${t("cancel")}</button>
+-+          <button type="submit" class="wt-btn">${t("add")}</button>
+-+        </div>
+-+      </form>
+-+      <hr style="border-color:var(--wt-border,rgba(255,255,255,.08));margin:16px 0" />
+-+      <p class="wt-bk-leg-title" style="margin-bottom:6px">${t("contribRecentTitle")}</p>
+-+      ${renderRecentContributions()}
+-+    </div>
+-+  </div>`;
+-+}
+-diff --git a/docs/js/helpers.js b/docs/js/helpers.js
+-index 9d3a0ab..e460863 100644
+---- a/docs/js/helpers.js
+-+++ b/docs/js/helpers.js
+-@@ -61,6 +61,33 @@ function getGrowthCandidate(days) {
+-   return candidate;
+- }
+- 
+-+// ── Split a wealth delta into "money the user added" vs "assets actually
+-+// grew in value" ────────────────────────────────────────────────────
+-+// Salary being bigger than expenses means wealth goes up every month even if
+-+// nothing you already own changed in value at all — that's saving, not
+-+// growth. This sums the contributions logged in docs/js/contributions.js
+-+// that fall strictly after `sinceDateExclusive` and up to `untilDateInclusive`,
+-+// so it can be subtracted from a raw diff to isolate the real, price-driven change.
+-+function sumContributionsBetween(sinceDateExclusive, untilDateInclusive) {
+-+  if (!contributionsData || contributionsData.length === 0) return 0;
+-+  return contributionsData
+-+    .filter((c) => (!sinceDateExclusive || c.date > sinceDateExclusive) && c.date <= untilDateInclusive)
+-+    .reduce((sum, c) => sum + (parseFloat(c.amountUsd) || 0), 0);
+-+}
+-+
+-+// Attaches `contributed`/`realDiff`/`realPct` to a { diff, pct } growth result,
+-+// using `refDate` (the snapshot being compared against) as the window start.
+-+function attachRealGrowth(result, refDate) {
+-+  if (!result) return null;
+-+  const todayStr = new Date().toISOString().slice(0, 10);
+-+  const contributed = sumContributionsBetween(refDate, todayStr);
+-+  // realDiff/realPct answer "how much would my wealth have changed if I
+-+  // hadn't added or withdrawn anything this period" — i.e. price movement only.
+-+  const realDiff = result.diff - contributed;
+-+  const realPct = result.candidateTotal ? (realDiff / result.candidateTotal) * 100 : 0;
+-+  return { ...result, contributed, realDiff, realPct };
+-+}
+-+
+- // ── Compute the change % vs. the closest snapshot N days ago ─────────
+- function computeGrowth(days, currentTotal) {
+-   const candidate = getGrowthCandidate(days);
+-@@ -68,7 +95,7 @@ function computeGrowth(days, currentTotal) {
+- 
+-   const diff = currentTotal - candidate.totalUsd;
+-   const pct = (diff / candidate.totalUsd) * 100;
+--  return { diff, pct };
+-+  return attachRealGrowth({ diff, pct, candidateTotal: candidate.totalUsd }, candidate.date);
+- }
+- 
+- // ── Compute the change % since a fixed date (e.g. start of year) ───
+-@@ -88,7 +115,7 @@ function computeGrowthSince(sinceDate, currentTotal) {
+- 
+-   const diff = currentTotal - candidate.totalUsd;
+-   const pct = (diff / candidate.totalUsd) * 100;
+--  return { diff, pct };
+-+  return attachRealGrowth({ diff, pct, candidateTotal: candidate.totalUsd }, candidate.date);
+- }
+- 
+- // ── Compute the change % since the very first snapshot in the whole history ──
+-@@ -99,7 +126,7 @@ function computeGrowthAllTime(currentTotal) {
+- 
+-   const diff = currentTotal - candidate.totalUsd;
+-   const pct = (diff / candidate.totalUsd) * 100;
+--  return { diff, pct };
+-+  return attachRealGrowth({ diff, pct, candidateTotal: candidate.totalUsd }, candidate.date);
+- }
+- 
+- // ── Fetch exchange rates: hourly source first, falling back to daily ─
+-diff --git a/docs/js/i18n.js b/docs/js/i18n.js
+-index a4ae8c3..8175c78 100644
+---- a/docs/js/i18n.js
+-+++ b/docs/js/i18n.js
+-@@ -34,6 +34,17 @@ const I18N = {
+-     editGoalBtn: "🎯 تعديل الهدف",
+-     goalModalTitle: "هدف الادخار",
+-     goalInputLabel: "المبلغ المستهدف (دولار)",
+-+    logContribBtn: "💸 سجّل مبلغ مضاف",
+-+    contribModalTitle: "تسجيل مبلغ مضاف/مسحوب",
+-+    contribModalHint:
+-+      "سجّل صافي اللي ضفته الشهر ده (المرتب ناقص المصاريف) عشان نفرّق بين التوفير والنمو الحقيقي في ثروتك.",
+-+    contribAmountLabel: "المبلغ (دولار) — سالب لو سحبت أكتر مما ضفت",
+-+    contribNoteLabel: "ملاحظة (اختياري)",
+-+    contribNotePh: "مثال: مرتب يوليو ناقص المصاريف",
+-+    contribRecentTitle: "آخر المبالغ المسجّلة",
+-+    contribEmpty: "لسه معملتش أي تسجيل",
+-+    errContribAmount: "اكتب مبلغ صحيح (غير صفر)",
+-+    realGrowthPrefix: "نمو حقيقي (بدون المبالغ المضافة):",
+-     benchmarkToggle: "📈 قارن بـ S&P 500",
+-     benchmarkLabel: "S&P 500",
+-     benchmarkUnavailable: "تعذّر تحميل بيانات S&P 500 حاليًا، جرب تاني بعد شوية",
+-@@ -193,6 +204,17 @@ const I18N = {
+-     editGoalBtn: "🎯 Edit goal",
+-     goalModalTitle: "Savings goal",
+-     goalInputLabel: "Target amount (USD)",
+-+    logContribBtn: "💸 Log a contribution",
+-+    contribModalTitle: "Log money added/withdrawn",
+-+    contribModalHint:
+-+      "Log the net amount you added this month (salary minus expenses) so growth can separate saving from your assets actually gaining value.",
+-+    contribAmountLabel: "Amount (USD) — negative if you withdrew more than you added",
+-+    contribNoteLabel: "Note (optional)",
+-+    contribNotePh: "e.g. July salary minus expenses",
+-+    contribRecentTitle: "Recently logged",
+-+    contribEmpty: "Nothing logged yet",
+-+    errContribAmount: "Enter a valid, non-zero amount",
+-+    realGrowthPrefix: "Real growth (excl. contributions):",
+-     benchmarkToggle: "📈 Compare to S&P 500",
+-     benchmarkLabel: "S&P 500",
+-     benchmarkUnavailable: "Couldn't load S&P 500 data right now — try again in a bit",
+-diff --git a/docs/js/render.js b/docs/js/render.js
+-index ed70f2f..f07d7c6 100644
+---- a/docs/js/render.js
+-+++ b/docs/js/render.js
+-@@ -83,9 +83,22 @@ function render() {
+-           const color = up ? "var(--wt-green)" : "var(--wt-red)";
+-           const arrow = up ? "▲" : "▼";
+-           const sign = up ? "+" : "";
+-+          // Only show the "real growth" line when contributions were actually
+-+          // logged for this period — otherwise it's identical to the total
+-+          // and just adds noise for users who don't bother logging them.
+-+          const hasContribution = Math.abs(g.contributed || 0) > 0.005;
+-+          const realUp = (g.realDiff || 0) >= 0;
+-+          const realColor = realUp ? "var(--wt-green)" : "var(--wt-red)";
+-+          const realArrow = realUp ? "▲" : "▼";
+-+          const realSign = realUp ? "+" : "";
+-           return `<div class="wt-growth-chip" style="color:${color}">
+-             <span>${arrow} ${sign}${g.pct.toFixed(1)}%</span>
+-             <span class="wt-growth-sub">(${sign}${fmtUsd(g.diff)}) ${label}</span>
+-+            ${
+-+              hasContribution
+-+                ? `<span class="wt-growth-real" style="color:${realColor}">${t("realGrowthPrefix")} ${realArrow} ${realSign}${g.realPct.toFixed(1)}%</span>`
+-+                : ""
+-+            }
+-           </div>`;
+-         };
+-         return `<div class="wt-growth-row">${chip(w, t("growthWeek"))}${chip(m, t("growthMonth"))}${chip(mtd, t("growthMtd"))}${chip(y, t("growthYtd")(currentYear))}${chip(a, t("growthAllTime"))}</div>`;
+-@@ -99,6 +112,7 @@ function render() {
+-           : ""
+-       }
+-       <button class="wt-theme-btn" style="margin-top:12px;position:relative" onclick="openGoalModal()">${savingsGoal > 0 ? t("editGoalBtn") : t("setGoalBtn")}</button>
+-+      <button class="wt-theme-btn" style="margin-top:12px;position:relative" onclick="openContribModal()">${t("logContribBtn")}</button>
+-     </div>
+- 
+-     <div id="wt-bk-root"></div>
+-@@ -219,6 +233,7 @@ function render() {
+-         : ""
+-     }
+-     ${goalModalOpen ? renderGoalModal() : ""}
+-+    ${contribModalOpen ? renderContribModal() : ""}
+-   `;
+- 
+-   renderSyncBadge();
+-diff --git a/docs/js/state.js b/docs/js/state.js
+-index daca98f..fd1bc20 100644
+---- a/docs/js/state.js
+-+++ b/docs/js/state.js
+-@@ -116,6 +116,12 @@ let sessionToken = null; // authorizes every sensitive server request — memory
+- let savingsGoal = 0; // savings goal in USD — 0 means no goal set
+- let goalModalOpen = false;
+- 
+-+// Net money manually added/withdrawn (e.g. "salary minus expenses this
+-+// month"), kept separate from `historyData` so growth % can be split into
+-+// "money I added" vs "my assets actually grew in value" — see helpers.js.
+-+let contributionsData = [];
+-+let contribModalOpen = false;
+-+
+- function slugify(s) {
+-   return (
+-     String(s)
+diff --git a/reset-password.js b/reset-password.js
+deleted file mode 100644
+index 0d64743..0000000
+--- a/reset-password.js
++++ /dev/null
+@@ -1,39 +0,0 @@
+-#!/usr/bin/env node
+-/**
+- * Emergency password reset — run this on your own machine when a user forgets
+- * their password. Requires DATABASE_URL and JWT_SECRET in the environment.
+- *
+- * Usage:
+- *   node scripts/reset-password.js <username> <newPassword>
+- */
+-require("dotenv").config();
+-const { hashPassword } = require("../lib/auth");
+-const pool = require("../db/pool");
+-
+-async function main() {
+-  const [, , username, newPassword] = process.argv;
+-  if (!username || !newPassword) {
+-    console.error("Usage: node scripts/reset-password.js <username> <newPassword>");
+-    process.exit(1);
+-  }
+-  if (newPassword.length < 12) {
+-    console.error("Password must be at least 12 characters.");
+-    process.exit(1);
+-  }
+-  const { rows } = await pool.query("SELECT 1 FROM kanz_users WHERE username = $1", [username]);
+-  if (rows.length === 0) {
+-    console.error(`User "${username}" not found.`);
+-    process.exit(1);
+-  }
+-  const hash = await hashPassword(newPassword);
+-  await pool.query("UPDATE kanz_users SET password_hash = $1, legacy_hash = NULL WHERE username = $2", [
+-    hash,
+-    username,
+-  ]);
+-  console.log(`Password for "${username}" updated successfully.`);
+-  await pool.end();
+-}
+-main().catch((err) => {
+-  console.error("Error:", err.message);
+-  process.exit(1);
+-});
+diff --git a/validate.js b/validate.js
+deleted file mode 100644
+index c2847cd..0000000
+--- a/validate.js
++++ /dev/null
+@@ -1,70 +0,0 @@
+-/**
+- * Minimal schema validation — avoids a heavy Zod/Joi dependency while still
+- * giving every route a single source of truth for its expected shape.
+- *
+- * Usage:
+- *   const { ok, errors } = validate(req.body, {
+- *     date:      { type: "string", match: /^\d{4}-\d{2}-\d{2}$/ },
+- *     amountUsd: { type: "number", finite: true, nonzero: true },
+- *     note:      { type: "string", optional: true, maxLength: 200 },
+- *   });
+- *   if (!ok) return res.json({ ok: false, error: errors[0] });
+- */
+-
+-/**
+- * @param {unknown} body
+- * @param {Record<string, {
+- *   type?: "string"|"number"|"boolean",
+- *   optional?: boolean,
+- *   match?: RegExp,
+- *   minLength?: number,
+- *   maxLength?: number,
+- *   finite?: boolean,
+- *   nonzero?: boolean,
+- *   min?: number,
+- *   max?: number,
+- * }>} schema
+- * @returns {{ ok: boolean, errors: string[] }}
+- */
+-function validate(body, schema) {
+-  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+-    return { ok: false, errors: ["invalidBody"] };
+-  }
+-  const errors = [];
+-  for (const [key, rules] of Object.entries(schema)) {
+-    const val = body[key];
+-    const missing = val === undefined || val === null || val === "";
+-    if (missing) {
+-      if (!rules.optional) errors.push(`missing:${key}`);
+-      continue;
+-    }
+-    if (rules.type && typeof val !== rules.type) {
+-      errors.push(`type:${key}`);
+-      continue;
+-    }
+-    if (rules.match && typeof val === "string" && !rules.match.test(val)) {
+-      errors.push(`format:${key}`);
+-    }
+-    if (rules.minLength !== undefined && typeof val === "string" && val.length < rules.minLength) {
+-      errors.push(`tooShort:${key}`);
+-    }
+-    if (rules.maxLength !== undefined && typeof val === "string" && val.length > rules.maxLength) {
+-      errors.push(`tooLong:${key}`);
+-    }
+-    if (rules.finite && typeof val === "number" && !Number.isFinite(val)) {
+-      errors.push(`notFinite:${key}`);
+-    }
+-    if (rules.nonzero && typeof val === "number" && val === 0) {
+-      errors.push(`zero:${key}`);
+-    }
+-    if (rules.min !== undefined && typeof val === "number" && val < rules.min) {
+-      errors.push(`tooSmall:${key}`);
+-    }
+-    if (rules.max !== undefined && typeof val === "number" && val > rules.max) {
+-      errors.push(`tooBig:${key}`);
+-    }
+-  }
+-  return { ok: errors.length === 0, errors };
+-}
+-
+-module.exports = { validate };
