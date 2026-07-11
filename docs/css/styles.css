@@ -472,9 +472,7 @@ body {
   color: var(--wt-text);
 }
 .wt-qty {
-  width: 100%;
-  min-width: 110px;
-  max-width: 160px;
+  width: 140px;
   background: var(--wt-input-bg);
   border: 1px solid var(--wt-line);
   color: var(--wt-text);
@@ -490,9 +488,7 @@ body {
   border-color: var(--wt-gold-dim);
 }
 .wt-apy {
-  width: 100%;
-  min-width: 90px;
-  max-width: 120px;
+  width: 110px;
   background: var(--wt-input-bg);
   border: 1px solid var(--wt-line);
   color: var(--wt-text);
