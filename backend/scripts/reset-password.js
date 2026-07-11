@@ -26,10 +26,7 @@ async function main() {
     process.exit(1);
   }
   const hash = await hashPassword(newPassword);
-  await pool.query("UPDATE kanz_users SET password_hash = $1, legacy_hash = NULL WHERE username = $2", [
-    hash,
-    username,
-  ]);
+  await pool.query("UPDATE kanz_users SET password_hash = $1 WHERE username = $2", [hash, username]);
   console.log(`Password for "${username}" updated successfully.`);
   await pool.end();
 }

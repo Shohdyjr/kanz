@@ -19,18 +19,17 @@ function closeItemHistoryModal() {
 
 function loadItemHistory(id) {
   if (!currentUser) return;
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("loadItemHistoryForClient", currentUser, id, sessionToken)
+    .then(function (j) {
       if (j && j.ok && Array.isArray(j.itemHistory)) {
         // Newest first
         itemHistoryEntries = j.itemHistory.slice().sort((a, b) => b.date.localeCompare(a.date));
       }
       if (itemHistoryModalId === id) render();
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       console.error("loadItemHistory:", err);
-    })
-    .loadItemHistoryForClient(currentUser, id, sessionToken);
+    });
 }
 
 function renderItemHistoryModal() {

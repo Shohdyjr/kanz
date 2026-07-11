@@ -30,6 +30,18 @@ function addDaysToDateStr(dateStr, days) {
   return yyyy + "-" + mm + "-" + dd;
 }
 
+// Today as YYYY-MM-DD in local time — same rationale as addDaysToDateStr above.
+// Snapshots/contributions are stored using Cairo-local dates, so anything that
+// compares against "today" must use local time too, or it can land on the
+// wrong side of midnight for part of the day.
+function todayLocalStr() {
+  const dt = new Date();
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return yyyy + "-" + mm + "-" + dd;
+}
+
 function priceFor(a) {
   if (!rates) return 0;
   switch (a.currency) {
@@ -53,9 +65,7 @@ function priceFor(a) {
 function getGrowthCandidate(days) {
   if (!historyData || historyData.length === 0) return null;
 
-  const windowStart = new Date();
-  windowStart.setDate(windowStart.getDate() - days);
-  const windowStartStr = windowStart.toISOString().slice(0, 10);
+  const windowStartStr = addDaysToDateStr(todayLocalStr(), -days);
 
   let candidate = historyData.find((h) => h.date >= windowStartStr) || null;
   if (!candidate) {
@@ -94,7 +104,7 @@ function sumContributionsBetween(sinceDateInclusive, untilDateInclusive) {
 // using `refDate` (the snapshot being compared against) as the window start.
 function attachRealGrowth(result, refDate) {
   if (!result) return null;
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = todayLocalStr();
   const contributed = sumContributionsBetween(refDate, todayStr);
   // realDiff/realPct answer "how much would my wealth have changed if I
   // hadn't added or withdrawn anything this period" — i.e. price movement only.

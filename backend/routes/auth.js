@@ -1,14 +1,7 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
 const pool = require("../db/pool");
-const {
-  hashPassword,
-  comparePassword,
-  sha256HexLegacy,
-  issueToken,
-  verifyTokenValue,
-  requireAuth,
-} = require("../lib/auth");
+const { hashPassword, comparePassword, issueToken, verifyTokenValue, requireAuth } = require("../lib/auth");
 const { defaultUserData } = require("../lib/rates");
 const { generateOtp, storeOtp, verifyAndConsumeOtp } = require("../lib/otp");
 const { sendOtpEmail } = require("../lib/email");
@@ -76,24 +69,11 @@ router.post("/login", async (req, res) => {
     const password = req.body.password || "";
     if (!username || !password) return fail(res, "enterCredentials");
 
-    const { rows } = await pool.query("SELECT password_hash, legacy_hash FROM kanz_users WHERE username = $1", [
-      username,
-    ]);
+    const { rows } = await pool.query("SELECT password_hash FROM kanz_users WHERE username = $1", [username]);
     if (rows.length === 0) return fail(res, "usernameNotFound");
 
-    const { password_hash, legacy_hash } = rows[0];
-    let match = password_hash ? await comparePassword(password, password_hash) : false;
-
-    // Account migrated from the legacy Google Apps Script version — verify against
-    // the old SHA-256 hash once, then transparently upgrade to bcrypt.
-    if (!match && legacy_hash && sha256HexLegacy(password) === legacy_hash) {
-      match = true;
-      const upgraded = await hashPassword(password);
-      await pool.query("UPDATE kanz_users SET password_hash = $1, legacy_hash = NULL WHERE username = $2", [
-        upgraded,
-        username,
-      ]);
-    }
+    const { password_hash } = rows[0];
+    const match = password_hash ? await comparePassword(password, password_hash) : false;
 
     if (!match) return fail(res, "wrongPassword");
 
@@ -158,10 +138,7 @@ router.post("/reset-password", resetLimiter, async (req, res) => {
     if (!check.ok) return fail(res, check.error);
 
     const passwordHash = await hashPassword(newPassword);
-    await pool.query("UPDATE kanz_users SET password_hash = $1, legacy_hash = NULL WHERE username = $2", [
-      passwordHash,
-      username,
-    ]);
+    await pool.query("UPDATE kanz_users SET password_hash = $1 WHERE username = $2", [passwordHash, username]);
 
     // Log the user straight in, same as signup/login, so they don't have to
     // re-enter the password they just set.

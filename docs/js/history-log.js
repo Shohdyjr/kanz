@@ -44,8 +44,8 @@ function onHistDateChange() {
   histRateError = "";
   renderHistRateBadge();
 
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("getHistoricalRate", date)
+    .then(function (j) {
       if (j && j.ok) {
         histRate = { egpPerUsd: j.egpPerUsd, date: j.date };
         histRateStatus = "ok";
@@ -59,14 +59,13 @@ function onHistDateChange() {
       updateHistAssetsPreview();
       updateHistTotalPreview();
     })
-    .withFailureHandler(function () {
+    .catch(function () {
       histRate = null;
       histRateStatus = "error";
       histRateError = t("connectionError");
       renderHistRateBadge();
       updateHistTotalPreview();
-    })
-    .getHistoricalRate(date);
+    });
 }
 
 function renderHistRateBadge() {
@@ -143,7 +142,7 @@ function updateHistTotalPreview() {
 }
 
 function renderHistoryModal() {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = todayLocalStr();
   return `
   <div class="wt-modal-overlay" onclick="if(event.target===this)closeHistoryModal()">
     <div class="wt-modal wt-hist-modal">
@@ -277,8 +276,8 @@ function submitHistoryEntry(ev) {
     return;
   }
 
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("addManualHistoryEntry", currentUser, { date, totalUsd, egpUsd, hardUsd, goldUsd, assetsUsd }, sessionToken)
+    .then(function (j) {
       if (j && j.ok) {
         historyModalOpen = false;
         loadHistory(); // reload the full history after adding
@@ -287,26 +286,24 @@ function submitHistoryEntry(ev) {
         errEl.style.display = "block";
       }
     })
-    .withFailureHandler(function () {
+    .catch(function () {
       errEl.textContent = t("connectionError");
       errEl.style.display = "block";
-    })
-    .addManualHistoryEntry(currentUser, { date, totalUsd, egpUsd, hardUsd, goldUsd, assetsUsd }, sessionToken);
+    });
 }
 
 function loadHistory() {
   if (!currentUser) return;
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("loadHistoryForClient", currentUser, sessionToken)
+    .then(function (j) {
       if (j && j.ok && Array.isArray(j.history)) {
         historyData = j.history.sort((a, b) => a.date.localeCompare(b.date));
       }
       render();
       renderHistory();
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       console.error("loadHistory:", err);
       renderHistory();
-    })
-    .loadHistoryForClient(currentUser, sessionToken);
+    });
 }

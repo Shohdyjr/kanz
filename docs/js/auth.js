@@ -147,8 +147,8 @@ function submitForgotUsername(ev) {
 
   if (btn) btn.disabled = true;
 
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("forgotPassword", username)
+    .then(function (j) {
       if (btn) btn.disabled = false;
       if (j.ok) {
         forgotFlowUsername = username;
@@ -160,14 +160,13 @@ function submitForgotUsername(ev) {
         errEl.style.display = "block";
       }
     })
-    .withFailureHandler(function () {
+    .catch(function () {
       if (btn) btn.disabled = false;
       if (errEl) {
         errEl.textContent = t("connectionError");
         errEl.style.display = "block";
       }
-    })
-    .forgotPassword(username);
+    });
 }
 
 function submitResetOtp(ev) {
@@ -180,8 +179,8 @@ function submitResetOtp(ev) {
   errEl.style.display = "none";
   btn.disabled = true;
 
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("resetPassword", forgotFlowUsername, otp, newPassword)
+    .then(function (j) {
       btn.disabled = false;
       if (j.ok) {
         forgotFlowUsername = null;
@@ -192,12 +191,11 @@ function submitResetOtp(ev) {
         errEl.style.display = "block";
       }
     })
-    .withFailureHandler(function () {
+    .catch(function () {
       btn.disabled = false;
       errEl.textContent = t("connectionError");
       errEl.style.display = "block";
-    })
-    .resetPassword(forgotFlowUsername, otp, newPassword);
+    });
 }
 
 function submitAuth(ev) {
@@ -214,8 +212,8 @@ function submitAuth(ev) {
   btn.textContent = "…";
 
   const fn = authMode === "login" ? "logIn" : "signUp";
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi(fn, username, password, email)
+    .then(function (j) {
       btn.disabled = false;
       if (j.ok) {
         completeLogin(j.username, j.token, j.expiresAt);
@@ -227,13 +225,12 @@ function submitAuth(ev) {
           authMode === "login" ? (lang === "en" ? "Login" : "دخول") : lang === "en" ? "Create account" : "إنشاء حساب";
       }
     })
-    .withFailureHandler(function (err) {
+    .catch(function () {
       btn.disabled = false;
       errEl.textContent = t("connectionError");
       errEl.style.display = "block";
       btn.textContent = "⚠";
-    })
-    [fn](username, password, email);
+    });
 }
 
 // Called after any successful login/signup. Waits for the session token
@@ -273,7 +270,7 @@ async function completeLogin(username, token, expiresAt) {
   ASSETS.forEach((a) => (qty[a.id] = 0));
   render();
   fetchRates();
-  sheetsLoad();
+  loadData();
   loadHistory();
   loadContributions();
 }
@@ -333,8 +330,8 @@ function attemptAutoLogin() {
     appEl.innerHTML = `<div class="wt-auth-screen"><div class="wt-status"><span class="wt-dot loading"></span><span>${t("signingIn")}</span></div></div>`;
   }
 
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("loginWithToken", saved.username, saved.token)
+    .then(function (j) {
       if (j && j.ok) {
         currentUser = j.username;
         // The server issues a fresh 1-day token on every verify call so the
@@ -361,7 +358,7 @@ function attemptAutoLogin() {
         ASSETS.forEach((a) => (qty[a.id] = 0));
         render();
         fetchRates();
-        sheetsLoad();
+        loadData();
         loadHistory();
         loadContributions();
       } else {
@@ -371,13 +368,12 @@ function attemptAutoLogin() {
         render();
       }
     })
-    .withFailureHandler(function () {
+    .catch(function () {
       try {
         localStorage.removeItem("kanz_remember");
       } catch (e) {}
       render();
-    })
-    .loginWithToken(saved.username, saved.token);
+    });
 }
 
 // ── Recovery email (settings, for already-logged-in users) ─────
@@ -407,8 +403,8 @@ function submitEmailUpdate(ev) {
   errEl.style.display = "none";
   btn.disabled = true;
 
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("updateEmail", email, sessionToken)
+    .then(function (j) {
       btn.disabled = false;
       if (j.ok) {
         emailModalOpen = false;
@@ -418,12 +414,11 @@ function submitEmailUpdate(ev) {
         errEl.style.display = "block";
       }
     })
-    .withFailureHandler(function () {
+    .catch(function () {
       btn.disabled = false;
       errEl.textContent = t("connectionError");
       errEl.style.display = "block";
-    })
-    .updateEmail(email, sessionToken);
+    });
 }
 
 function renderEmailModal() {
@@ -447,13 +442,13 @@ function renderEmailModal() {
   </div>`;
 }
 // Response shape: { ok, data, customAssets, excludedBaseIds, baseOverrides }
-function sheetsLoad() {
+function loadData() {
   if (!currentUser) return;
   isLoadingData = true; // block scheduleSave while loading
   syncStatus = "loading";
   renderSyncBadge();
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("loadDataForClient", currentUser, sessionToken)
+    .then(function (j) {
       if (j && j.ok) {
         if (Array.isArray(j.customAssets)) customAssets = j.customAssets;
         if (Array.isArray(j.excludedBaseIds)) excludedBaseIds = new Set(j.excludedBaseIds);
@@ -481,12 +476,11 @@ function sheetsLoad() {
       render();
       renderBreakdown();
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       isLoadingData = false;
       syncStatus = "error";
-      console.error("sheetsLoad:", err);
+      console.error("loadData:", err);
       render();
       renderBreakdown();
-    })
-    .loadDataForClient(currentUser, sessionToken);
+    });
 }

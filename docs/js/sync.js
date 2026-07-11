@@ -1,5 +1,5 @@
 // ── Saving data to the backend ────────────
-function sheetsSave() {
+function saveData() {
   if (!currentUser) return;
   syncStatus = "saving";
   renderSyncBadge();
@@ -7,34 +7,34 @@ function sheetsSave() {
   ASSETS.forEach((a) => {
     data[a.id] = qty[a.id] || 0;
   });
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi(
+    "saveDataFromClient",
+    currentUser,
+    data,
+    customAssets,
+    [...excludedBaseIds],
+    baseOverrides,
+    theme,
+    lang,
+    order,
+    savingsGoal,
+    sessionToken,
+    apy
+  )
+    .then(function (j) {
       if (j && j.ok) {
         syncStatus = "synced";
       } else {
         syncStatus = "error";
-        console.error("sheetsSave: server rejected the save", j && j.error);
+        console.error("saveData: server rejected the save", j && j.error);
       }
       renderSyncBadge();
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       syncStatus = "error";
-      console.error("sheetsSave:", err);
+      console.error("saveData:", err);
       renderSyncBadge();
-    })
-    .saveDataFromClient(
-      currentUser,
-      data,
-      customAssets,
-      [...excludedBaseIds],
-      baseOverrides,
-      theme,
-      lang,
-      order,
-      savingsGoal,
-      sessionToken,
-      apy
-    );
+    });
 }
 
 let isLoadingData = false; // guard to prevent scheduleSave firing during a load
@@ -73,7 +73,7 @@ function exportBackup() {
 function scheduleSave() {
   if (isLoadingData) return; // don't save while data is loading
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => sheetsSave(), 1200);
+  syncTimer = setTimeout(() => saveData(), 1200);
 }
 
 function renderSyncBadge() {

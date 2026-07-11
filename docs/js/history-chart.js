@@ -151,8 +151,8 @@ function loadAndOverlayBenchmark(labels, totals) {
   const fromDate = labels[0];
   const toDate = labels[labels.length - 1];
 
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("fetchBenchmarkSeries", fromDate, toDate)
+    .then(function (j) {
       if (!j || !j.ok || !historyChart) {
         benchmarkError = j && j.error ? t(j.error) : t("benchmarkUnavailable");
         renderHistory();
@@ -210,12 +210,11 @@ function loadAndOverlayBenchmark(labels, totals) {
       };
       historyChart.update();
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       console.warn("Benchmark fetch failed:", err);
       benchmarkError = t("benchmarkUnavailable");
       renderHistory();
-    })
-    .fetchBenchmarkSeries(fromDate, toDate);
+    });
 }
 
 // ── Change breakdown: how much each category moved, in $ and %, over the shown period ──

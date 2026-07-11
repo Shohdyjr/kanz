@@ -71,36 +71,9 @@ async function rpcCall(fnName, args) {
   return res.json();
 }
 
-// Small wrapper exposing an RPC-style call for each backend function name.
-// Every call site below simply awaits rpcCall("functionName", [...args]).
-
-function makeRpcProxy(onSuccess, onFailure) {
-  return new Proxy(
-    {},
-    {
-      get(_target, fnName) {
-        return (...args) => {
-          rpcCall(fnName, args)
-            .then(onSuccess)
-            .catch((err) => {
-              if (onFailure) onFailure(err);
-            });
-        };
-      },
-    }
-  );
+// Plain async call: callApi("functionName", ...args) → Promise<response JSON>.
+// Every call site below just does callApi(...).then(onSuccess).catch(onFailure)
+// (or awaits it directly inside an async function).
+function callApi(fnName, ...args) {
+  return rpcCall(fnName, args);
 }
-
-// Legacy-style callback wrapper, kept so every call site below reads as
-// `rpc.run.withSuccessHandler(...).withFailureHandler(...).functionName(args)`
-// without each one needing its own .then()/.catch() boilerplate.
-const rpc = {
-  run: {
-    withSuccessHandler(onSuccess) {
-      return { withFailureHandler: (onFailure) => makeRpcProxy(onSuccess, onFailure) };
-    },
-    withFailureHandler(onFailure) {
-      return { withSuccessHandler: (onSuccess) => makeRpcProxy(onSuccess, onFailure) };
-    },
-  },
-};

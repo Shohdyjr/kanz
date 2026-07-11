@@ -141,8 +141,7 @@ function render() {
         <p class="wt-table-title">${t("tableTitle")}</p>
         <div class="wt-actions">
           <button class="wt-btn-add" onclick="openAddModal()" title="${t("addBtn")}">+</button>
-          <button class="wt-btn" onclick="sheetsSave()">${t("saveNow")}</button>
-          <button class="wt-btn wt-btn-ghost" onclick="sheetsLoad()">${t("loadFromSheet")}</button>
+          <button class="wt-btn" onclick="saveData()">${t("saveNow")}</button>
           <button class="wt-btn wt-btn-ghost" onclick="exportBackup()">${t("exportBackupBtn")}</button>
           <span id="wt-sync-badge" class="wt-sync-badge"></span>
         </div>

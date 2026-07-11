@@ -25,17 +25,16 @@ function closeContribModal() {
 
 function loadContributions() {
   if (!currentUser) return;
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("loadContributionsForClient", currentUser, sessionToken)
+    .then(function (j) {
       if (j && j.ok && Array.isArray(j.contributions)) {
         contributionsData = j.contributions.sort((a, b) => a.date.localeCompare(b.date));
       }
       render();
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       console.error("loadContributions:", err);
-    })
-    .loadContributionsForClient(currentUser, sessionToken);
+    });
 }
 
 // ── Helpers ──
@@ -119,32 +118,31 @@ function saveContribEntry(yearMonth, type, rawAmt, currency, note, onDone) {
   const amountUsdMag = amt * rate;
   const amountUsd = type === "expense" ? -amountUsdMag : amountUsdMag;
   const amountOriginal = type === "expense" ? -amt : amt;
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi(
+    "addContribution",
+    currentUser,
+    { date, amountUsd, amountOriginal, currency: cur, note: note || "", type },
+    sessionToken
+  )
+    .then(function (j) {
       if (j && j.ok) {
         loadContributions();
         onDone && onDone(null);
       } else onDone && onDone(j?.error || "genericError");
     })
-    .withFailureHandler(function () {
+    .catch(function () {
       onDone && onDone("connectionError");
-    })
-    .addContribution(
-      currentUser,
-      { date, amountUsd, amountOriginal, currency: cur, note: note || "", type },
-      sessionToken
-    );
+    });
 }
 
 function deleteContrib(date) {
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("deleteContribution", currentUser, date, sessionToken)
+    .then(function (j) {
       if (j && j.ok) loadContributions();
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       console.error("deleteContrib:", err);
-    })
-    .deleteContribution(currentUser, date, sessionToken);
+    });
 }
 
 // ── Per-cell inline editor ──

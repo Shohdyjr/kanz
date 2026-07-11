@@ -6,9 +6,6 @@ const env = require("../config/env");
 const hashPassword = (password) => bcrypt.hash(password, 10);
 const comparePassword = (password, hash) => bcrypt.compare(password, hash);
 
-/** Matches the legacy Apps Script hashing scheme (unsalted SHA-256 hex). */
-const sha256HexLegacy = (password) => crypto.createHash("sha256").update(password, "utf8").digest("hex");
-
 /** Issues a stateless JWT. No server-side session storage needed. */
 function issueToken(username) {
   const expiresInSec = env.rememberTokenDays * 24 * 60 * 60;
@@ -44,7 +41,6 @@ function safeEqual(a, b) {
 module.exports = {
   hashPassword,
   comparePassword,
-  sha256HexLegacy,
   issueToken,
   verifyTokenValue,
   requireAuth,

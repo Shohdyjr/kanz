@@ -1,7 +1,6 @@
 # Kanz
 
-A personal wealth tracker (EGP, hard currency, gold, and other assets), originally
-built as a Google Apps Script app and migrated to a standard Node.js stack.
+A personal wealth tracker (EGP, hard currency, gold, and other assets).
 
 ```
 kanz/
@@ -90,9 +89,7 @@ in `vercel.json`, protected by `CRON_SECRET`). No external service needed.
 
 ## Security notes
 
-- Passwords are hashed with bcrypt; a `legacy_hash` column supports
-  transparent upgrade of accounts migrated from the old SHA-256-based
-  Apps Script version.
+- Passwords are hashed with bcrypt.
 - Auth endpoints are rate-limited (20 requests / 15 min / IP).
 - `helmet` sets standard security headers; JSON body size is capped at 100kb.
 - The cron secret is compared using `crypto.timingSafeEqual` to avoid timing
@@ -108,13 +105,3 @@ in `vercel.json`, protected by `CRON_SECRET`). No external service needed.
   the last successfully-fetched price is reused from a small Postgres cache
   (`kanz_settings`) instead of failing the whole rates fetch (and, on the
   daily snapshot cron, failing every user's snapshot for the day).
-
-## Migrating data from the old Google Sheets version
-
-Export the old `kanz_users` sheet as **Tab Separated Values (.tsv)** and
-insert each row directly into `kanz_users` via Neon's SQL Editor, or in bulk
-with a small script — see the "Migrating an old account" section in project
-history/issues for the exact column mapping (`username | password_hash |
-created_at | data_json | history_json`). Old password hashes are preserved
-in the `legacy_hash` column and upgraded to bcrypt automatically on first
-login.

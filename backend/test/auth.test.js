@@ -4,25 +4,12 @@ process.env.REMEMBER_TOKEN_DAYS = process.env.REMEMBER_TOKEN_DAYS || "7";
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const {
-  hashPassword,
-  comparePassword,
-  sha256HexLegacy,
-  issueToken,
-  verifyTokenValue,
-  safeEqual,
-} = require("../lib/auth");
+const { hashPassword, comparePassword, issueToken, verifyTokenValue, safeEqual } = require("../lib/auth");
 
 test("hashPassword/comparePassword: round-trips correctly", async () => {
   const hash = await hashPassword("correct horse battery staple");
   assert.equal(await comparePassword("correct horse battery staple", hash), true);
   assert.equal(await comparePassword("wrong password", hash), false);
-});
-
-test("sha256HexLegacy: matches the known legacy Apps Script hashing scheme", () => {
-  // Known SHA-256 hex digest of the literal string "password" (unsalted, utf8) —
-  // this is a fixed vector, not something that should ever change.
-  assert.equal(sha256HexLegacy("password"), "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8");
 });
 
 test("issueToken/verifyTokenValue: round-trips the username", () => {

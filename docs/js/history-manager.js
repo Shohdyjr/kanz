@@ -4,16 +4,6 @@ let historyManagerDrafts = []; // [{ tempId, date, egpUsd, hardUsd, goldUsd, ass
 let historyManagerStatus = null; // { ok: true/false, text } — save confirmation, disappears on its own
 let historyManagerFilter = ""; // date search filter for the table (e.g. "2026-06" shows just June)
 
-// Wraps rpcCall in a Promise so we can await it when saving several rows in sequence
-function callServer(fnName, ...args) {
-  return new Promise((resolve, reject) => {
-    rpc.run
-      .withSuccessHandler(resolve)
-      .withFailureHandler(reject)
-      [fnName](...args);
-  });
-}
-
 function openHistoryManager() {
   historyManagerOpen = true;
   historyManagerEdits = {};
@@ -34,8 +24,8 @@ function closeHistoryManager() {
 
 function deleteHistoryEntryUi(date) {
   if (!confirm(t("confirmDeleteEntry")(date))) return;
-  rpc.run
-    .withSuccessHandler(function (j) {
+  callApi("deleteHistoryEntry", currentUser, date, sessionToken)
+    .then(function (j) {
       if (j && j.ok) {
         historyData = (j.history || []).sort((a, b) => a.date.localeCompare(b.date));
         delete historyManagerEdits[date];
@@ -43,10 +33,9 @@ function deleteHistoryEntryUi(date) {
         renderHistory();
       }
     })
-    .withFailureHandler(function (err) {
+    .catch(function (err) {
       console.error("deleteHistoryEntry:", err);
-    })
-    .deleteHistoryEntry(currentUser, date, sessionToken);
+    });
 }
 
 // Called on every numeric-cell edit for an existing row — updates the in-memory
@@ -192,7 +181,7 @@ async function saveAllHistoryEdits() {
     const e = historyManagerEdits[date];
     const totalUsd = (e.egpUsd || 0) + (e.hardUsd || 0) + (e.goldUsd || 0) + (e.assetsUsd || 0);
     try {
-      const res = await callServer(
+      const res = await callApi(
         "addManualHistoryEntry",
         currentUser,
         {
@@ -216,7 +205,7 @@ async function saveAllHistoryEdits() {
   for (const d of validDrafts) {
     const totalUsd = (d.egpUsd || 0) + (d.hardUsd || 0) + (d.goldUsd || 0) + (d.assetsUsd || 0);
     try {
-      const res = await callServer(
+      const res = await callApi(
         "addManualHistoryEntry",
         currentUser,
         {
