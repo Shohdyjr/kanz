@@ -395,7 +395,7 @@ body {
 }
 .wt-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 860px;
   border-collapse: collapse;
 }
 .wt-table-title {
@@ -525,6 +525,19 @@ body {
   font-size: 13px;
   text-align: left;
   direction: ltr;
+}
+.wt-projected-cell {
+  font-family: "JetBrains Mono", monospace;
+  color: var(--wt-gold);
+  font-size: 13px;
+  text-align: left;
+  direction: ltr;
+}
+.wt-accrued-date {
+  display: block;
+  font-size: 11px;
+  color: var(--wt-text-dim);
+  font-family: inherit;
 }
 .wt-price-cell {
   font-family: "JetBrains Mono", monospace;
