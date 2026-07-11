@@ -471,7 +471,8 @@ body {
 }
 .wt-qty {
   width: 100%;
-  max-width: 120px;
+  min-width: 110px;
+  max-width: 160px;
   background: var(--wt-input-bg);
   border: 1px solid var(--wt-line);
   color: var(--wt-text);
@@ -488,7 +489,8 @@ body {
 }
 .wt-apy {
   width: 100%;
-  max-width: 90px;
+  min-width: 90px;
+  max-width: 120px;
   background: var(--wt-input-bg);
   border: 1px solid var(--wt-line);
   color: var(--wt-text);
