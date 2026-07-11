@@ -503,6 +503,29 @@ body {
   outline: none;
   border-color: var(--wt-gold-dim);
 }
+.wt-apy-freq {
+  width: 100%;
+  max-width: 100px;
+  background: var(--wt-input-bg);
+  border: 1px solid var(--wt-line);
+  color: var(--wt-text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  text-align: left;
+  direction: ltr;
+}
+.wt-apy-freq:focus {
+  outline: none;
+  border-color: var(--wt-gold-dim);
+}
+.wt-accrued-cell {
+  font-family: "JetBrains Mono", monospace;
+  color: var(--wt-green);
+  font-size: 13px;
+  text-align: left;
+  direction: ltr;
+}
 .wt-price-cell {
   font-family: "JetBrains Mono", monospace;
   color: var(--wt-text-dim);

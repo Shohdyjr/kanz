@@ -61,6 +61,12 @@ router.get("/data", async (req, res) => {
     order: d.order || [],
     savingsGoal: d.savingsGoal || 0,
     apy: d.apy || {},
+    apyFrequency: d.apyFrequency || {},
+    qtyChangedAt: d.qtyChangedAt || {},
+    // Read-only, computed nightly by the cron (see cron/dailySnapshot.js) —
+    // the accrued return since qtyChangedAt, kept separate from `qty` so the
+    // amount itself is never touched by anything but the user.
+    accruedValue: d.accruedValue || {},
   });
 });
 
@@ -72,15 +78,31 @@ const isValidApyMap = (v) =>
   isSafePlainObject(v) &&
   Object.values(v).every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100);
 
+// Per-item compounding cadence for the APY above — "daily" or "monthly" only.
+const isValidFrequencyMap = (v) =>
+  isSafePlainObject(v) && Object.values(v).every((f) => f === "daily" || f === "monthly");
+
+// Per-item ISO timestamp of the last time the user edited that item's qty —
+// set by the client (see docs/js/assets.js setQty()), anchors where the
+// accrual calculation in the cron starts counting from.
+const isValidTimestampMap = (v) =>
+  isSafePlainObject(v) &&
+  Object.values(v).every((s) => typeof s === "string" && !Number.isNaN(new Date(s).getTime()));
+
 router.put("/data", async (req, res) => {
   const user = await getUserRow(req.username);
   if (!user) return res.json({ ok: false, error: "userNotFound" });
 
-  const { qty, customAssets, excludedBaseIds, baseOverrides, theme, lang, order, savingsGoal, apy } = req.body;
+  const { qty, customAssets, excludedBaseIds, baseOverrides, theme, lang, order, savingsGoal, apy, apyFrequency, qtyChangedAt } =
+    req.body;
   if (qty !== undefined && !isFiniteNumberMap(qty)) return res.json({ ok: false, error: "invalidData" });
   if (baseOverrides !== undefined && !isSafePlainObject(baseOverrides))
     return res.json({ ok: false, error: "invalidData" });
   if (apy !== undefined && !isValidApyMap(apy)) return res.json({ ok: false, error: "invalidData" });
+  if (apyFrequency !== undefined && !isValidFrequencyMap(apyFrequency))
+    return res.json({ ok: false, error: "invalidData" });
+  if (qtyChangedAt !== undefined && !isValidTimestampMap(qtyChangedAt))
+    return res.json({ ok: false, error: "invalidData" });
 
   const existing = user.data || {};
   const updated = {
@@ -94,6 +116,10 @@ router.put("/data", async (req, res) => {
     order: Array.isArray(order) ? order : existing.order || [],
     savingsGoal: typeof savingsGoal === "number" ? savingsGoal : existing.savingsGoal || 0,
     apy: apy || existing.apy || {},
+    apyFrequency: apyFrequency || existing.apyFrequency || {},
+    qtyChangedAt: qtyChangedAt || existing.qtyChangedAt || {},
+    // accruedValue is never written here — it's cron-computed only (read via GET /data).
+    accruedValue: existing.accruedValue || {},
   };
 
   await pool.query("UPDATE kanz_users SET data = $1 WHERE username = $2", [JSON.stringify(updated), req.username]);

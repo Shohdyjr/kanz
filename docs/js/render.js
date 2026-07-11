@@ -152,6 +152,8 @@ function render() {
           <th>${t("thAsset")}</th>
           <th>${t("thQty")}</th>
           <th>${t("thApy")}</th>
+          <th>${t("thApyFreq")}</th>
+          <th class="num">${t("thAccrued")}</th>
           <th class="num">${t("thUnitPrice")}</th>
           <th class="num">${t("thTotal")}</th>
           <th class="wt-th-del"></th>
@@ -177,6 +179,11 @@ function render() {
             <td><input class="wt-apy" type="number" min="0" max="100" step="any"
               value="${apy[a.id] || ""}" placeholder="0%" title="${t("apyHint")}"
               oninput="setApy('${a.id}',this.value)"></td>
+            <td><select class="wt-apy-freq" title="${t("apyFreqHint")}" onchange="setApyFrequency('${a.id}',this.value)">
+              <option value="daily" ${apyFrequency[a.id] !== "monthly" ? "selected" : ""}>${t("apyFreqDaily")}</option>
+              <option value="monthly" ${apyFrequency[a.id] === "monthly" ? "selected" : ""}>${t("apyFreqMonthly")}</option>
+            </select></td>
+            <td class="wt-accrued-cell" title="${t("accruedHint")}">${apy[a.id] > 0 ? fmtNum(accruedValue[a.id] || 0, 4) : "—"}</td>
             <td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>
             <td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>
             <td><div class="wt-row-actions">

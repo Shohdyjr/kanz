@@ -78,9 +78,22 @@ let baseOverrides = {};
 let ASSETS = [];
 
 let qty = {};
-// Per-item APY (%), e.g. apy["gold"] = 5 means that item grows 5%/year,
-// compounded daily by the backend cron. Keyed by asset id, like `qty`.
+// Per-item APY (%), e.g. apy["gold"] = 5 means that item grows 5%/year.
+// Keyed by asset id, like `qty`.
 let apy = {};
+// Per-item compounding cadence for the APY above — "daily" or "monthly".
+// Missing/undefined defaults to "daily". Keyed by asset id.
+let apyFrequency = {};
+// Per-item ISO timestamp of the last time the user edited that item's qty —
+// set automatically by setQty(). The backend cron uses this as the start
+// point for computing accrued return, so growth always counts from the last
+// manual change rather than from account creation.
+let qtyChangedAt = {};
+// Per-item accrued return since qtyChangedAt, computed nightly by the
+// backend cron (see backend/cron/dailySnapshot.js) — read-only on the
+// client. `qty` itself is never touched by this; it only ever changes when
+// the user edits it directly.
+let accruedValue = {};
 let order = [];
 let itemHistoryModalId = null; // asset id whose history timeline is open, or null
 let itemHistoryEntries = []; // entries loaded for itemHistoryModalId

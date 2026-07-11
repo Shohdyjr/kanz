@@ -22,7 +22,7 @@ const RPC_MAP = {
   }),
   updateEmail: (email, tok) => ({ method: "PUT", path: "/auth/email", bearer: tok, body: { email } }),
   loadDataForClient: (u, tok) => ({ method: "GET", path: "/data", bearer: tok }),
-  saveDataFromClient: (u, qty, ca, ex, ov, th, lg, ord, goal, tok, apyMap) => ({
+  saveDataFromClient: (u, qty, ca, ex, ov, th, lg, ord, goal, tok, apyMap, apyFrequencyMap, qtyChangedAtMap) => ({
     method: "PUT",
     path: "/data",
     bearer: tok,
@@ -36,6 +36,8 @@ const RPC_MAP = {
       order: ord,
       savingsGoal: goal,
       apy: apyMap,
+      apyFrequency: apyFrequencyMap,
+      qtyChangedAt: qtyChangedAtMap,
     },
   }),
   loadItemHistoryForClient: (u, itemId, tok) => ({

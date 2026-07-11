@@ -1,8 +1,11 @@
 // ── Per-item history modal ──────────────────────────────────────────
-// Shows the automatic timeline of daily APY-driven growth for one item:
-// date, quantity before → after, and the delta. Entries are written by the
-// backend cron (backend/cron/dailySnapshot.js) whenever that item has an
-// apy set — there is nothing to add manually here, this is read-only.
+// Shows the automatic timeline of daily/monthly APY-driven accrual for one
+// item: date, accrued-value before → after, and that day's delta. This
+// tracks accrued RETURN only — the item's qty itself is never touched by
+// this, it only ever changes when the user edits it directly. Entries are
+// written by the backend cron (backend/cron/dailySnapshot.js) whenever that
+// item has an apy set — there is nothing to add manually here, this is
+// read-only.
 
 function openItemHistoryModal(id) {
   itemHistoryModalId = id;

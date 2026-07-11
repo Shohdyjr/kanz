@@ -19,7 +19,9 @@ function saveData() {
     order,
     savingsGoal,
     sessionToken,
-    apy
+    apy,
+    apyFrequency,
+    qtyChangedAt
   )
     .then(function (j) {
       if (j && j.ok) {

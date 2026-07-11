@@ -1,16 +1,29 @@
 // ── General actions ────────────────────────────────────────
 function setQty(id, v) {
-  qty[id] = parseFloat(v) || 0;
+  const next = parseFloat(v) || 0;
+  // Only the user can ever reach this function (called from the qty input's
+  // oninput handler) — the amount is never touched programmatically. Record
+  // the moment of change so the accrual calculation in the backend cron
+  // starts counting from here, not from account creation.
+  if (next !== qty[id]) qtyChangedAt[id] = new Date().toISOString();
+  qty[id] = next;
   updateTotals();
   scheduleSave();
   renderBreakdown();
 }
 
-// APY (%) per item — user-set, compounded daily by the backend cron
-// (see backend/cron/dailySnapshot.js applyItemGrowth()). 0/blank = no growth.
+// APY (%) per item — user-set. Compounding accrual is computed nightly by
+// the backend cron (see backend/cron/dailySnapshot.js applyItemGrowth()) into
+// accruedValue, WITHOUT ever changing qty itself. 0/blank = no growth.
 function setApy(id, v) {
   const n = parseFloat(v);
   apy[id] = Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 0;
+  scheduleSave();
+}
+
+// Compounding cadence for that item's APY — "daily" or "monthly".
+function setApyFrequency(id, v) {
+  apyFrequency[id] = v === "monthly" ? "monthly" : "daily";
   scheduleSave();
 }
 
@@ -205,6 +218,9 @@ function deleteAsset(id) {
 
   delete qty[id];
   delete apy[id];
+  delete apyFrequency[id];
+  delete qtyChangedAt[id];
+  delete accruedValue[id];
   order = order.filter((oid) => oid !== id);
   rebuildAssets();
 
