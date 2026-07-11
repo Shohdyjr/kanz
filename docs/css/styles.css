@@ -391,16 +391,18 @@ body {
   border-radius: var(--wt-radius);
   padding: 20px 18px;
   margin-bottom: 24px;
+  overflow-x: auto;
+}
+.wt-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
 }
 .wt-table-title {
   font-size: 14px;
   color: var(--wt-text-dim);
   margin: 0;
   font-weight: 500;
-}
-.wt-table {
-  width: 100%;
-  border-collapse: collapse;
 }
 .wt-table thead th {
   text-align: start;
