@@ -1,12 +1,13 @@
 // ══════════════════════════════════════════════════════
-//  "What if" simulator — a standalone modal opened from each row.
-//  The user types an amount + a target date; this shows:
+//  "What if" simulator — a standalone calculator opened from its own button
+//  in the table header (like the return-config panel). The user picks an
+//  item, an amount, and a target date; this shows:
 //    1) The projected total on that date (reusing the exact same growth
 //       math as the read-only projection columns in return-config.js —
 //       tiered certificate compounding if configured, otherwise the flat
 //       APY compounded daily).
 //    2) The actual EGP/USD/etc amount the balance grows by per day, per
-//       month, and per year at the asset's current rate — regardless of
+//       month, and per year at the item's current rate — regardless of
 //       the product's real payout frequency, since the user wants to see
 //       all three, not just the one that matches the configured cycle.
 //  Purely a read-only estimate: never writes back to qty/apy/history.
@@ -14,8 +15,8 @@
 
 function openSimModal(assetId) {
   simModalOpen = true;
-  simAssetId = assetId || null;
-  if (simAmount == null) simAmount = qty[assetId] || "";
+  simAssetId = assetId && ASSETS.some((a) => a.id === assetId) ? assetId : ASSETS.length ? ASSETS[0].id : null;
+  if (simAmount == null && simAssetId) simAmount = qty[simAssetId] || "";
   if (!simDate) simDate = todayLocalStr();
   render();
   setTimeout(() => {
@@ -26,13 +27,16 @@ function openSimModal(assetId) {
 
 function closeSimModal() {
   simModalOpen = false;
-  simAssetId = null;
   render();
 }
 
+// Re-renders just the modal body so switching item/amount/date doesn't
+// disturb the rest of the page (same pattern as onReturnPanelAssetChange).
 function onSimInputChange() {
+  const assetEl = document.getElementById("sim-asset");
   const amtEl = document.getElementById("sim-amount");
   const dateEl = document.getElementById("sim-date");
+  if (assetEl) simAssetId = assetEl.value || null;
   simAmount = amtEl ? amtEl.value : simAmount;
   simDate = dateEl ? dateEl.value : simDate;
   const root = document.getElementById("wt-sim-modal-root");
@@ -76,16 +80,38 @@ function simProjectedValue(assetId, amount, targetDateStr) {
 }
 
 function renderSimModal() {
+  if (!simModalOpen) return `<div id="wt-sim-modal-root"></div>`;
+
   const a = ASSETS.find((x) => x.id === simAssetId);
+  const minDate = todayLocalStr();
+
+  const assetPicker = `
+      <div class="wt-field">
+        <label for="sim-asset">${t("simItemLabel")}</label>
+        <select id="sim-asset" onchange="onSimInputChange()">
+          ${ASSETS.map((x) => `<option value="${x.id}" ${x.id === simAssetId ? "selected" : ""}>${esc(x.icon)} ${esc(assetName(x))}</option>`).join("")}
+        </select>
+      </div>`;
+
   if (!a) {
-    return `<div id="wt-sim-modal-root"></div>`;
+    return `<div id="wt-sim-modal-root">
+    <div class="wt-modal-overlay" onclick="if(event.target===this)closeSimModal()">
+      <div class="wt-modal wt-modal-wide">
+        <h3>${t("simModalTitle")}</h3>
+        <p class="wt-sim-subtitle">${t("simModalHint")}</p>
+        <p class="wt-sim-note">${t("noAssetsHint")}</p>
+        <div class="wt-modal-actions">
+          <button type="button" class="wt-btn" onclick="closeSimModal()">${t("close")}</button>
+        </div>
+      </div>
+    </div>
+    </div>`;
   }
 
   const amount = parseFloat(simAmount) || 0;
   const rate = apy[a.id] || 0;
   const cfg = returnConfig[a.id] || {};
   const isTiered = !!(cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length);
-  const minDate = todayLocalStr();
 
   const inc = simIncrementAmounts(rate, amount);
   const projected = amount && simDate ? simProjectedValue(a.id, amount, simDate) : null;
@@ -101,11 +127,12 @@ function renderSimModal() {
 
   return `<div id="wt-sim-modal-root">
   <div class="wt-modal-overlay" onclick="if(event.target===this)closeSimModal()">
-    <div class="wt-modal">
-      <h3>${t("simModalTitle")} — ${esc(assetName(a))}</h3>
+    <div class="wt-modal wt-modal-wide">
+      <h3>${t("simModalTitle")}</h3>
       <p class="wt-sim-subtitle">${t("simModalHint")}</p>
 
       <div class="wt-field-row-4">
+        ${assetPicker}
         <div class="wt-field">
           <label for="sim-amount">${t("simAmountLabel")} (${a.currency})</label>
           <input type="number" id="sim-amount" min="0" step="any" dir="ltr"
@@ -120,32 +147,34 @@ function renderSimModal() {
 
       ${noRateNote}
 
-      ${
-        inc
-          ? `<div class="wt-sim-inc-block">
-        <p class="wt-sim-block-title">${t("simIncreaseTitle")}</p>
-        ${incRow("simDaily", inc.daily)}
-        ${incRow("simMonthly", inc.monthly)}
-        ${incRow("simYearly", inc.yearly)}
-      </div>`
-          : ""
-      }
+      <div class="wt-sim-results">
+        ${
+          inc
+            ? `<div class="wt-sim-inc-block">
+          <p class="wt-sim-block-title">${t("simIncreaseTitle")}</p>
+          ${incRow("simDaily", inc.daily)}
+          ${incRow("simMonthly", inc.monthly)}
+          ${incRow("simYearly", inc.yearly)}
+        </div>`
+            : ""
+        }
 
-      ${
-        projected != null
-          ? `<div class="wt-sim-total-block">
-        <p class="wt-sim-block-title">${t("simOnDateTitle")}(${esc(simDate)})</p>
-        <div class="wt-sim-total-row">
-          <span>${t("simProjectedTotal")}</span>
-          <b>${fmtByCurrencyPrecise(projected, a.currency)}</b>
-        </div>
-        <div class="wt-sim-total-row">
-          <span>${t("simProjectedProfit")}</span>
-          <b class="${profit >= 0 ? "wt-sim-pos" : "wt-sim-neg"}">${profit >= 0 ? "+" : ""}${fmtByCurrencyPrecise(profit, a.currency)}</b>
-        </div>
-      </div>`
-          : ""
-      }
+        ${
+          projected != null
+            ? `<div class="wt-sim-total-block">
+          <p class="wt-sim-block-title">${t("simOnDateTitle")}(${esc(simDate)})</p>
+          <div class="wt-sim-total-row">
+            <span>${t("simProjectedTotal")}</span>
+            <b>${fmtByCurrencyPrecise(projected, a.currency)}</b>
+          </div>
+          <div class="wt-sim-total-row">
+            <span>${t("simProjectedProfit")}</span>
+            <b class="${profit >= 0 ? "wt-sim-pos" : "wt-sim-neg"}">${profit >= 0 ? "+" : ""}${fmtByCurrencyPrecise(profit, a.currency)}</b>
+          </div>
+        </div>`
+            : ""
+        }
+      </div>
 
       <div class="wt-modal-actions">
         <button type="button" class="wt-btn-ghost" onclick="openReturnPanel('${a.id}')">${t("returnConfigBtnTitle")}</button>

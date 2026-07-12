@@ -146,6 +146,7 @@ function render() {
             ${renderColumnPanel()}
           </div>
           <button class="wt-btn wt-btn-ghost" onclick="openReturnPanel()" title="${t("returnConfigBtnTitle")}">${t("returnConfigBtnTitle")}</button>
+          <button class="wt-btn wt-btn-ghost" onclick="openSimModal()" title="${t("simBtnTitle")}">🧮 ${t("simBtnTitle")}</button>
           <button class="wt-btn" onclick="saveData()">${t("saveNow")}</button>
           <button class="wt-btn wt-btn-ghost" onclick="exportBackup()">${t("exportBackupBtn")}</button>
           <span id="wt-sync-badge" class="wt-sync-badge"></span>
@@ -210,7 +211,6 @@ function render() {
               );
             })()}
             <td><div class="wt-row-actions">
-              <button class="wt-hist" onclick="openSimModal('${a.id}')" title="${t("simBtnTitle")}">🧮</button>
               <button class="wt-hist" onclick="openItemHistoryModal('${a.id}')" title="${t("itemHistoryTitle")}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
               </button>

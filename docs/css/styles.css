@@ -806,13 +806,20 @@ body {
   color: var(--wt-gold);
   margin: 8px 0;
 }
+.wt-sim-results {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
 .wt-sim-inc-block,
 .wt-sim-total-block {
-  margin: 14px 0;
+  margin: 14px 0 0;
   padding: 12px 14px;
   background: var(--wt-input-bg);
   border: 1px solid var(--wt-line);
   border-radius: 10px;
+  min-width: 0;
 }
 .wt-sim-block-title {
   font-size: 12px;
@@ -825,18 +832,31 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 0;
+  gap: 10px;
+  padding: 5px 0;
   font-size: 13px;
+}
+.wt-sim-inc-row span,
+.wt-sim-total-row span {
+  flex-shrink: 0;
 }
 .wt-sim-inc-row b,
 .wt-sim-total-row b {
   font-family: "JetBrains Mono", monospace;
+  white-space: nowrap;
+  direction: ltr;
+  text-align: end;
 }
 .wt-sim-pos {
   color: var(--wt-green);
 }
 .wt-sim-neg {
   color: var(--wt-red);
+}
+@media (max-width: 640px) {
+  .wt-sim-results {
+    grid-template-columns: 1fr;
+  }
 }
 
 .wt-item-hist-list {
