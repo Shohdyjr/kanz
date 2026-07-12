@@ -164,6 +164,8 @@ function render() {
           <th>${t("thApy")}</th>
           <th class="num">${t("thUnitPrice")}</th>
           <th class="num">${t("thTotal")}</th>
+          <th class="num">${t("thProjNext")}</th>
+          <th class="num">${t("thProjYearEnd")}</th>
           <th class="wt-th-del"></th>
         </tr></thead>
         <tbody>
@@ -189,6 +191,12 @@ function render() {
             </td>
             <td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>
             <td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>
+            ${(() => {
+              const proj = projectAssetValue(a);
+              if (!proj)
+                return `<td class="wt-proj-cell" id="proj-next-${a.id}">${t("projNone")}</td><td class="wt-proj-cell" id="proj-end-${a.id}">${t("projNone")}</td>`;
+              return `<td class="wt-proj-cell" id="proj-next-${a.id}" title="${t(proj.nextLabelKey)}">${fmtUsd(proj.next)}</td><td class="wt-proj-cell" id="proj-end-${a.id}">${fmtUsd(proj.endOfYear)}</td>`;
+            })()}
             <td><div class="wt-row-actions">
               <button class="wt-hist" onclick="openItemHistoryModal('${a.id}')" title="${t("itemHistoryTitle")}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>

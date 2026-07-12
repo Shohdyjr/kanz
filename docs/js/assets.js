@@ -256,6 +256,11 @@ function updateTotals() {
     totalUsd += t;
     const el = document.getElementById("total-" + a.id);
     if (el) el.textContent = fmtUsd(t);
+    const proj = projectAssetValue(a);
+    const nextEl = document.getElementById("proj-next-" + a.id);
+    const endEl = document.getElementById("proj-end-" + a.id);
+    if (nextEl) nextEl.textContent = proj ? fmtUsd(proj.next) : t("projNone");
+    if (endEl) endEl.textContent = proj ? fmtUsd(proj.endOfYear) : t("projNone");
   });
   const totalGold = rates.goldUsdPerGram > 0 ? totalUsd / rates.goldUsdPerGram : 0;
   const totalEgp = totalUsd * rates.egpPerUsd;

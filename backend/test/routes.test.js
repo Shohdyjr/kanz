@@ -67,10 +67,24 @@ test("isValidReturnConfigMap: accepts a map of valid per-asset return-category e
     dataRouter.isValidReturnConfigMap({
       thndr_cloud: { productType: "fixedIncomeFund", calcMethod: "navBased", payoutFreq: "daily", compounding: true },
       mashreq_savings: { productType: "savings", calcMethod: "dailyBalance", payoutFreq: "monthly" },
+      nbe_certificate: {
+        productType: "certificate",
+        calcMethod: "fixedPrincipal",
+        payoutFreq: "annual",
+        startDate: "2026-01-15",
+        tierRates: [27, 22, 17],
+      },
     }),
     true
   );
   assert.equal(dataRouter.isValidReturnConfigMap({}), true);
+});
+
+test("isValidReturnConfigMap: rejects bad startDate/tierRates values", () => {
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { startDate: "15-01-2026" } }), false);
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { tierRates: [27, "22", 17] } }), false);
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { tierRates: [] } }), false);
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { tierRates: 27 } }), false);
 });
 
 test("isValidReturnConfigMap: rejects unknown enum values, unknown keys, and wrong types", () => {

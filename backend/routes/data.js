@@ -83,13 +83,22 @@ const RETURN_CONFIG_ENUMS = {
   payoutFreq: ["daily", "monthly", "quarterly", "semiAnnual", "annual", "maturity"],
   liquidity: ["daily", "monthly", "quarterly", "maturity", "restricted"],
 };
-const RETURN_CONFIG_KEYS = [...Object.keys(RETURN_CONFIG_ENUMS), "compounding"];
+const RETURN_CONFIG_KEYS = [...Object.keys(RETURN_CONFIG_ENUMS), "compounding", "startDate", "tierRates"];
+const RETURN_CONFIG_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isValidTierRates = (v) =>
+  v == null ||
+  (Array.isArray(v) &&
+    v.length > 0 &&
+    v.length <= 15 &&
+    v.every((n) => typeof n === "number" && Number.isFinite(n) && n >= -100 && n <= 1000));
 
 const isValidReturnConfigEntry = (v) =>
   isSafePlainObject(v) &&
   Object.keys(v).every((k) => RETURN_CONFIG_KEYS.includes(k)) &&
   Object.entries(RETURN_CONFIG_ENUMS).every(([field, allowed]) => v[field] == null || allowed.includes(v[field])) &&
-  (v.compounding == null || typeof v.compounding === "boolean");
+  (v.compounding == null || typeof v.compounding === "boolean") &&
+  (v.startDate == null || RETURN_CONFIG_DATE_RE.test(v.startDate)) &&
+  isValidTierRates(v.tierRates);
 
 const isValidReturnConfigMap = (v) => isSafePlainObject(v) && Object.values(v).every(isValidReturnConfigEntry);
 

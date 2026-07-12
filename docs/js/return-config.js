@@ -64,6 +64,18 @@ const RETURN_PRESETS = [
     liquidity: "daily",
     suggestedApy: 15,
   },
+  {
+    id: "nbe_platinum_stepup_3y",
+    name_ar: "الأهلي — شهادة بلاتينية متدرجة (3 سنين)",
+    name_en: "NBE Platinum Step-Up Certificate (3 Years)",
+    productType: "certificate",
+    rateType: "fixed",
+    calcMethod: "fixedPrincipal",
+    payoutFreq: "annual",
+    compounding: false,
+    liquidity: "restricted",
+    tierRates: [27, 22, 17],
+  },
 ];
 
 // Derives the "Category" code (e.g. DAILY_MONTHLY, FUND_DAILY) from the
@@ -128,6 +140,7 @@ function applyReturnPreset(presetId) {
   set("rc-compounding", p.compounding);
   set("rc-liquidity", p.liquidity);
   set("rc-apy", p.suggestedApy);
+  set("rc-tierRates", p.tierRates ? p.tierRates.join(",") : "");
   previewReturnCategory();
 }
 
@@ -144,6 +157,11 @@ function submitReturnConfig(ev) {
   const compounding = val("rc-compounding") === "true";
   const liquidity = val("rc-liquidity");
   const apyVal = parseFloat(val("rc-apy"));
+  const startDate = val("rc-startDate");
+  const tierRates = val("rc-tierRates")
+    .split(",")
+    .map((s) => parseFloat(s.trim()))
+    .filter((n) => Number.isFinite(n));
 
   returnConfig[id] = {
     productType: productType || null,
@@ -152,6 +170,8 @@ function submitReturnConfig(ev) {
     payoutFreq: payoutFreq || null,
     compounding,
     liquidity: liquidity || null,
+    startDate: startDate || null,
+    tierRates: tierRates.length ? tierRates : null,
   };
   if (Number.isFinite(apyVal) && apyVal > 0) apy[id] = Math.min(apyVal, 100);
 
@@ -247,6 +267,19 @@ function renderReturnPanel() {
           </div>
         </div>
 
+        <div class="wt-field-row" style="margin-top:12px">
+          <div class="wt-field">
+            <label for="rc-startDate">${t("startDateLabel")}</label>
+            <input type="date" id="rc-startDate" value="${cfg.startDate || ""}">
+          </div>
+          <div class="wt-field">
+            <label for="rc-tierRates">${t("tierRatesLabel")}</label>
+            <input type="text" id="rc-tierRates" placeholder="27,22,17" dir="ltr"
+              value="${Array.isArray(cfg.tierRates) ? cfg.tierRates.join(",") : ""}">
+          </div>
+        </div>
+        <p style="font-size:11px;color:var(--wt-text-dim);margin:-6px 0 4px">${t("tierRatesHint")}</p>
+
         <!-- The actual number the cron applies every day — shown last, on its
              own, since everything above is just describing why it's what it is. -->
         <div class="wt-return-summary">
@@ -270,8 +303,95 @@ function renderReturnPanel() {
   </div>`;
 }
 
-// Live-updates the derived category code as the user changes the three
-// fields it depends on, without a full re-render (which would lose focus).
+// ══════════════════════════════════════════════════════
+//  Projections — shown as extra read-only columns in the assets table.
+//  Purely a forward-looking display estimate; never written back anywhere,
+//  never touches qty/apy/history. Two numbers per item, always:
+//    - "next": value at the item's next natural payout point (tomorrow for
+//      daily items, next month for monthly, next year for annual/maturity)
+//    - "endOfYear": value on Dec 31 of the current calendar year
+// ══════════════════════════════════════════════════════
+
+function daysBetweenDates(d1, d2) {
+  return Math.round((d2 - d1) / 86400000);
+}
+
+function addYearsToDate(d, n) {
+  const nd = new Date(d);
+  nd.setFullYear(nd.getFullYear() + n);
+  return nd;
+}
+
+function parseDateStr(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+// Compounds `principal` from `startDateStr` up to `targetDate`, switching to
+// the next rate in `tierRates` at every anniversary of the start date. Once
+// past the last defined tier, keeps compounding at that last tier's rate
+// (a reasonable assumption for "what happens if I don't withdraw" — edit the
+// tierRates list in the panel if the real terms differ).
+function tieredValueAt(principal, startDateStr, tierRates, targetDate) {
+  if (!startDateStr || !Array.isArray(tierRates) || !tierRates.length) return principal;
+  let cursor = parseDateStr(startDateStr);
+  if (targetDate <= cursor) return principal;
+
+  let value = principal;
+  for (let i = 0; i < tierRates.length; i++) {
+    const yearEnd = addYearsToDate(cursor, 1);
+    const segmentEnd = targetDate < yearEnd ? targetDate : yearEnd;
+    const days = Math.max(0, daysBetweenDates(cursor, segmentEnd));
+    value *= Math.pow(1 + tierRates[i] / 100, days / 365);
+    if (targetDate <= yearEnd) return value;
+    cursor = yearEnd;
+  }
+  const lastRate = tierRates[tierRates.length - 1];
+  const remDays = Math.max(0, daysBetweenDates(cursor, targetDate));
+  return value * Math.pow(1 + lastRate / 100, remDays / 365);
+}
+
+// Returns { next, nextLabelKey, endOfYear } in USD, or null if there's
+// nothing to project (no balance, or no rate configured at all).
+function projectAssetValue(a) {
+  const principal = (qty[a.id] || 0) * priceFor(a);
+  if (!principal) return null;
+
+  const cfg = returnConfig[a.id] || {};
+  const today = new Date();
+  const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const endOfYear = new Date(today.getFullYear(), 11, 31);
+
+  let nextDate, nextLabelKey;
+  if (cfg.payoutFreq === "monthly" || cfg.payoutFreq === "quarterly" || cfg.payoutFreq === "semiAnnual") {
+    nextDate = new Date(todayMid.getFullYear(), todayMid.getMonth() + 1, todayMid.getDate());
+    nextLabelKey = "projNextMonth";
+  } else if (cfg.payoutFreq === "annual" || cfg.payoutFreq === "maturity") {
+    nextDate = addYearsToDate(todayMid, 1);
+    nextLabelKey = "projNextYear";
+  } else {
+    nextDate = new Date(todayMid.getFullYear(), todayMid.getMonth(), todayMid.getDate() + 1);
+    nextLabelKey = "projTomorrow";
+  }
+
+  if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
+    return {
+      next: tieredValueAt(principal, cfg.startDate, cfg.tierRates, nextDate),
+      nextLabelKey,
+      endOfYear: tieredValueAt(principal, cfg.startDate, cfg.tierRates, endOfYear),
+    };
+  }
+
+  const rate = apy[a.id] || 0;
+  if (!rate) return null;
+  const daysToNext = Math.max(0, daysBetweenDates(todayMid, nextDate));
+  const daysToEnd = Math.max(0, daysBetweenDates(todayMid, endOfYear));
+  return {
+    next: principal * Math.pow(1 + rate / 100, daysToNext / 365),
+    nextLabelKey,
+    endOfYear: principal * Math.pow(1 + rate / 100, daysToEnd / 365),
+  };
+}
 function previewReturnCategory() {
   const calcMethod = document.getElementById("rc-calcMethod").value;
   const payoutFreq = document.getElementById("rc-payoutFreq").value;
