@@ -141,7 +141,9 @@ function applyReturnPreset(presetId) {
   set("rc-liquidity", p.liquidity);
   set("rc-apy", p.suggestedApy);
   set("rc-tierRates", p.tierRates ? p.tierRates.join(",") : "");
+  set("rc-growthFormula", "");
   previewReturnCategory();
+  previewGrowthFormula();
 }
 
 function submitReturnConfig(ev) {
@@ -162,6 +164,7 @@ function submitReturnConfig(ev) {
     .split(",")
     .map((s) => parseFloat(s.trim()))
     .filter((n) => Number.isFinite(n));
+  const growthFormula = val("rc-growthFormula").trim();
 
   returnConfig[id] = {
     productType: productType || null,
@@ -172,6 +175,7 @@ function submitReturnConfig(ev) {
     liquidity: liquidity || null,
     startDate: startDate || null,
     tierRates: tierRates.length ? tierRates : null,
+    growthFormula: growthFormula || null,
   };
   if (Number.isFinite(apyVal) && apyVal > 0) apy[id] = Math.min(apyVal, 100);
 
@@ -186,6 +190,57 @@ function clearReturnConfig() {
   const root = document.getElementById("wt-return-panel-root");
   if (root) root.outerHTML = renderReturnPanel();
   scheduleSave();
+}
+
+// Evaluates a user-written growth-formula expression against
+// {principal, rate, days} and returns the interest amount, or null if the
+// formula is empty/invalid (callers fall back to the built-in default in
+// that case). This is a single-user personal app — the formula an account
+// owner writes only ever runs against their own data, in their own browser
+// or their own serverless cron invocation — so a plain expression evaluator
+// is an acceptable trade for "you can fix the math yourself, right now,
+// without waiting on a code change".
+function evalGrowthFormula(formula, principal, rate, days) {
+  if (!formula || !formula.trim()) return null;
+  try {
+    const fn = new Function("principal", "rate", "days", `"use strict"; return (${formula});`);
+    const result = fn(principal, rate, days);
+    return typeof result === "number" && Number.isFinite(result) ? result : null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+// The interest for one segment (principal, rate%, days) — a custom formula
+// if the item has one configured, otherwise the built-in simple-interest
+// default (principal × rate/100/365 × days).
+function segmentInterest(cfg, principal, ratePercent, days) {
+  const custom = cfg && cfg.growthFormula ? evalGrowthFormula(cfg.growthFormula, principal, ratePercent, days) : null;
+  return custom != null ? custom : principal * (ratePercent / 100 / 365) * days;
+}
+
+// Live "if I plug in X" example shown right under the formula box in the
+// panel, using whatever amount/rate/days the user has typed elsewhere in
+// the form — so mistakes show up immediately, not three clicks later in
+// the simulator.
+function previewGrowthFormula() {
+  const el = document.getElementById("rc-growthFormula");
+  const out = document.getElementById("rc-formula-preview");
+  if (!el || !out) return;
+  const formula = el.value;
+  const rateEl = document.getElementById("rc-apy");
+  const rate = parseFloat(rateEl && rateEl.value) || 18;
+  const principal = 10000;
+  const days = 30;
+  if (!formula.trim()) {
+    out.textContent = t("growthFormulaDefaultNote");
+    return;
+  }
+  const result = evalGrowthFormula(formula, principal, rate, days);
+  out.textContent =
+    result == null
+      ? t("growthFormulaErrorNote")
+      : `${t("growthFormulaPreviewLabel")}: principal=${principal}, rate=${rate}%, days=${days} → ${fmtFormulaNum(result, 4)}`;
 }
 
 function optionsHtml(optionsMap, selected) {
@@ -274,6 +329,20 @@ function renderReturnPanel() {
           </div>
         </div>
         <p style="font-size:11px;color:var(--wt-text-dim);margin:8px 0 4px">${t("tierRatesHint")}</p>
+
+        <!-- Custom growth formula — overrides the built-in interest math for
+             THIS item only, everywhere it's used (simulator, table columns,
+             and the real daily cron), without needing a code change. Leave
+             blank to keep using the built-in default for whatever
+             calculation/payout settings are picked above. -->
+        <div class="wt-field">
+          <label for="rc-growthFormula">${t("growthFormulaLabel")}</label>
+          <textarea id="rc-growthFormula" dir="ltr" rows="2" spellcheck="false"
+            placeholder="principal * (rate/100/365) * days"
+            oninput="previewGrowthFormula()">${esc(cfg.growthFormula || "")}</textarea>
+          <p style="font-size:11px;color:var(--wt-text-dim);margin:4px 0 0">${t("growthFormulaHint")}</p>
+          <p id="rc-formula-preview" class="wt-return-summary-category" style="margin-top:6px">${t("growthFormulaDefaultNote")}</p>
+        </div>
 
         <!-- The actual number the cron applies every day — shown last, on its
              own, since everything above is just describing why it's what it is. -->
@@ -385,7 +454,7 @@ function periodBoundaryAt(startDateStr, monthsStep, dateObj) {
 // as of; boundaries are still anchored to `startDateStr`'s day-of-month so a
 // simulated "what if I add money today" still lands on the account's real
 // payout schedule.
-function periodicBoundaryValueAt(principal, startDateStr, ratePercent, payoutFreq, fromDate, targetDate) {
+function periodicBoundaryValueAt(principal, startDateStr, ratePercent, payoutFreq, fromDate, targetDate, cfg) {
   const monthsStep = monthsStepForFreq(payoutFreq);
   if (!startDateStr || !monthsStep || !ratePercent || targetDate <= fromDate) return principal;
 
@@ -395,26 +464,32 @@ function periodicBoundaryValueAt(principal, startDateStr, ratePercent, payoutFre
 
   while (nextBoundary <= targetDate) {
     const days = daysBetweenDates(cursor, nextBoundary);
-    balance += balance * ((ratePercent / 100 / 365) * days);
+    balance += segmentInterest(cfg, balance, ratePercent, days);
     cursor = nextBoundary;
     nextBoundary = new Date(cursor.getFullYear(), cursor.getMonth() + monthsStep, cursor.getDate());
   }
   const remDays = Math.max(0, daysBetweenDates(cursor, targetDate));
-  if (remDays > 0) balance += balance * ((ratePercent / 100 / 365) * remDays);
+  if (remDays > 0) balance += segmentInterest(cfg, balance, ratePercent, remDays);
   return balance;
 }
 
 // Plain simple interest off the original principal, never compounded —
 // for products where the interest is paid out rather than reinvested here.
-function simpleFlatValueAt(principal, ratePercent, fromDate, targetDate) {
+function simpleFlatValueAt(principal, ratePercent, fromDate, targetDate, cfg) {
   if (!ratePercent || targetDate <= fromDate) return principal;
   const days = daysBetweenDates(fromDate, targetDate);
-  return principal + principal * (ratePercent / 100 / 365) * days;
+  return principal + segmentInterest(cfg, principal, ratePercent, days);
 }
 
 // Single entry point used by both the table projections below and the
 // simulator — picks the model that matches the item's actual configured
-// return category instead of always assuming daily compounding.
+// return category instead of always assuming daily compounding. A custom
+// `growthFormula` on the item (set from the Return Settings panel) always
+// takes priority over the built-in default math for whichever segment shape
+// applies (periodic-boundary staircase if payout settings are configured,
+// otherwise one flat calculation over the whole span) — tiered certificates
+// are the one exception, since their compounding follows fixed tier
+// anniversaries rather than a single rate.
 function computeGrowthValueAt(assetId, principal, fromDate, targetDate) {
   if (!principal || targetDate <= fromDate) return principal;
   const cfg = returnConfig[assetId] || {};
@@ -428,10 +503,16 @@ function computeGrowthValueAt(assetId, principal, fromDate, targetDate) {
 
   const monthsStep = monthsStepForFreq(cfg.payoutFreq);
   if (cfg.startDate && monthsStep && cfg.compounding === true) {
-    return periodicBoundaryValueAt(principal, cfg.startDate, rate, cfg.payoutFreq, fromDate, targetDate);
+    return periodicBoundaryValueAt(principal, cfg.startDate, rate, cfg.payoutFreq, fromDate, targetDate, cfg);
+  }
+  if (cfg.growthFormula) {
+    // No period structure configured, but a custom formula exists — apply
+    // it once, flat, over the whole span (same shape as simpleFlatValueAt).
+    const days = daysBetweenDates(fromDate, targetDate);
+    return principal + segmentInterest(cfg, principal, rate, days);
   }
   if (cfg.compounding === false) {
-    return simpleFlatValueAt(principal, rate, fromDate, targetDate);
+    return simpleFlatValueAt(principal, rate, fromDate, targetDate, cfg);
   }
 
   // Fallback: original daily-compounding assumption (daily payout, or no

@@ -79,20 +79,20 @@ function onSimInputChange() {
 }
 
 // Effective per-day / per-month / per-year growth amounts an `amount`
-// balance earns at the given annual rate — i.e. "how much does it actually
-// go up by" at each cadence, not just the abstract %. Derived from the same
-// annual-compounding rate the rest of the app already uses, so a "daily"
-// product and a "monthly" product with the same APY show the same yearly
-// total, just split differently.
-function simIncrementAmounts(rate, amount) {
-  if (!rate || !amount) return null;
-  const dailyFactor = Math.pow(1 + rate / 100, 1 / 365) - 1;
-  const monthlyFactor = Math.pow(1 + rate / 100, 1 / 12) - 1;
-  const yearlyFactor = Math.pow(1 + rate / 100, 1) - 1;
+// balance earns — computed by calling computeGrowthValueAt (the SAME
+// function the table's projection columns and the "projected total" below
+// use) over a 1-day / 1-month / 1-year window starting at `fromDate`. This
+// guarantees the numbers here can never drift from what the rest of the
+// app shows for the same item — no separate formula to keep in sync.
+function simIncrementAmounts(assetId, amount, fromDate) {
+  if (!amount) return null;
+  const oneDayLater = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate() + 1);
+  const oneMonthLater = new Date(fromDate.getFullYear(), fromDate.getMonth() + 1, fromDate.getDate());
+  const oneYearLater = new Date(fromDate.getFullYear() + 1, fromDate.getMonth(), fromDate.getDate());
   return {
-    daily: amount * dailyFactor,
-    monthly: amount * monthlyFactor,
-    yearly: amount * yearlyFactor,
+    daily: computeGrowthValueAt(assetId, amount, fromDate, oneDayLater) - amount,
+    monthly: computeGrowthValueAt(assetId, amount, fromDate, oneMonthLater) - amount,
+    yearly: computeGrowthValueAt(assetId, amount, fromDate, oneYearLater) - amount,
   };
 }
 
@@ -156,9 +156,10 @@ function renderSimModal() {
   const monthsStep = monthsStepForFreq(cfg.payoutFreq);
   const isPeriodicBoundary = !isTiered && !!(cfg.startDate && monthsStep && cfg.compounding === true);
   const isSimpleFlat = !isTiered && !isPeriodicBoundary && cfg.compounding === false;
+  const hasCustomFormula = !isTiered && !!cfg.growthFormula;
   const startDateVal = simStartDate || minDate;
 
-  const inc = simIncrementAmounts(rate, amount);
+  const inc = rate || isTiered ? simIncrementAmounts(a.id, amount, parseDateStr(startDateVal)) : null;
   const projected = amount && simDate ? simProjectedValue(a.id, amount, startDateVal, simDate) : null;
   const profit = projected != null ? projected - amount : null;
   const days = simDaysBetween(startDateVal, simDate);
@@ -176,16 +177,29 @@ function renderSimModal() {
   // visible and not just the final result.
   const rateStr = fmtFormulaNum(rate, 4);
   const amountStr = fmtFormulaNum(amount, 2);
-  const incFormula =
-    inc && !isTiered
-      ? `<p class="wt-sim-formula" dir="ltr">${amountStr} × ((1 + ${rateStr}/100)^(1/365) − 1) = ${fmtFormulaNum(inc.daily, 4)} ${esc(a.currency)} / ${t("simDaily")}<br>
+  let incFormula = "";
+  if (inc && hasCustomFormula) {
+    incFormula = `<p class="wt-sim-formula" dir="ltr">${t("simCustomFormulaLabel")}: ${esc(cfg.growthFormula)}<br>
+      → ${fmtFormulaNum(inc.daily, 4)} ${esc(a.currency)} / ${t("simDaily")}, ${fmtFormulaNum(inc.monthly, 4)} ${esc(a.currency)} / ${t("simMonthly")}, ${fmtFormulaNum(inc.yearly, 2)} ${esc(a.currency)} / ${t("simYearly")}</p>`;
+  } else if (inc && isPeriodicBoundary) {
+    incFormula = `<p class="wt-sim-formula" dir="ltr">${amountStr} × (${rateStr}/100/365) × 1 = ${fmtFormulaNum(inc.daily, 4)} ${esc(a.currency)} / ${t("simDaily")}<br>
+      ${t("simPeriodicIncHint")}<br>
+      → ${fmtFormulaNum(inc.monthly, 4)} ${esc(a.currency)} / ${t("simMonthly")}, ${fmtFormulaNum(inc.yearly, 2)} ${esc(a.currency)} / ${t("simYearly")}</p>`;
+  } else if (inc && isSimpleFlat) {
+    incFormula = `<p class="wt-sim-formula" dir="ltr">${amountStr} × ${rateStr}/100/365 × 1 = ${fmtFormulaNum(inc.daily, 4)} ${esc(a.currency)} / ${t("simDaily")}<br>
+      ${t("simSimpleFlatHint")}</p>`;
+  } else if (inc && !isTiered) {
+    incFormula = `<p class="wt-sim-formula" dir="ltr">${amountStr} × ((1 + ${rateStr}/100)^(1/365) − 1) = ${fmtFormulaNum(inc.daily, 4)} ${esc(a.currency)} / ${t("simDaily")}<br>
          ${amountStr} × ((1 + ${rateStr}/100)^(1/12) − 1) = ${fmtFormulaNum(inc.monthly, 4)} ${esc(a.currency)} / ${t("simMonthly")}<br>
-         ${amountStr} × ((1 + ${rateStr}/100)^(1) − 1) = ${fmtFormulaNum(inc.yearly, 4)} ${esc(a.currency)} / ${t("simYearly")}</p>`
-      : "";
+         ${amountStr} × ((1 + ${rateStr}/100)^(1) − 1) = ${fmtFormulaNum(inc.yearly, 4)} ${esc(a.currency)} / ${t("simYearly")}</p>`;
+  }
 
   let totalFormula = "";
   if (projected != null && isTiered) {
     totalFormula = `<p class="wt-sim-formula">${t("simTieredFormulaHint")}</p>`;
+  } else if (projected != null && hasCustomFormula) {
+    totalFormula = `<p class="wt-sim-formula" dir="ltr">${t("simCustomFormulaLabel")}: ${esc(cfg.growthFormula)}<br>
+      ${t("simResultLabel")} = ${fmtFormulaNum(projected, 2)} ${esc(a.currency)}</p>`;
   } else if (projected != null && isPeriodicBoundary) {
     totalFormula = `<p class="wt-sim-formula" dir="ltr">${t("simPeriodicFormulaHint")}<br>
       ${amountStr} × (${rateStr}/100/365) × ${t("simDaysInEachPeriod")} → ${t("simAddedAtBoundary")}<br>

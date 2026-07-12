@@ -6,6 +6,11 @@
 //      real payout boundary (e.g. Mashreq-style monthly savings).
 //    - FLAT SIMPLE INTEREST: compounding: false — interest paid out rather
 //      than reinvested, so the item's own balance never grows here.
+//    - CUSTOM FORMULA: an item can override the per-segment interest math
+//      entirely (set from the Return Settings panel) — always takes
+//      priority when present. Runs only against the account owner's own
+//      data (JWT-scoped), so a plain expression evaluator is an acceptable
+//      trade for "you can fix the math yourself, without a code change".
 //    - Fallback: original continuous daily compounding, unchanged, for
 //      items with no return category or a genuinely daily payout.
 // ══════════════════════════════════════════════════════
@@ -43,6 +48,29 @@ function periodBoundaryAt(startDateStr, monthsStep, dateObj) {
   return cursor.getTime() === dateObj.getTime() ? prev : null;
 }
 
+// Evaluates a user-written formula (from returnConfig[id].growthFormula)
+// against {principal, rate, days}, returning the interest amount, or null
+// if the formula is empty/invalid — callers fall back to the built-in
+// default in that case.
+function evalGrowthFormula(formula, principal, rate, days) {
+  if (!formula || !String(formula).trim()) return null;
+  try {
+    const fn = new Function("principal", "rate", "days", `"use strict"; return (${formula});`);
+    const result = fn(principal, rate, days);
+    return typeof result === "number" && Number.isFinite(result) ? result : null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+// Interest for one segment (principal, rate%, days days) — the item's
+// custom formula if it has one, otherwise the built-in simple-interest
+// default (principal × rate/100/365 × days).
+function segmentInterest(cfg, principal, ratePercent, days) {
+  const custom = cfg && cfg.growthFormula ? evalGrowthFormula(cfg.growthFormula, principal, ratePercent, days) : null;
+  return custom != null ? custom : principal * (ratePercent / 100 / 365) * days;
+}
+
 /**
  * Returns the interest to add to `qty` for `todayStr`, given the item's
  * `apy` and `returnConfig`, or null if nothing should be posted today
@@ -64,7 +92,14 @@ function dailyGrowthDelta(qty, apyPercent, cfg, todayStr) {
     const periodStart = periodBoundaryAt(config.startDate, monthsStep, today);
     if (!periodStart) return null; // not a payout day — balance stays flat, as it should
     const days = daysBetweenDates(periodStart, today);
-    return qty * (rate / 100 / 365) * days;
+    return segmentInterest(config, qty, rate, days);
+  }
+
+  if (config.growthFormula) {
+    // No period structure configured, but a custom formula exists — the
+    // cron runs once a day, so this posts the formula's result for a
+    // single day's worth of interest.
+    return segmentInterest(config, qty, rate, 1);
   }
 
   if (config.compounding === false) {

@@ -73,6 +73,13 @@ const I18N = {
     tierRatesLabel: "معدلات متدرجة لكل سنة",
     tierRatesHint:
       "اختياري — للشهادات متعددة السنين بمعدل مختلف كل سنة (زي 27,22,17). لو اتملت، البروجيكشن في الجدول هيستخدمها بدل النسبة السنوية العادية.",
+    growthFormulaLabel: "معادلة حساب مخصصة (اختياري)",
+    growthFormulaHint:
+      "لو الحساب الجاهز مش مطابق للبنك بتاعك، اكتب معادلتك بنفسك هنا وهتتطبق على طول في كل حتة في الموقع (الحاسبة، الجدول، والحساب الفعلي اليومي) من غير ما تحتاج تعديل كود. المتاح: principal (المبلغ)، rate (النسبة % زي ما هي، يعني 18 مش 0.18)، days (عدد الأيام). المعادلة لازم ترجّع قيمة الفايدة (مش الإجمالي). سيبها فاضية عشان تستخدم الحساب الافتراضي.",
+    growthFormulaDefaultNote: "هيتستخدم الحساب الافتراضي: principal × (rate/100/365) × days",
+    growthFormulaErrorNote: "المعادلة مش صحيحة — تأكد من الصياغة",
+    growthFormulaPreviewLabel: "مثال حي",
+    simCustomFormulaLabel: "معادلة مخصّصة",
     thProjNext: "المتوقع القادم",
     thProjCycle: "نهاية الدورة",
     thProjYearEnd: "المتوقع آخر السنة",
@@ -105,6 +112,8 @@ const I18N = {
     simResultLabel: "الإجمالي المتوقع",
     simSimpleFlatHint:
       "البند ده فايدته بسيطة بتتصرف لحساب تاني ومش بترجع تتضاعف على نفس المبلغ، فالحساب هنا خطي على المبلغ الأصلي بس.",
+    simPeriodicIncHint:
+      'الشهري والسنوي محسوبين بنفس معادلة "الإجمالي المتوقع" تحت (فايدة بسيطة تتضاف آخر كل شهر، والشهر اللي بعده يبدأ من رصيد أكبر).',
     columnsBtnTitle: "الأعمدة",
     productTypeLabel: "نوع المنتج",
     rateTypeLabel: "نوع النسبة",
@@ -368,6 +377,13 @@ const I18N = {
     tierRatesLabel: "Step-up rates per year",
     tierRatesHint:
       "Optional — for multi-year certificates with a different rate each year (e.g. 27,22,17). If filled in, the table's projection uses this instead of the plain annual rate.",
+    growthFormulaLabel: "Custom growth formula (optional)",
+    growthFormulaHint:
+      "If the built-in math doesn't match your bank, write your own formula here — it applies everywhere in the app (the simulator, the table, and the real daily cron) with no code change needed. Available: principal (the amount), rate (the % as-is, e.g. 18 not 0.18), days. The formula must return the interest amount (not the total). Leave blank to use the default calculation.",
+    growthFormulaDefaultNote: "Default calculation will be used: principal × (rate/100/365) × days",
+    growthFormulaErrorNote: "This formula isn't valid — check the syntax",
+    growthFormulaPreviewLabel: "Live example",
+    simCustomFormulaLabel: "Custom formula",
     thProjNext: "Next projection",
     thProjCycle: "End of cycle",
     thProjYearEnd: "End-of-year projection",
@@ -400,6 +416,8 @@ const I18N = {
     simResultLabel: "Projected total",
     simSimpleFlatHint:
       "This item's interest is paid out elsewhere rather than reinvested, so this is a straight-line calculation on the original amount only.",
+    simPeriodicIncHint:
+      'The monthly and yearly figures use the same formula as "Projected total" below (simple interest added once a month, with the next month starting from the new, larger balance).',
     columnsBtnTitle: "Columns",
     productTypeLabel: "Product type",
     rateTypeLabel: "Rate type",

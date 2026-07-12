@@ -83,8 +83,18 @@ const RETURN_CONFIG_ENUMS = {
   payoutFreq: ["daily", "monthly", "quarterly", "semiAnnual", "annual", "maturity"],
   liquidity: ["daily", "monthly", "quarterly", "maturity", "restricted"],
 };
-const RETURN_CONFIG_KEYS = [...Object.keys(RETURN_CONFIG_ENUMS), "compounding", "startDate", "tierRates"];
+const RETURN_CONFIG_KEYS = [
+  ...Object.keys(RETURN_CONFIG_ENUMS),
+  "compounding",
+  "startDate",
+  "tierRates",
+  "growthFormula",
+];
 const RETURN_CONFIG_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Capped well above any reasonable formula (the UI's textarea is two rows)
+// so a save can't smuggle in something absurd, while leaving plenty of room
+// for a real expression like "principal * (rate/100/365) * days".
+const MAX_GROWTH_FORMULA_LEN = 500;
 const isValidTierRates = (v) =>
   v == null ||
   (Array.isArray(v) &&
@@ -98,6 +108,8 @@ const isValidReturnConfigEntry = (v) =>
   Object.entries(RETURN_CONFIG_ENUMS).every(([field, allowed]) => v[field] == null || allowed.includes(v[field])) &&
   (v.compounding == null || typeof v.compounding === "boolean") &&
   (v.startDate == null || RETURN_CONFIG_DATE_RE.test(v.startDate)) &&
+  (v.growthFormula == null ||
+    (typeof v.growthFormula === "string" && v.growthFormula.length <= MAX_GROWTH_FORMULA_LEN)) &&
   isValidTierRates(v.tierRates);
 
 const isValidReturnConfigMap = (v) => isSafePlainObject(v) && Object.values(v).every(isValidReturnConfigEntry);

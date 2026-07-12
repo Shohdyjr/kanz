@@ -1360,6 +1360,7 @@ body {
 .wt-field input[type="password"],
 .wt-field input[type="email"],
 .wt-field input[type="number"],
+.wt-field textarea,
 .wt-field select {
   width: 100%;
   background: var(--wt-input-bg);
@@ -1370,10 +1371,16 @@ body {
   font-family: "Tajawal", sans-serif;
   font-size: 14px;
 }
+.wt-field textarea {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  resize: vertical;
+}
 .wt-field input[type="text"]:focus,
 .wt-field input[type="password"]:focus,
 .wt-field input[type="email"]:focus,
 .wt-field input[type="number"]:focus,
+.wt-field textarea:focus,
 .wt-field select:focus {
   outline: none;
   border-color: var(--wt-gold-dim);
