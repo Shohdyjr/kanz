@@ -354,6 +354,29 @@ function tieredValueAt(principal, startDateStr, tierRates, targetDate) {
   return value * Math.pow(1 + lastRate / 100, remDays / 365);
 }
 
+// Next date that is startDateStr + N*monthsStep (integer N), strictly after
+// `after`. This anchors "next payout" / "cycle end" to the account's actual
+// opening date (e.g. opened on the 17th → next payout is the 17th of next
+// month) instead of always the 1st/last of the calendar month — so setting
+// a start date in the return panel actually changes the projection, even
+// for plain (non-tiered) monthly/quarterly/etc products.
+function anniversaryAfter(startDateStr, monthsStep, after) {
+  let cursor = parseDateStr(startDateStr);
+  if (cursor > after) return cursor;
+  while (cursor <= after) {
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + monthsStep, cursor.getDate());
+  }
+  return cursor;
+}
+
+function monthsStepForFreq(payoutFreq) {
+  if (payoutFreq === "monthly") return 1;
+  if (payoutFreq === "quarterly") return 3;
+  if (payoutFreq === "semiAnnual") return 6;
+  if (payoutFreq === "annual" || payoutFreq === "maturity") return 12;
+  return null;
+}
+
 // Returns { next, nextLabelKey, nextDate, endOfCycle, endOfCycleDate, endOfYear, endOfYearDate }
 // in the asset's own currency (qty is already stored in native units — EGP
 // stays EGP, gold stays grams, etc. — so there's no USD conversion here at
@@ -370,8 +393,12 @@ function projectAssetValue(a) {
   const endOfYear = new Date(today.getFullYear(), 11, 31);
   const endOfCycle = endOfCycleDate(cfg, todayMid);
 
+  const monthsStep = monthsStepForFreq(cfg.payoutFreq);
   let nextDate, nextLabelKey;
-  if (cfg.payoutFreq === "monthly" || cfg.payoutFreq === "quarterly" || cfg.payoutFreq === "semiAnnual") {
+  if (cfg.startDate && monthsStep) {
+    nextDate = anniversaryAfter(cfg.startDate, monthsStep, todayMid);
+    nextLabelKey = monthsStep === 12 ? "projNextYear" : "projNextMonth";
+  } else if (cfg.payoutFreq === "monthly" || cfg.payoutFreq === "quarterly" || cfg.payoutFreq === "semiAnnual") {
     nextDate = new Date(todayMid.getFullYear(), todayMid.getMonth() + 1, todayMid.getDate());
     nextLabelKey = "projNextMonth";
   } else if (cfg.payoutFreq === "annual" || cfg.payoutFreq === "maturity") {
@@ -414,14 +441,21 @@ function projectAssetValue(a) {
 // The natural end of the item's current compounding/payout cycle:
 //  - tiered certificate: the next anniversary of its start date (when the
 //    current step-up year rolls into the next one)
-//  - monthly/quarterly/semi-annual/annual/maturity: end of the current
-//    calendar month
+//  - non-tiered with a start date set: the next anniversary of that start
+//    date at the product's payout frequency (e.g. opened on the 17th,
+//    monthly payout → the 17th of next month)
+//  - monthly/quarterly/semi-annual/annual/maturity with no start date: end
+//    of the current calendar month
 //  - daily (or unset): end of today
 function endOfCycleDate(cfg, todayMid) {
   if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
     let cursor = parseDateStr(cfg.startDate);
     while (cursor <= todayMid) cursor = addYearsToDate(cursor, 1);
     return cursor;
+  }
+  const monthsStep = monthsStepForFreq(cfg.payoutFreq);
+  if (cfg.startDate && monthsStep) {
+    return anniversaryAfter(cfg.startDate, monthsStep, todayMid);
   }
   if (!cfg.payoutFreq || cfg.payoutFreq === "daily") return todayMid;
   return new Date(todayMid.getFullYear(), todayMid.getMonth() + 1, 0); // last day of this month

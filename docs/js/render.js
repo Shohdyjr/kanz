@@ -201,7 +201,7 @@ function render() {
               const dateSub = (d) => `<div class="wt-proj-date">${fmtDateShort(d)}</div>`;
               const cell = (id, labelTitle, val, dateVal) => {
                 if (!proj) return `<td class="wt-proj-cell" id="${id}-${a.id}">${t("projNone")}</td>`;
-                return `<td class="wt-proj-cell" id="${id}-${a.id}" ${labelTitle ? `title="${labelTitle}"` : ""}>${fmtByCurrency(val, a.currency)}${dateSub(dateVal)}</td>`;
+                return `<td class="wt-proj-cell" id="${id}-${a.id}" ${labelTitle ? `title="${labelTitle}"` : ""}>${fmtByCurrencyPrecise(val, a.currency)}${dateSub(dateVal)}</td>`;
               };
               return (
                 (isColHidden("projNext") ? "" : cell("proj-next", proj ? t(proj.nextLabelKey) : "", proj && proj.next, proj && proj.nextDate)) +

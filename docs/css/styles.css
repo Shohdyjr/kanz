@@ -766,8 +766,8 @@ body {
 .wt-item-hist-modal {
   max-width: 420px;
 }
-.wt-modal-wide {
-  max-width: 980px;
+.wt-modal.wt-modal-wide {
+  max-width: 1100px;
 }
 .wt-field-row-4 {
   display: grid;

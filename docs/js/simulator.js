@@ -96,7 +96,7 @@ function renderSimModal() {
   const incRow = (labelKey, val) => `
     <div class="wt-sim-inc-row">
       <span>${t(labelKey)}</span>
-      <b class="${val >= 0 ? "wt-sim-pos" : "wt-sim-neg"}">+${fmtByCurrency(val, a.currency)}</b>
+      <b class="${val >= 0 ? "wt-sim-pos" : "wt-sim-neg"}">+${fmtByCurrencyPrecise(val, a.currency)}</b>
     </div>`;
 
   return `<div id="wt-sim-modal-root">
@@ -137,11 +137,11 @@ function renderSimModal() {
         <p class="wt-sim-block-title">${t("simOnDateTitle")}(${esc(simDate)})</p>
         <div class="wt-sim-total-row">
           <span>${t("simProjectedTotal")}</span>
-          <b>${fmtByCurrency(projected, a.currency)}</b>
+          <b>${fmtByCurrencyPrecise(projected, a.currency)}</b>
         </div>
         <div class="wt-sim-total-row">
           <span>${t("simProjectedProfit")}</span>
-          <b class="${profit >= 0 ? "wt-sim-pos" : "wt-sim-neg"}">${profit >= 0 ? "+" : ""}${fmtByCurrency(profit, a.currency)}</b>
+          <b class="${profit >= 0 ? "wt-sim-pos" : "wt-sim-neg"}">${profit >= 0 ? "+" : ""}${fmtByCurrencyPrecise(profit, a.currency)}</b>
         </div>
       </div>`
           : ""

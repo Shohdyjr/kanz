@@ -10,6 +10,14 @@ const fmtByCurrency = (n, currency) => {
   if (currency === "EGP") return fmtEgp(n);
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + currency;
 };
+// Same idea as fmtByCurrency, but never rounds down to whole numbers (which
+// fmtEgp does for EGP) — used for projection amounts, where the person
+// specifically wants to see the actual fractional growth, not a rounded total.
+const fmtByCurrencyPrecise = (n, currency, d = 2) => {
+  if (currency === "USD") return fmtUsd(n);
+  if (currency === "EGP") return n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) + (lang === "en" ? " EGP" : " ج.م");
+  return n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) + " " + currency;
+};
 const fmtNum = (n, d = 4) => n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: d });
 const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
