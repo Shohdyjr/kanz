@@ -170,6 +170,7 @@ function render() {
           ${isColHidden("apy") ? "" : `<th>${t("thApy")}</th>`}
           ${isColHidden("unitPrice") ? "" : `<th class="num">${t("thUnitPrice")}</th>`}
           ${isColHidden("total") ? "" : `<th class="num">${t("thTotal")}</th>`}
+          ${isColHidden("nextAdd") ? "" : `<th class="num">${t("thNextAdd")}</th>`}
           ${isColHidden("projNext") ? "" : `<th class="num">${t("thProjNext")}</th>`}
           ${isColHidden("projCycle") ? "" : `<th class="num">${t("thProjCycle")}</th>`}
           ${isColHidden("projYearEnd") ? "" : `<th class="num">${t("thProjYearEnd")}</th>`}
@@ -199,14 +200,26 @@ function render() {
             ${isColHidden("unitPrice") ? "" : `<td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>`}
             ${isColHidden("total") ? "" : `<td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>`}
             ${(() => {
-              if (isColHidden("projNext") && isColHidden("projCycle") && isColHidden("projYearEnd")) return "";
+              if (
+                isColHidden("nextAdd") &&
+                isColHidden("projNext") &&
+                isColHidden("projCycle") &&
+                isColHidden("projYearEnd")
+              )
+                return "";
               const proj = projectAssetValue(a);
               const dateSub = (d) => `<div class="wt-proj-date">${fmtDateShort(d)}</div>`;
               const cell = (id, labelTitle, val, dateVal) => {
                 if (!proj) return `<td class="wt-proj-cell" id="${id}-${a.id}">${t("projNone")}</td>`;
                 return `<td class="wt-proj-cell" id="${id}-${a.id}" ${labelTitle ? `title="${labelTitle}"` : ""}>${fmtByCurrencyPrecise(val, a.currency)}${dateSub(dateVal)}</td>`;
               };
+              const nextAddVal = proj ? proj.next - (qty[a.id] || 0) : null;
               return (
+                (isColHidden("nextAdd")
+                  ? ""
+                  : proj
+                    ? `<td class="wt-proj-cell wt-proj-add-cell" id="next-add-${a.id}" title="${t(proj.nextLabelKey)}"><b id="next-add-val-${a.id}" class="${nextAddVal >= 0 ? "wt-sim-pos" : "wt-sim-neg"}">${nextAddVal >= 0 ? "+" : ""}${fmtByCurrencyPrecise(nextAddVal, a.currency)}</b>${dateSub(proj.nextDate)}</td>`
+                    : `<td class="wt-proj-cell" id="next-add-${a.id}">${t("projNone")}</td>`) +
                 (isColHidden("projNext")
                   ? ""
                   : cell("proj-next", proj ? t(proj.nextLabelKey) : "", proj && proj.next, proj && proj.nextDate)) +

@@ -266,6 +266,12 @@ function updateTotals() {
     if (nextEl) nextEl.textContent = proj ? fmtByCurrency(proj.next, a.currency) : t("projNone");
     if (cycleEl) cycleEl.textContent = proj ? fmtByCurrency(proj.endOfCycle, a.currency) : t("projNone");
     if (endEl) endEl.textContent = proj ? fmtByCurrency(proj.endOfYear, a.currency) : t("projNone");
+    const nextAddEl = document.getElementById("next-add-val-" + a.id);
+    if (nextAddEl && proj) {
+      const nextAddVal = proj.next - (qty[a.id] || 0);
+      nextAddEl.className = nextAddVal >= 0 ? "wt-sim-pos" : "wt-sim-neg";
+      nextAddEl.textContent = (nextAddVal >= 0 ? "+" : "") + fmtByCurrency(nextAddVal, a.currency);
+    }
   });
   const totalGold = rates.goldUsdPerGram > 0 ? totalUsd / rates.goldUsdPerGram : 0;
   const totalEgp = totalUsd * rates.egpPerUsd;
