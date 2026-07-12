@@ -322,6 +322,14 @@ function parseDateStr(dateStr) {
   return new Date(y, m - 1, d);
 }
 
+// Short human-readable date for the small "as of" label shown under each
+// projection amount in the table (e.g. "12 Jul 2026" / "١٢ يوليو ٢٠٢٦").
+// Reuses the month-name lists already defined in contributions.js.
+function fmtDateShort(d) {
+  const monthName = lang === "ar" ? MONTH_NAMES_AR[d.getMonth()] : MONTH_NAMES_EN[d.getMonth()];
+  return `${d.getDate()} ${monthName} ${d.getFullYear()}`;
+}
+
 // Compounds `principal` from `startDateStr` up to `targetDate`, switching to
 // the next rate in `tierRates` at every anniversary of the start date. Once
 // past the last defined tier, keeps compounding at that last tier's rate
@@ -346,10 +354,12 @@ function tieredValueAt(principal, startDateStr, tierRates, targetDate) {
   return value * Math.pow(1 + lastRate / 100, remDays / 365);
 }
 
-// Returns { next, nextLabelKey, endOfCycle, endOfYear } in the asset's own
-// currency (qty is already stored in native units — EGP stays EGP, gold
-// stays grams, etc. — so there's no USD conversion here at all), or null if
-// there's nothing to project (no balance, or no rate configured at all).
+// Returns { next, nextLabelKey, nextDate, endOfCycle, endOfCycleDate, endOfYear, endOfYearDate }
+// in the asset's own currency (qty is already stored in native units — EGP
+// stays EGP, gold stays grams, etc. — so there's no USD conversion here at
+// all), or null if there's nothing to project (no balance, or no rate
+// configured at all). The *Date fields are plain JS Date objects, used to
+// show a small "as of <date>" label under each projected amount in the table.
 function projectAssetValue(a) {
   const principal = qty[a.id] || 0;
   if (!principal) return null;
@@ -376,8 +386,11 @@ function projectAssetValue(a) {
     return {
       next: tieredValueAt(principal, cfg.startDate, cfg.tierRates, nextDate),
       nextLabelKey,
+      nextDate,
       endOfCycle: tieredValueAt(principal, cfg.startDate, cfg.tierRates, endOfCycle),
+      endOfCycleDate: endOfCycle,
       endOfYear: tieredValueAt(principal, cfg.startDate, cfg.tierRates, endOfYear),
+      endOfYearDate: endOfYear,
     };
   }
 
@@ -390,8 +403,11 @@ function projectAssetValue(a) {
   return {
     next: grow(nextDate),
     nextLabelKey,
+    nextDate,
     endOfCycle: grow(endOfCycle),
+    endOfCycleDate: endOfCycle,
     endOfYear: grow(endOfYear),
+    endOfYearDate: endOfYear,
   };
 }
 

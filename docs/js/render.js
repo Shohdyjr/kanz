@@ -197,7 +197,8 @@ function render() {
               const proj = projectAssetValue(a);
               const none = `<td class="wt-proj-cell" id="proj-next-${a.id}">${t("projNone")}</td><td class="wt-proj-cell" id="proj-cycle-${a.id}">${t("projNone")}</td><td class="wt-proj-cell" id="proj-end-${a.id}">${t("projNone")}</td>`;
               if (!proj) return none;
-              return `<td class="wt-proj-cell" id="proj-next-${a.id}" title="${t(proj.nextLabelKey)}">${fmtByCurrency(proj.next, a.currency)}</td><td class="wt-proj-cell" id="proj-cycle-${a.id}">${fmtByCurrency(proj.endOfCycle, a.currency)}</td><td class="wt-proj-cell" id="proj-end-${a.id}">${fmtByCurrency(proj.endOfYear, a.currency)}</td>`;
+              const dateSub = (d) => `<div class="wt-proj-date">${fmtDateShort(d)}</div>`;
+              return `<td class="wt-proj-cell" id="proj-next-${a.id}" title="${t(proj.nextLabelKey)}">${fmtByCurrency(proj.next, a.currency)}${dateSub(proj.nextDate)}</td><td class="wt-proj-cell" id="proj-cycle-${a.id}">${fmtByCurrency(proj.endOfCycle, a.currency)}${dateSub(proj.endOfCycleDate)}</td><td class="wt-proj-cell" id="proj-end-${a.id}">${fmtByCurrency(proj.endOfYear, a.currency)}${dateSub(proj.endOfYearDate)}</td>`;
             })()}
             <td><div class="wt-row-actions">
               <button class="wt-hist" onclick="openSimModal('${a.id}')" title="${t("simBtnTitle")}">🧮</button>

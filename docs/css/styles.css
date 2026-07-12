@@ -531,6 +531,14 @@ body {
   direction: ltr;
   white-space: nowrap;
 }
+.wt-proj-date {
+  font-size: 10px;
+  color: var(--wt-text-dim);
+  font-family: "Tajawal", sans-serif;
+  white-space: nowrap;
+  margin-top: 2px;
+  opacity: 0.75;
+}
 .wt-apy-set-link {
   background: transparent;
   border: none;
