@@ -486,22 +486,23 @@ body {
   outline: none;
   border-color: var(--wt-gold-dim);
 }
-.wt-apy {
-  width: 100%;
-  max-width: 90px;
-  background: var(--wt-input-bg);
-  border: 1px solid var(--wt-line);
-  color: var(--wt-text);
-  border-radius: 8px;
-  padding: 8px 10px;
+.wt-apy-cell {
   font-family: "JetBrains Mono", monospace;
   font-size: 13px;
-  text-align: left;
+  color: var(--wt-text-dim);
   direction: ltr;
 }
-.wt-apy:focus {
-  outline: none;
-  border-color: var(--wt-gold-dim);
+.wt-apy-set-link {
+  background: transparent;
+  border: none;
+  color: var(--wt-gold-light);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.wt-apy-set-link:hover {
+  text-decoration: underline;
 }
 .wt-price-cell {
   font-family: "JetBrains Mono", monospace;
@@ -680,6 +681,36 @@ body {
 .wt-item-hist-modal {
   max-width: 420px;
 }
+.wt-modal-wide {
+  max-width: 640px;
+}
+.wt-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.wt-field-row .wt-field {
+  margin-bottom: 0;
+}
+.wt-return-summary {
+  margin: 16px 0;
+  padding: 12px 14px;
+  background: var(--wt-input-bg);
+  border: 1px solid var(--wt-line);
+  border-radius: 10px;
+}
+.wt-return-summary label {
+  display: block;
+  font-size: 12px;
+  color: var(--wt-text-dim);
+  margin-bottom: 5px;
+}
+.wt-return-summary-category {
+  font-size: 12px;
+  color: var(--wt-text-dim);
+  margin-top: 8px;
+}
+
 .wt-item-hist-list {
   max-height: 340px;
   overflow-y: auto;

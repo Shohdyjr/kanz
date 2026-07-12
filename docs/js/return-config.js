@@ -92,9 +92,9 @@ function deriveReturnCategory(calcMethod, payoutFreq, compounding) {
   return KNOWN[key] || calcMethod.toUpperCase() + "_" + payoutFreq.toUpperCase();
 }
 
-function openReturnPanel() {
+function openReturnPanel(assetId) {
   returnPanelOpen = true;
-  returnPanelAssetId = ASSETS.length ? ASSETS[0].id : null;
+  returnPanelAssetId = assetId && ASSETS.some((a) => a.id === assetId) ? assetId : ASSETS.length ? ASSETS[0].id : null;
   render();
 }
 
@@ -186,7 +186,7 @@ function renderReturnPanel() {
 
   return `
   <div class="wt-modal-overlay" id="wt-return-panel-root" onclick="if(event.target===this)closeReturnPanel()">
-    <div class="wt-modal">
+    <div class="wt-modal wt-modal-wide">
       <h3>${t("returnConfigBtnTitle")}</h3>
       <p style="font-size:12px;color:var(--wt-text-dim);margin:-6px 0 14px">${t("returnConfigHint")}</p>
 
@@ -212,41 +212,51 @@ function renderReturnPanel() {
       </div>
 
       <form onsubmit="submitReturnConfig(event)">
-        <div class="wt-field">
-          <label for="rc-productType">${t("productTypeLabel")}</label>
-          <select id="rc-productType">${optionsHtml(t("productTypeOptions"), cfg.productType)}</select>
+        <div class="wt-field-row">
+          <div class="wt-field">
+            <label for="rc-productType">${t("productTypeLabel")}</label>
+            <select id="rc-productType">${optionsHtml(t("productTypeOptions"), cfg.productType)}</select>
+          </div>
+          <div class="wt-field">
+            <label for="rc-rateType">${t("rateTypeLabel")}</label>
+            <select id="rc-rateType">${optionsHtml(t("rateTypeOptions"), cfg.rateType)}</select>
+          </div>
         </div>
-        <div class="wt-field">
-          <label for="rc-rateType">${t("rateTypeLabel")}</label>
-          <select id="rc-rateType">${optionsHtml(t("rateTypeOptions"), cfg.rateType)}</select>
+        <div class="wt-field-row" style="margin-top:12px">
+          <div class="wt-field">
+            <label for="rc-calcMethod">${t("calcMethodLabel")}</label>
+            <select id="rc-calcMethod" onchange="previewReturnCategory()">${optionsHtml(t("calcMethodOptions"), cfg.calcMethod)}</select>
+          </div>
+          <div class="wt-field">
+            <label for="rc-payoutFreq">${t("payoutFreqLabel")}</label>
+            <select id="rc-payoutFreq" onchange="previewReturnCategory()">${optionsHtml(t("payoutFreqOptions"), cfg.payoutFreq)}</select>
+          </div>
         </div>
-        <div class="wt-field">
-          <label for="rc-calcMethod">${t("calcMethodLabel")}</label>
-          <select id="rc-calcMethod" onchange="previewReturnCategory()">${optionsHtml(t("calcMethodOptions"), cfg.calcMethod)}</select>
+        <div class="wt-field-row" style="margin-top:12px">
+          <div class="wt-field">
+            <label for="rc-compounding">${t("compoundingLabel")}</label>
+            <select id="rc-compounding" onchange="previewReturnCategory()">
+              <option value="">${t("noneOption")}</option>
+              <option value="true" ${cfg.compounding === true ? "selected" : ""}>${t("compoundingYes")}</option>
+              <option value="false" ${cfg.compounding === false ? "selected" : ""}>${t("compoundingNo")}</option>
+            </select>
+          </div>
+          <div class="wt-field">
+            <label for="rc-liquidity">${t("liquidityLabel")}</label>
+            <select id="rc-liquidity">${optionsHtml(t("liquidityOptions"), cfg.liquidity)}</select>
+          </div>
         </div>
-        <div class="wt-field">
-          <label for="rc-payoutFreq">${t("payoutFreqLabel")}</label>
-          <select id="rc-payoutFreq" onchange="previewReturnCategory()">${optionsHtml(t("payoutFreqOptions"), cfg.payoutFreq)}</select>
-        </div>
-        <div class="wt-field">
-          <label for="rc-compounding">${t("compoundingLabel")}</label>
-          <select id="rc-compounding" onchange="previewReturnCategory()">
-            <option value="">${t("noneOption")}</option>
-            <option value="true" ${cfg.compounding === true ? "selected" : ""}>${t("compoundingYes")}</option>
-            <option value="false" ${cfg.compounding === false ? "selected" : ""}>${t("compoundingNo")}</option>
-          </select>
-        </div>
-        <div class="wt-field">
-          <label for="rc-liquidity">${t("liquidityLabel")}</label>
-          <select id="rc-liquidity">${optionsHtml(t("liquidityOptions"), cfg.liquidity)}</select>
-        </div>
-        <div class="wt-field">
+
+        <!-- The actual number the cron applies every day — shown last, on its
+             own, since everything above is just describing why it's what it is. -->
+        <div class="wt-return-summary">
           <label for="rc-apy">${t("thApy")}</label>
-          <input type="number" id="rc-apy" min="0" max="100" step="any" value="${apy[id] || ""}" placeholder="0%">
+          <input type="number" id="rc-apy" min="0" max="100" step="any" value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
+          <p id="rc-category-preview" class="wt-return-summary-category">
+            ${t("categoryPreviewLabel")}: <b>${category || "—"}</b>
+          </p>
         </div>
-        <p id="rc-category-preview" style="font-size:12px;color:var(--wt-text-dim);margin:-6px 0 12px">
-          ${t("categoryPreviewLabel")}: <b>${category || "—"}</b>
-        </p>
+
         <div class="wt-modal-actions">
           <button type="button" class="wt-btn-ghost" onclick="clearReturnConfig()">${t("clearConfigBtn")}</button>
           <button type="button" class="wt-btn-ghost" onclick="closeReturnPanel()">${t("cancel")}</button>

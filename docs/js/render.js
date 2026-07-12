@@ -175,9 +175,9 @@ function render() {
             <td><input class="wt-qty" type="number" min="0" step="any"
               value="${qty[a.id] || ""}" placeholder="0"
               oninput="setQty('${a.id}',this.value)"></td>
-            <td><input class="wt-apy" type="number" min="0" max="100" step="any"
-              value="${apy[a.id] || ""}" placeholder="0%" title="${t("apyHint")}"
-              oninput="setApy('${a.id}',this.value)"></td>
+            <td class="wt-apy-cell" title="${t("apyHint")}">
+              ${apy[a.id] ? fmtNum(apy[a.id], 2) + "%" : `<button type="button" class="wt-apy-set-link" onclick="openReturnPanel('${a.id}')">${t("setApyLink")}</button>`}
+            </td>
             <td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>
             <td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>
             <td><div class="wt-row-actions">
