@@ -96,24 +96,14 @@ function simIncrementAmounts(rate, amount) {
   };
 }
 
-// Same growth model as projectAssetValue() in return-config.js, but takes an
-// arbitrary principal + start date + target date instead of always using the
-// live qty/today. For tiered certificates, the item's real configured start
-// date is still the one that matters (compounding follows its anniversaries),
-// so the simulator's own start date only applies to flat-APY items.
+// Same growth model used for the table's projection columns
+// (computeGrowthValueAt in return-config.js), just with an arbitrary
+// principal + start date instead of always the live qty/today.
 function simProjectedValue(assetId, amount, startDateStr, targetDateStr) {
   if (!amount || !targetDateStr) return null;
-  const cfg = returnConfig[assetId] || {};
   const targetDate = parseDateStr(targetDateStr);
-
-  if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
-    return tieredValueAt(amount, cfg.startDate, cfg.tierRates, targetDate);
-  }
-  const rate = apy[assetId] || 0;
-  if (!rate) return amount;
   const startDate = startDateStr ? parseDateStr(startDateStr) : new Date();
-  const days = Math.max(0, daysBetweenDates(startDate, targetDate));
-  return amount * Math.pow(1 + rate / 100, days / 365);
+  return computeGrowthValueAt(assetId, amount, startDate, targetDate);
 }
 
 // Days between the sim's start/target dates, clamped to 0 — used both for the
@@ -163,6 +153,9 @@ function renderSimModal() {
   const rate = apy[a.id] || 0;
   const cfg = returnConfig[a.id] || {};
   const isTiered = !!(cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length);
+  const monthsStep = monthsStepForFreq(cfg.payoutFreq);
+  const isPeriodicBoundary = !isTiered && !!(cfg.startDate && monthsStep && cfg.compounding === true);
+  const isSimpleFlat = !isTiered && !isPeriodicBoundary && cfg.compounding === false;
   const startDateVal = simStartDate || minDate;
 
   const inc = simIncrementAmounts(rate, amount);
@@ -189,12 +182,19 @@ function renderSimModal() {
          ${amountStr} × ((1 + ${rateStr}/100)^(1/12) − 1) = ${fmtFormulaNum(inc.monthly, 4)} ${esc(a.currency)} / ${t("simMonthly")}<br>
          ${amountStr} × ((1 + ${rateStr}/100)^(1) − 1) = ${fmtFormulaNum(inc.yearly, 4)} ${esc(a.currency)} / ${t("simYearly")}</p>`
       : "";
-  const totalFormula =
-    projected != null && !isTiered
-      ? `<p class="wt-sim-formula" dir="ltr">${amountStr} × (1 + ${rateStr}/100)^(${days}/365) = ${fmtFormulaNum(projected, 2)} ${esc(a.currency)}</p>`
-      : projected != null && isTiered
-        ? `<p class="wt-sim-formula">${t("simTieredFormulaHint")}</p>`
-        : "";
+
+  let totalFormula = "";
+  if (projected != null && isTiered) {
+    totalFormula = `<p class="wt-sim-formula">${t("simTieredFormulaHint")}</p>`;
+  } else if (projected != null && isPeriodicBoundary) {
+    totalFormula = `<p class="wt-sim-formula" dir="ltr">${t("simPeriodicFormulaHint")}<br>
+      ${amountStr} × (${rateStr}/100/365) × ${t("simDaysInEachPeriod")} → ${t("simAddedAtBoundary")}<br>
+      ${t("simResultLabel")} = ${fmtFormulaNum(projected, 2)} ${esc(a.currency)}</p>`;
+  } else if (projected != null && isSimpleFlat) {
+    totalFormula = `<p class="wt-sim-formula" dir="ltr">${amountStr} + (${amountStr} × ${rateStr}/100/365 × ${days}) = ${fmtFormulaNum(projected, 2)} ${esc(a.currency)}<br>${t("simSimpleFlatHint")}</p>`;
+  } else if (projected != null) {
+    totalFormula = `<p class="wt-sim-formula" dir="ltr">${amountStr} × (1 + ${rateStr}/100)^(${days}/365) = ${fmtFormulaNum(projected, 2)} ${esc(a.currency)}</p>`;
+  }
 
   return `<div id="wt-sim-modal-root">
   <div class="wt-modal-overlay" onclick="if(event.target===this)closeSimModal()">

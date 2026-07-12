@@ -98,6 +98,13 @@ const I18N = {
     simProjectedProfit: "صافي الربح",
     simTieredFormulaHint:
       'البند ده شهادة بمعدلات متدرجة، فالحساب بيتم حسب تاريخ بداية الشهادة الفعلي ومعدلاتها من إعدادات النسبة، مش من "من تاريخ" اللي فوق.',
+    simPeriodicFormulaHint:
+      "البند ده معدله بيتحسب فايدة بسيطة جوه كل شهر (مش بيتضاعف يوم بيوم)، وبيتضاف للرصيد بس لما الشهر يخلص — والشهر اللي بعده بيتحسب على الرصيد الجديد.",
+    simDaysInEachPeriod: "عدد أيام كل شهر",
+    simAddedAtBoundary: "بتتضاف للرصيد آخر كل شهر",
+    simResultLabel: "الإجمالي المتوقع",
+    simSimpleFlatHint:
+      "البند ده فايدته بسيطة بتتصرف لحساب تاني ومش بترجع تتضاعف على نفس المبلغ، فالحساب هنا خطي على المبلغ الأصلي بس.",
     columnsBtnTitle: "الأعمدة",
     productTypeLabel: "نوع المنتج",
     rateTypeLabel: "نوع النسبة",
@@ -386,6 +393,13 @@ const I18N = {
     simProjectedProfit: "Net profit",
     simTieredFormulaHint:
       'This item is a tiered-rate certificate, so the calculation follows its real configured start date and tier rates from the return config, not the "From date" above.',
+    simPeriodicFormulaHint:
+      "This item accrues simple interest within each month (it doesn't compound day to day) and only adds that to the balance once the month closes — the next month is then calculated on the new, larger balance.",
+    simDaysInEachPeriod: "days in that month",
+    simAddedAtBoundary: "added to the balance at month-end",
+    simResultLabel: "Projected total",
+    simSimpleFlatHint:
+      "This item's interest is paid out elsewhere rather than reinvested, so this is a straight-line calculation on the original amount only.",
     columnsBtnTitle: "Columns",
     productTypeLabel: "Product type",
     rateTypeLabel: "Rate type",

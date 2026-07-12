@@ -330,6 +330,115 @@ function fmtDateShort(d) {
   return `${d.getDate()} ${monthName} ${d.getFullYear()}`;
 }
 
+// ──────────────────────────────────────────────────────────────────────
+//  Growth models — which formula actually matches how a bank pays interest.
+//
+//  Real products fall into (at least) three buckets, and using the wrong
+//  one for a product silently gives numbers that don't match what actually
+//  lands in the account:
+//
+//  1) TIERED CERTIFICATE (handled by tieredValueAt, unchanged): a fixed
+//     principal that compounds once a year at a rate that steps down/up.
+//
+//  2) PERIODIC-BOUNDARY COMPOUNDING (new): products like "بنك المشرق"
+//     savings — during the month the bank accrues *simple* interest
+//     (principal × rate/365 × days), it does NOT compound day to day. Only
+//     when the month actually closes does that accrued interest get paid
+//     into the balance, and the *next* month's simple interest is then
+//     calculated on the new, larger balance. So growth is a staircase:
+//     flat within a period, a jump at each payout boundary.
+//     Needs `returnConfig.startDate` (anchors which day-of-month/quarter/
+//     year the boundary falls on) + `payoutFreq` that maps to a period
+//     length (monthly/quarterly/semiAnnual/annual) + `compounding: true`.
+//
+//  3) FLAT SIMPLE INTEREST (new): `compounding: false` — the interest is
+//     paid out elsewhere (not reinvested into this same balance), so this
+//     item's own principal never compounds; it just accrues linearly off
+//     the *original* principal for as long as it's held.
+//
+//  4) Anything else (no returnConfig, or a daily payout with no monthly
+//     boundary) keeps the original behaviour: continuous daily compounding
+//     via (1 + rate/100)^(days/365) — unchanged, for backward compatibility
+//     with existing items/history.
+// ──────────────────────────────────────────────────────────────────────
+
+// Walks forward in `monthsStep`-sized jumps from `startDateStr`, anchored to
+// its day-of-month, until passing `dateObj`. Returns the boundary date
+// exactly matching `dateObj` and the one immediately before it, or null if
+// `dateObj` doesn't fall exactly on a boundary (i.e. mid-period).
+function periodBoundaryAt(startDateStr, monthsStep, dateObj) {
+  if (!startDateStr || !monthsStep) return null;
+  let cursor = parseDateStr(startDateStr);
+  if (dateObj <= cursor) return null;
+  let prev = cursor;
+  while (cursor < dateObj) {
+    prev = cursor;
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + monthsStep, cursor.getDate());
+  }
+  return cursor.getTime() === dateObj.getTime() ? { periodStart: prev, periodEnd: cursor } : null;
+}
+
+// Simple interest within each period (principal × rate/365 × days), only
+// folded into the balance at each real payout boundary — matching a product
+// like Mashreq that doesn't compound mid-month but does start the next month
+// from the new, larger balance. `fromDate` is where the principal amount is
+// as of; boundaries are still anchored to `startDateStr`'s day-of-month so a
+// simulated "what if I add money today" still lands on the account's real
+// payout schedule.
+function periodicBoundaryValueAt(principal, startDateStr, ratePercent, payoutFreq, fromDate, targetDate) {
+  const monthsStep = monthsStepForFreq(payoutFreq);
+  if (!startDateStr || !monthsStep || !ratePercent || targetDate <= fromDate) return principal;
+
+  let balance = principal;
+  let cursor = fromDate;
+  let nextBoundary = anniversaryAfter(startDateStr, monthsStep, cursor);
+
+  while (nextBoundary <= targetDate) {
+    const days = daysBetweenDates(cursor, nextBoundary);
+    balance += balance * ((ratePercent / 100 / 365) * days);
+    cursor = nextBoundary;
+    nextBoundary = new Date(cursor.getFullYear(), cursor.getMonth() + monthsStep, cursor.getDate());
+  }
+  const remDays = Math.max(0, daysBetweenDates(cursor, targetDate));
+  if (remDays > 0) balance += balance * ((ratePercent / 100 / 365) * remDays);
+  return balance;
+}
+
+// Plain simple interest off the original principal, never compounded —
+// for products where the interest is paid out rather than reinvested here.
+function simpleFlatValueAt(principal, ratePercent, fromDate, targetDate) {
+  if (!ratePercent || targetDate <= fromDate) return principal;
+  const days = daysBetweenDates(fromDate, targetDate);
+  return principal + principal * (ratePercent / 100 / 365) * days;
+}
+
+// Single entry point used by both the table projections below and the
+// simulator — picks the model that matches the item's actual configured
+// return category instead of always assuming daily compounding.
+function computeGrowthValueAt(assetId, principal, fromDate, targetDate) {
+  if (!principal || targetDate <= fromDate) return principal;
+  const cfg = returnConfig[assetId] || {};
+
+  if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
+    return tieredValueAt(principal, cfg.startDate, cfg.tierRates, targetDate);
+  }
+
+  const rate = apy[assetId] || 0;
+  if (!rate) return principal;
+
+  const monthsStep = monthsStepForFreq(cfg.payoutFreq);
+  if (cfg.startDate && monthsStep && cfg.compounding === true) {
+    return periodicBoundaryValueAt(principal, cfg.startDate, rate, cfg.payoutFreq, fromDate, targetDate);
+  }
+  if (cfg.compounding === false) {
+    return simpleFlatValueAt(principal, rate, fromDate, targetDate);
+  }
+
+  // Fallback: original daily-compounding assumption (daily payout, or no
+  // return category configured at all).
+  const days = Math.max(0, daysBetweenDates(fromDate, targetDate));
+  return principal * Math.pow(1 + rate / 100, days / 365);
+}
 // Compounds `principal` from `startDateStr` up to `targetDate`, switching to
 // the next rate in `tierRates` at every anniversary of the start date. Once
 // past the last defined tier, keeps compounding at that last tier's rate
@@ -411,29 +520,25 @@ function projectAssetValue(a) {
 
   if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
     return {
-      next: tieredValueAt(principal, cfg.startDate, cfg.tierRates, nextDate),
+      next: computeGrowthValueAt(a.id, principal, todayMid, nextDate),
       nextLabelKey,
       nextDate,
-      endOfCycle: tieredValueAt(principal, cfg.startDate, cfg.tierRates, endOfCycle),
+      endOfCycle: computeGrowthValueAt(a.id, principal, todayMid, endOfCycle),
       endOfCycleDate: endOfCycle,
-      endOfYear: tieredValueAt(principal, cfg.startDate, cfg.tierRates, endOfYear),
+      endOfYear: computeGrowthValueAt(a.id, principal, todayMid, endOfYear),
       endOfYearDate: endOfYear,
     };
   }
 
   const rate = apy[a.id] || 0;
   if (!rate) return null;
-  const grow = (targetDate) => {
-    const days = Math.max(0, daysBetweenDates(todayMid, targetDate));
-    return principal * Math.pow(1 + rate / 100, days / 365);
-  };
   return {
-    next: grow(nextDate),
+    next: computeGrowthValueAt(a.id, principal, todayMid, nextDate),
     nextLabelKey,
     nextDate,
-    endOfCycle: grow(endOfCycle),
+    endOfCycle: computeGrowthValueAt(a.id, principal, todayMid, endOfCycle),
     endOfCycleDate: endOfCycle,
-    endOfYear: grow(endOfYear),
+    endOfYear: computeGrowthValueAt(a.id, principal, todayMid, endOfYear),
     endOfYearDate: endOfYear,
   };
 }
