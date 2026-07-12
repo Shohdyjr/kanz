@@ -141,6 +141,10 @@ function render() {
         <p class="wt-table-title">${t("tableTitle")}</p>
         <div class="wt-actions">
           <button class="wt-btn-add" onclick="openAddModal()" title="${t("addBtn")}">+</button>
+          <div style="position:relative">
+            <button class="wt-btn wt-btn-ghost" onclick="toggleColumnPanel()" title="${t("columnsBtnTitle")}">⚙ ${t("columnsBtnTitle")}</button>
+            ${renderColumnPanel()}
+          </div>
           <button class="wt-btn wt-btn-ghost" onclick="openReturnPanel()" title="${t("returnConfigBtnTitle")}">${t("returnConfigBtnTitle")}</button>
           <button class="wt-btn" onclick="saveData()">${t("saveNow")}</button>
           <button class="wt-btn wt-btn-ghost" onclick="exportBackup()">${t("exportBackupBtn")}</button>
@@ -162,12 +166,12 @@ function render() {
           <th class="wt-th-order">${t("thOrder")}</th>
           <th>${t("thAsset")}</th>
           <th>${t("thQty")}</th>
-          <th>${t("thApy")}</th>
-          <th class="num">${t("thUnitPrice")}</th>
-          <th class="num">${t("thTotal")}</th>
-          <th class="num">${t("thProjNext")}</th>
-          <th class="num">${t("thProjCycle")}</th>
-          <th class="num">${t("thProjYearEnd")}</th>
+          ${isColHidden("apy") ? "" : `<th>${t("thApy")}</th>`}
+          ${isColHidden("unitPrice") ? "" : `<th class="num">${t("thUnitPrice")}</th>`}
+          ${isColHidden("total") ? "" : `<th class="num">${t("thTotal")}</th>`}
+          ${isColHidden("projNext") ? "" : `<th class="num">${t("thProjNext")}</th>`}
+          ${isColHidden("projCycle") ? "" : `<th class="num">${t("thProjCycle")}</th>`}
+          ${isColHidden("projYearEnd") ? "" : `<th class="num">${t("thProjYearEnd")}</th>`}
           <th class="wt-th-del"></th>
         </tr></thead>
         <tbody>
@@ -188,17 +192,22 @@ function render() {
             <td><input class="wt-qty" type="number" min="0" step="any"
               value="${qty[a.id] || ""}" placeholder="0"
               oninput="setQty('${a.id}',this.value)"></td>
-            <td class="wt-apy-cell" title="${t("apyHint")}">
-              <button type="button" class="wt-apy-set-link" onclick="openReturnPanel('${a.id}')">${apy[a.id] ? fmtNum(apy[a.id], 2) + "%" : t("setApyLink")}</button>
-            </td>
-            <td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>
-            <td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>
+            ${isColHidden("apy") ? "" : `<td class="wt-apy-cell" title="${t("apyHint")}"><button type="button" class="wt-apy-set-link" onclick="openReturnPanel('${a.id}')">${apy[a.id] ? fmtNum(apy[a.id], 2) + "%" : t("setApyLink")}</button></td>`}
+            ${isColHidden("unitPrice") ? "" : `<td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>`}
+            ${isColHidden("total") ? "" : `<td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>`}
             ${(() => {
+              if (isColHidden("projNext") && isColHidden("projCycle") && isColHidden("projYearEnd")) return "";
               const proj = projectAssetValue(a);
-              const none = `<td class="wt-proj-cell" id="proj-next-${a.id}">${t("projNone")}</td><td class="wt-proj-cell" id="proj-cycle-${a.id}">${t("projNone")}</td><td class="wt-proj-cell" id="proj-end-${a.id}">${t("projNone")}</td>`;
-              if (!proj) return none;
               const dateSub = (d) => `<div class="wt-proj-date">${fmtDateShort(d)}</div>`;
-              return `<td class="wt-proj-cell" id="proj-next-${a.id}" title="${t(proj.nextLabelKey)}">${fmtByCurrency(proj.next, a.currency)}${dateSub(proj.nextDate)}</td><td class="wt-proj-cell" id="proj-cycle-${a.id}">${fmtByCurrency(proj.endOfCycle, a.currency)}${dateSub(proj.endOfCycleDate)}</td><td class="wt-proj-cell" id="proj-end-${a.id}">${fmtByCurrency(proj.endOfYear, a.currency)}${dateSub(proj.endOfYearDate)}</td>`;
+              const cell = (id, labelTitle, val, dateVal) => {
+                if (!proj) return `<td class="wt-proj-cell" id="${id}-${a.id}">${t("projNone")}</td>`;
+                return `<td class="wt-proj-cell" id="${id}-${a.id}" ${labelTitle ? `title="${labelTitle}"` : ""}>${fmtByCurrency(val, a.currency)}${dateSub(dateVal)}</td>`;
+              };
+              return (
+                (isColHidden("projNext") ? "" : cell("proj-next", proj ? t(proj.nextLabelKey) : "", proj && proj.next, proj && proj.nextDate)) +
+                (isColHidden("projCycle") ? "" : cell("proj-cycle", "", proj && proj.endOfCycle, proj && proj.endOfCycleDate)) +
+                (isColHidden("projYearEnd") ? "" : cell("proj-end", "", proj && proj.endOfYear, proj && proj.endOfYearDate))
+              );
             })()}
             <td><div class="wt-row-actions">
               <button class="wt-hist" onclick="openSimModal('${a.id}')" title="${t("simBtnTitle")}">🧮</button>

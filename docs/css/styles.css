@@ -531,6 +531,41 @@ body {
   direction: ltr;
   white-space: nowrap;
 }
+.wt-col-panel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+.wt-col-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline-start: 0;
+  z-index: 41;
+  min-width: 200px;
+  background: var(--wt-panel);
+  border: 1px solid var(--wt-line-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.wt-col-panel-title {
+  font-size: 11px;
+  color: var(--wt-text-dim);
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+.wt-col-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.wt-col-panel-row input {
+  cursor: pointer;
+}
+
 .wt-proj-date {
   font-size: 10px;
   color: var(--wt-text-dim);

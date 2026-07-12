@@ -198,6 +198,18 @@ let contributionsData = [];
 let contribModalOpen = false;
 let emailModalOpen = false; // recovery-email settings modal, opened from the top bar
 
+// Which optional table columns are hidden — a pure per-device display
+// preference (not synced to the server, unlike everything else in this
+// file), so it's read straight from localStorage once at load time.
+let hiddenCols = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem("kanz_hidden_cols_v1") || "[]");
+  if (Array.isArray(saved)) hiddenCols = new Set(saved);
+} catch (e) {
+  // corrupt/old value — ignore and start with everything visible
+}
+let columnPanelOpen = false; // the small "choose columns" popover, opened from the table header
+
 function slugify(s) {
   return (
     String(s)
