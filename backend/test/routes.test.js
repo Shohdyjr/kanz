@@ -61,3 +61,22 @@ test("isValidDateStr: accepts strict YYYY-MM-DD strings only", () => {
   assert.equal(dataRouter.isValidDateStr(""), false);
   assert.equal(dataRouter.isValidDateStr(undefined), false);
 });
+
+test("isValidReturnConfigMap: accepts a map of valid per-asset return-category entries", () => {
+  assert.equal(
+    dataRouter.isValidReturnConfigMap({
+      thndr_cloud: { productType: "fixedIncomeFund", calcMethod: "navBased", payoutFreq: "daily", compounding: true },
+      mashreq_savings: { productType: "savings", calcMethod: "dailyBalance", payoutFreq: "monthly" },
+    }),
+    true
+  );
+  assert.equal(dataRouter.isValidReturnConfigMap({}), true);
+});
+
+test("isValidReturnConfigMap: rejects unknown enum values, unknown keys, and wrong types", () => {
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { productType: "not-a-real-type" } }), false);
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { calcMethod: "dailyBalance", extra: "nope" } }), false);
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { compounding: "true" } }), false);
+  assert.equal(dataRouter.isValidReturnConfigMap([1, 2, 3]), false);
+  assert.equal(dataRouter.isValidReturnConfigMap(null), false);
+});

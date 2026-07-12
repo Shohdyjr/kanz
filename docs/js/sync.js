@@ -20,8 +20,7 @@ function saveData() {
     savingsGoal,
     sessionToken,
     apy,
-    apyFrequency,
-    qtyChangedAt
+    returnConfig
   )
     .then(function (j) {
       if (j && j.ok) {

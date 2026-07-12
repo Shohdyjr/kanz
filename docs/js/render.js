@@ -1,25 +1,4 @@
 // ── Main render ──────────────────────────────────────
-// Projects what an item's amount will be at its next accrual checkpoint —
-// tomorrow for daily-compounded items, end of the current month for
-// monthly-compounded ones. Computed live from qty + apy, no dependency on
-// the backend cron, so it always has a value the instant apy/qty are set.
-// Returns { value, date } or null if apy isn't set for this item.
-function projectNextValue(amount, apyPercent, frequency) {
-  if (!apyPercent || apyPercent <= 0 || !amount) return null;
-  const rate = apyPercent / 100;
-  const now = new Date();
-
-  if (frequency === "monthly") {
-    const monthlyRate = Math.pow(1 + rate, 1 / 12) - 1;
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    return { value: amount * (1 + monthlyRate), date: endOfMonth };
-  }
-
-  const dailyRate = Math.pow(1 + rate, 1 / 365) - 1;
-  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  return { value: amount * (1 + dailyRate), date: tomorrow };
-}
-
 function render() {
   // No session? Show the auth screen instead of the app content
   if (!currentUser) {
@@ -162,6 +141,7 @@ function render() {
         <p class="wt-table-title">${t("tableTitle")}</p>
         <div class="wt-actions">
           <button class="wt-btn-add" onclick="openAddModal()" title="${t("addBtn")}">+</button>
+          <button class="wt-btn wt-btn-ghost" onclick="openReturnPanel()" title="${t("returnConfigBtnTitle")}">${t("returnConfigBtnTitle")}</button>
           <button class="wt-btn" onclick="saveData()">${t("saveNow")}</button>
           <button class="wt-btn wt-btn-ghost" onclick="exportBackup()">${t("exportBackupBtn")}</button>
           <span id="wt-sync-badge" class="wt-sync-badge"></span>
@@ -173,9 +153,6 @@ function render() {
           <th>${t("thAsset")}</th>
           <th>${t("thQty")}</th>
           <th>${t("thApy")}</th>
-          <th>${t("thApyFreq")}</th>
-          <th class="num">${t("thAccrued")}</th>
-          <th class="num">${t("thProjected")}</th>
           <th class="num">${t("thUnitPrice")}</th>
           <th class="num">${t("thTotal")}</th>
           <th class="wt-th-del"></th>
@@ -201,20 +178,6 @@ function render() {
             <td><input class="wt-apy" type="number" min="0" max="100" step="any"
               value="${apy[a.id] || ""}" placeholder="0%" title="${t("apyHint")}"
               oninput="setApy('${a.id}',this.value)"></td>
-            <td><select class="wt-apy-freq" title="${t("apyFreqHint")}" onchange="setApyFrequency('${a.id}',this.value)">
-              <option value="daily" ${apyFrequency[a.id] !== "monthly" ? "selected" : ""}>${t("apyFreqDaily")}</option>
-              <option value="monthly" ${apyFrequency[a.id] === "monthly" ? "selected" : ""}>${t("apyFreqMonthly")}</option>
-            </select></td>
-            <td class="wt-accrued-cell" title="${t("accruedHint")}">${apy[a.id] > 0 ? fmtNum(accruedValue[a.id] || 0, 4) : "—"}</td>
-            <td class="wt-projected-cell" title="${t("projectedHint")}">${(() => {
-              const proj = projectNextValue(qty[a.id], apy[a.id], apyFrequency[a.id]);
-              if (!proj) return "—";
-              const dateStr = proj.date.toLocaleDateString(lang === "en" ? "en-US" : "ar-EG", {
-                day: "numeric",
-                month: "short",
-              });
-              return `${fmtNum(proj.value, 4)}<span class="wt-accrued-date">${dateStr}</span>`;
-            })()}</td>
             <td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>
             <td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>
             <td><div class="wt-row-actions">
@@ -286,6 +249,7 @@ function render() {
     ${contribModalOpen ? renderContribModal() : ""}
     ${emailModalOpen ? renderEmailModal() : ""}
     ${itemHistoryModalId ? renderItemHistoryModal() : ""}
+    ${returnPanelOpen ? renderReturnPanel() : ""}
   `;
 
   renderSyncBadge();

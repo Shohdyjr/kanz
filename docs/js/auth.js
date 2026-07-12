@@ -258,9 +258,7 @@ async function completeLogin(username, token, expiresAt) {
   // Full state reset to avoid leaking data from a previous user
   qty = {};
   apy = {};
-  apyFrequency = {};
-  qtyChangedAt = {};
-  accruedValue = {};
+  returnConfig = {};
   order = [];
   customAssets = [];
   excludedBaseIds = new Set();
@@ -291,9 +289,7 @@ function logout() {
   } catch (e) {}
   qty = {};
   apy = {};
-  apyFrequency = {};
-  qtyChangedAt = {};
-  accruedValue = {};
+  returnConfig = {};
   order = [];
   customAssets = [];
   excludedBaseIds = new Set();
@@ -355,9 +351,7 @@ function attemptAutoLogin() {
         } catch (e) {}
         qty = {};
         apy = {};
-        apyFrequency = {};
-        qtyChangedAt = {};
-        accruedValue = {};
+        returnConfig = {};
         order = [];
         customAssets = [];
         excludedBaseIds = new Set();
@@ -466,9 +460,7 @@ function loadData() {
         if (j.lang === "ar" || j.lang === "en") lang = j.lang;
         savingsGoal = typeof j.savingsGoal === "number" ? j.savingsGoal : 0;
         apy = j.apy && typeof j.apy === "object" ? j.apy : {};
-        apyFrequency = j.apyFrequency && typeof j.apyFrequency === "object" ? j.apyFrequency : {};
-        qtyChangedAt = j.qtyChangedAt && typeof j.qtyChangedAt === "object" ? j.qtyChangedAt : {};
-        accruedValue = j.accruedValue && typeof j.accruedValue === "object" ? j.accruedValue : {};
+        returnConfig = j.returnConfig && typeof j.returnConfig === "object" ? j.returnConfig : {};
 
         rebuildAssets();
         order = Array.isArray(j.order) && j.order.length ? j.order : ASSETS.map((a) => a.id);

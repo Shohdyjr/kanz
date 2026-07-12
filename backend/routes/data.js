@@ -61,12 +61,7 @@ router.get("/data", async (req, res) => {
     order: d.order || [],
     savingsGoal: d.savingsGoal || 0,
     apy: d.apy || {},
-    apyFrequency: d.apyFrequency || {},
-    qtyChangedAt: d.qtyChangedAt || {},
-    // Read-only, computed nightly by the cron (see cron/dailySnapshot.js) —
-    // the accrued return since qtyChangedAt, kept separate from `qty` so the
-    // amount itself is never touched by anything but the user.
-    accruedValue: d.accruedValue || {},
+    returnConfig: d.returnConfig || {},
   });
 });
 
@@ -78,30 +73,37 @@ const isValidApyMap = (v) =>
   isSafePlainObject(v) &&
   Object.values(v).every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100);
 
-// Per-item compounding cadence for the APY above — "daily" or "monthly" only.
-const isValidFrequencyMap = (v) =>
-  isSafePlainObject(v) && Object.values(v).every((f) => f === "daily" || f === "monthly");
+// Descriptive metadata only (see docs/js/return-config.js) — validated against
+// the same enum options the UI offers, so this stays display-only data and
+// can never grow into an arbitrary-object storage hole.
+const RETURN_CONFIG_ENUMS = {
+  productType: ["savings", "fixedDeposit", "certificate", "moneyMarketFund", "fixedIncomeFund", "investmentFund"],
+  rateType: ["fixed", "variable"],
+  calcMethod: ["dailyBalance", "lowestMonthlyBalance", "fixedPrincipal", "navBased"],
+  payoutFreq: ["daily", "monthly", "quarterly", "semiAnnual", "annual", "maturity"],
+  liquidity: ["daily", "monthly", "quarterly", "maturity", "restricted"],
+};
+const RETURN_CONFIG_KEYS = [...Object.keys(RETURN_CONFIG_ENUMS), "compounding"];
 
-// Per-item ISO timestamp of the last time the user edited that item's qty —
-// set by the client (see docs/js/assets.js setQty()), anchors where the
-// accrual calculation in the cron starts counting from.
-const isValidTimestampMap = (v) =>
+const isValidReturnConfigEntry = (v) =>
   isSafePlainObject(v) &&
-  Object.values(v).every((s) => typeof s === "string" && !Number.isNaN(new Date(s).getTime()));
+  Object.keys(v).every((k) => RETURN_CONFIG_KEYS.includes(k)) &&
+  Object.entries(RETURN_CONFIG_ENUMS).every(([field, allowed]) => v[field] == null || allowed.includes(v[field])) &&
+  (v.compounding == null || typeof v.compounding === "boolean");
+
+const isValidReturnConfigMap = (v) => isSafePlainObject(v) && Object.values(v).every(isValidReturnConfigEntry);
 
 router.put("/data", async (req, res) => {
   const user = await getUserRow(req.username);
   if (!user) return res.json({ ok: false, error: "userNotFound" });
 
-  const { qty, customAssets, excludedBaseIds, baseOverrides, theme, lang, order, savingsGoal, apy, apyFrequency, qtyChangedAt } =
+  const { qty, customAssets, excludedBaseIds, baseOverrides, theme, lang, order, savingsGoal, apy, returnConfig } =
     req.body;
   if (qty !== undefined && !isFiniteNumberMap(qty)) return res.json({ ok: false, error: "invalidData" });
   if (baseOverrides !== undefined && !isSafePlainObject(baseOverrides))
     return res.json({ ok: false, error: "invalidData" });
   if (apy !== undefined && !isValidApyMap(apy)) return res.json({ ok: false, error: "invalidData" });
-  if (apyFrequency !== undefined && !isValidFrequencyMap(apyFrequency))
-    return res.json({ ok: false, error: "invalidData" });
-  if (qtyChangedAt !== undefined && !isValidTimestampMap(qtyChangedAt))
+  if (returnConfig !== undefined && !isValidReturnConfigMap(returnConfig))
     return res.json({ ok: false, error: "invalidData" });
 
   const existing = user.data || {};
@@ -116,10 +118,7 @@ router.put("/data", async (req, res) => {
     order: Array.isArray(order) ? order : existing.order || [],
     savingsGoal: typeof savingsGoal === "number" ? savingsGoal : existing.savingsGoal || 0,
     apy: apy || existing.apy || {},
-    apyFrequency: apyFrequency || existing.apyFrequency || {},
-    qtyChangedAt: qtyChangedAt || existing.qtyChangedAt || {},
-    // accruedValue is never written here — it's cron-computed only (read via GET /data).
-    accruedValue: existing.accruedValue || {},
+    returnConfig: returnConfig || existing.returnConfig || {},
   };
 
   await pool.query("UPDATE kanz_users SET data = $1 WHERE username = $2", [JSON.stringify(updated), req.username]);
@@ -274,3 +273,4 @@ router.delete("/contributions", async (req, res) => {
 module.exports = router;
 module.exports.isFiniteNumberMap = isFiniteNumberMap;
 module.exports.isValidDateStr = isValidDateStr;
+module.exports.isValidReturnConfigMap = isValidReturnConfigMap;

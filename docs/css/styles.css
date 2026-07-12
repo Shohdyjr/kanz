@@ -391,18 +391,16 @@ body {
   border-radius: var(--wt-radius);
   padding: 20px 18px;
   margin-bottom: 24px;
-  overflow-x: auto;
-}
-.wt-table {
-  width: 100%;
-  min-width: 860px;
-  border-collapse: collapse;
 }
 .wt-table-title {
   font-size: 14px;
   color: var(--wt-text-dim);
   margin: 0;
   font-weight: 500;
+}
+.wt-table {
+  width: 100%;
+  border-collapse: collapse;
 }
 .wt-table thead th {
   text-align: start;
@@ -472,7 +470,8 @@ body {
   color: var(--wt-text);
 }
 .wt-qty {
-  width: 140px;
+  width: 100%;
+  max-width: 120px;
   background: var(--wt-input-bg);
   border: 1px solid var(--wt-line);
   color: var(--wt-text);
@@ -488,7 +487,8 @@ body {
   border-color: var(--wt-gold-dim);
 }
 .wt-apy {
-  width: 110px;
+  width: 100%;
+  max-width: 90px;
   background: var(--wt-input-bg);
   border: 1px solid var(--wt-line);
   color: var(--wt-text);
@@ -502,42 +502,6 @@ body {
 .wt-apy:focus {
   outline: none;
   border-color: var(--wt-gold-dim);
-}
-.wt-apy-freq {
-  width: 100%;
-  max-width: 100px;
-  background: var(--wt-input-bg);
-  border: 1px solid var(--wt-line);
-  color: var(--wt-text);
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 13px;
-  text-align: left;
-  direction: ltr;
-}
-.wt-apy-freq:focus {
-  outline: none;
-  border-color: var(--wt-gold-dim);
-}
-.wt-accrued-cell {
-  font-family: "JetBrains Mono", monospace;
-  color: var(--wt-green);
-  font-size: 13px;
-  text-align: left;
-  direction: ltr;
-}
-.wt-projected-cell {
-  font-family: "JetBrains Mono", monospace;
-  color: var(--wt-gold);
-  font-size: 13px;
-  text-align: left;
-  direction: ltr;
-}
-.wt-accrued-date {
-  display: block;
-  font-size: 11px;
-  color: var(--wt-text-dim);
-  font-family: inherit;
 }
 .wt-price-cell {
   font-family: "JetBrains Mono", monospace;
@@ -760,6 +724,17 @@ body {
   gap: 2px;
   align-items: center;
   justify-content: center;
+}
+.wt-preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.wt-preset-btn {
+  font-size: 12px;
+  padding: 6px 10px;
+  white-space: nowrap;
 }
 .wt-icon-grid {
   display: grid;
