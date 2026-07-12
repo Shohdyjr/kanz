@@ -104,11 +104,13 @@ function pickIcon(icon) {
     const ar = document.getElementById("new-asset-name-ar");
     const en = document.getElementById("new-asset-name-en");
     const cur = document.getElementById("new-asset-currency");
+    const grp = document.getElementById("new-asset-group");
     if (editingId) {
       const a = ASSETS.find((x) => x.id === editingId);
       if (ar && a) ar.value = a.name_ar;
       if (en && a) en.value = a.name_en;
       if (cur && a) cur.value = a.currency;
+      if (grp && a) grp.value = a.group;
     }
   }, 0);
 }
@@ -118,10 +120,12 @@ function submitAddAsset(ev) {
   const nameArEl = document.getElementById("new-asset-name-ar");
   const nameEnEl = document.getElementById("new-asset-name-en");
   const curEl = document.getElementById("new-asset-currency");
+  const groupEl = document.getElementById("new-asset-group");
   const errEl = document.getElementById("new-asset-error");
   const nameAr = (nameArEl.value || "").trim();
   const nameEn = (nameEnEl.value || "").trim();
   const currency = curEl.value;
+  const group = groupEl.value || "savings";
 
   if (!nameAr) {
     errEl.textContent = t("errNameAr");
@@ -146,12 +150,19 @@ function submitAddAsset(ev) {
     // ── Edit mode ──────────────────────────────────────
     const isBase = BASE_ASSETS.some((b) => b.id === editingId);
     if (isBase) {
-      baseOverrides[editingId] = { name_ar: nameAr, name_en: nameEn, icon: selectedIcon };
+      baseOverrides[editingId] = { name_ar: nameAr, name_en: nameEn, icon: selectedIcon, group };
       // Note: the original currency of built-in assets never changes, to keep old calculations accurate
     } else {
       const idx = customAssets.findIndex((c) => c.id === editingId);
       if (idx !== -1) {
-        customAssets[idx] = { ...customAssets[idx], name_ar: nameAr, name_en: nameEn, icon: selectedIcon, currency };
+        customAssets[idx] = {
+          ...customAssets[idx],
+          name_ar: nameAr,
+          name_en: nameEn,
+          icon: selectedIcon,
+          currency,
+          group,
+        };
       }
     }
     rebuildAssets();
@@ -171,7 +182,7 @@ function submitAddAsset(ev) {
     id = id + "-" + n;
   }
 
-  customAssets.push({ id, name_ar: nameAr, name_en: nameEn, icon: selectedIcon, currency, isAsset: false });
+  customAssets.push({ id, name_ar: nameAr, name_en: nameEn, icon: selectedIcon, currency, isAsset: false, group });
   rebuildAssets();
   order.push(id);
 
@@ -226,6 +237,14 @@ function toggleAssetCategory(id) {
   render();
   renderBreakdown();
   scheduleSave();
+}
+
+// ── Category filter (Savings / Investments / Assets) ──────
+// View-only: filters which rows are shown in the table, does not affect
+// totals, breakdown, or history — those always use every asset.
+function setGroupFilter(g) {
+  groupFilter = groupFilter === g ? null : g;
+  render();
 }
 
 function updateTotals() {

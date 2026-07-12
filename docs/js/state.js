@@ -15,6 +15,7 @@ const BASE_ASSETS = [
     icon: "💰",
     currency: "EGP",
     isAsset: false,
+    group: "savings",
   },
   {
     id: "thunder_invest",
@@ -23,6 +24,7 @@ const BASE_ASSETS = [
     icon: "📈",
     currency: "EGP",
     isAsset: false,
+    group: "investments",
   },
   {
     id: "tilda_invest",
@@ -31,6 +33,7 @@ const BASE_ASSETS = [
     icon: "📈",
     currency: "EGP",
     isAsset: false,
+    group: "investments",
   },
   {
     id: "ahli",
@@ -39,13 +42,62 @@ const BASE_ASSETS = [
     icon: "🏦",
     currency: "EGP",
     isAsset: false,
+    group: "savings",
   },
-  { id: "mashreq", name_ar: "بنك المشرق (جنيه)", name_en: "Mashreq Bank", icon: "🏦", currency: "EGP", isAsset: false },
-  { id: "car", name_ar: "سعر السيارة (جنيه)", name_en: "Car", icon: "🚗", currency: "EGP", isAsset: true },
-  { id: "usd", name_ar: "نقدي بالدولار", name_en: "Cash USD", icon: "💵", currency: "USD", isAsset: false },
-  { id: "eur", name_ar: "نقدي باليورو", name_en: "Cash EUR", icon: "💶", currency: "EUR", isAsset: false },
-  { id: "sar", name_ar: "نقدي بالريال السعودي", name_en: "Cash SAR", icon: "💴", currency: "SAR", isAsset: false },
-  { id: "gold", name_ar: "ذهب (جرام)", name_en: "Gold (grams)", icon: "🪙", currency: "GOLD", isAsset: false },
+  {
+    id: "mashreq",
+    name_ar: "بنك المشرق (جنيه)",
+    name_en: "Mashreq Bank",
+    icon: "🏦",
+    currency: "EGP",
+    isAsset: false,
+    group: "savings",
+  },
+  {
+    id: "car",
+    name_ar: "سعر السيارة (جنيه)",
+    name_en: "Car",
+    icon: "🚗",
+    currency: "EGP",
+    isAsset: true,
+    group: "assets",
+  },
+  {
+    id: "usd",
+    name_ar: "نقدي بالدولار",
+    name_en: "Cash USD",
+    icon: "💵",
+    currency: "USD",
+    isAsset: false,
+    group: "savings",
+  },
+  {
+    id: "eur",
+    name_ar: "نقدي باليورو",
+    name_en: "Cash EUR",
+    icon: "💶",
+    currency: "EUR",
+    isAsset: false,
+    group: "savings",
+  },
+  {
+    id: "sar",
+    name_ar: "نقدي بالريال السعودي",
+    name_en: "Cash SAR",
+    icon: "💴",
+    currency: "SAR",
+    isAsset: false,
+    group: "savings",
+  },
+  {
+    id: "gold",
+    name_ar: "ذهب (جرام)",
+    name_en: "Gold (grams)",
+    icon: "🪙",
+    currency: "GOLD",
+    isAsset: false,
+    group: "assets",
+  },
 ];
 
 const ICON_PALETTE = [
@@ -89,6 +141,7 @@ let apy = {};
 let returnConfig = {};
 let returnPanelOpen = false; // standalone "return category presets" panel, opened from its own button
 let returnPanelAssetId = null; // which of the user's assets the panel is currently editing
+let groupFilter = null; // "savings" | "investments" | "assets" | null (null = show all rows)
 let order = [];
 let itemHistoryModalId = null; // asset id whose history timeline is open, or null
 let itemHistoryEntries = []; // entries loaded for itemHistoryModalId
@@ -163,6 +216,7 @@ function rebuildAssets() {
     icon: c.icon || "💼",
     currency: c.currency,
     isAsset: !!c.isAsset,
+    group: c.group || "savings",
   }));
   ASSETS = [...baseFull, ...customFull];
   ASSETS.forEach((a) => {

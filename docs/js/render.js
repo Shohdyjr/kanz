@@ -147,6 +147,15 @@ function render() {
           <span id="wt-sync-badge" class="wt-sync-badge"></span>
         </div>
       </div>
+      <div class="wt-group-filters">
+        <button class="wt-group-filter-btn ${!groupFilter ? "active" : ""}" onclick="setGroupFilter(null)">${t("groupFilterAll")}</button>
+        ${["savings", "investments", "assets"]
+          .map(
+            (g) =>
+              `<button class="wt-group-filter-btn ${groupFilter === g ? "active" : ""}" onclick="setGroupFilter('${g}')">${t("groupOptions")[g]}</button>`
+          )
+          .join("")}
+      </div>
       <table class="wt-table">
         <thead><tr>
           <th class="wt-th-order">${t("thOrder")}</th>
@@ -158,14 +167,14 @@ function render() {
           <th class="wt-th-del"></th>
         </tr></thead>
         <tbody>
-        ${orderedAssets
-          .map((a, idx) => {
+        ${(groupFilter ? orderedAssets.filter((a) => a.group === groupFilter) : orderedAssets)
+          .map((a, idx, visible) => {
             const p = priceFor(a);
             const t2 = qty[a.id] * p;
             return `<tr>
             <td><div class="wt-order-btns">
               <button class="wt-ord" onclick="move('${a.id}',-1)" ${idx === 0 ? "disabled" : ""}>▲</button>
-              <button class="wt-ord" onclick="move('${a.id}',1)"  ${idx === orderedAssets.length - 1 ? "disabled" : ""}>▼</button>
+              <button class="wt-ord" onclick="move('${a.id}',1)"  ${idx === visible.length - 1 ? "disabled" : ""}>▼</button>
             </div></td>
             <td><div class="wt-asset-name">
               <span class="wt-asset-icon wt-asset-icon-bg">${esc(a.icon)}</span>
@@ -234,6 +243,17 @@ function render() {
                 .join("")}
             </select>
             ${isEditingBase ? `<p style="font-size:11px;color:var(--wt-text-dim);margin:6px 0 0">${t("currencyLockedNote")}</p>` : ""}
+          </div>
+          <div class="wt-field">
+            <label for="new-asset-group">${t("groupLabel")}</label>
+            <select id="new-asset-group">
+              ${["savings", "investments", "assets"]
+                .map(
+                  (g) =>
+                    `<option value="${g}" ${(editingId ? ASSETS.find((x) => x.id === editingId)?.group : null) === g ? "selected" : g === "savings" && !editingId ? "selected" : ""}>${t("groupOptions")[g]}</option>`
+                )
+                .join("")}
+            </select>
           </div>
           <div class="wt-modal-actions">
             <button type="button" class="wt-btn-ghost" onclick="closeAddModal()">${t("cancel")}</button>

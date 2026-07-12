@@ -50,7 +50,7 @@ const RETURN_PRESETS = [
     payoutFreq: "monthly",
     compounding: true,
     liquidity: "monthly",
-    suggestedApy: 16,
+    suggestedApy: 18,
   },
   {
     id: "mashreq_day_by_day",
@@ -252,6 +252,7 @@ function renderReturnPanel() {
         <div class="wt-return-summary">
           <label for="rc-apy">${t("thApy")}</label>
           <input type="number" id="rc-apy" min="0" max="100" step="any" value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
+          <p class="wt-return-summary-category">${t("apyEditableHint")}</p>
           <p id="rc-category-preview" class="wt-return-summary-category">
             ${t("categoryPreviewLabel")}: <b>${category || "—"}</b>
           </p>

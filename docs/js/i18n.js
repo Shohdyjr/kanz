@@ -64,6 +64,11 @@ const I18N = {
     presetsLabel: "منتجات جاهزة (اضغط عشان تعبّي الحقول تلقائي)",
     noAssetsHint: "ضيف أصل الأول من جدول الأصول تحت.",
     setApyLink: "+ حدد",
+    apyEditableHint:
+      "الرقم ده مقترح بس من المنتج الجاهز — تقدر تعدّله يدوي هنا زي ما انت عايز، هو ده الرقم اللي بيتطبّق فعليًا.",
+    groupLabel: "التصنيف",
+    groupOptions: { savings: "توفير (Savings)", investments: "استثمارات (Investments)", assets: "أصول (Assets)" },
+    groupFilterAll: "الكل",
     productTypeLabel: "نوع المنتج",
     rateTypeLabel: "نوع النسبة",
     calcMethodLabel: "طريقة احتساب العائد",
@@ -317,6 +322,11 @@ const I18N = {
     presetsLabel: "Known products (click to auto-fill the fields)",
     noAssetsHint: "Add an asset first from the table below.",
     setApyLink: "+ Set",
+    apyEditableHint:
+      "This is just a suggested figure from the preset — edit it freely, this is the number that actually gets applied.",
+    groupLabel: "Category",
+    groupOptions: { savings: "Savings", investments: "Investments", assets: "Assets" },
+    groupFilterAll: "All",
     productTypeLabel: "Product type",
     rateTypeLabel: "Rate type",
     calcMethodLabel: "Calculation method",

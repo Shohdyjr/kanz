@@ -398,6 +398,32 @@ body {
   margin: 0;
   font-weight: 500;
 }
+.wt-group-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 4px;
+}
+.wt-group-filter-btn {
+  background: var(--wt-input-bg);
+  border: 1px solid var(--wt-line);
+  color: var(--wt-text-dim);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.wt-group-filter-btn:hover {
+  border-color: var(--wt-gold-dim);
+  color: var(--wt-text);
+}
+.wt-group-filter-btn.active {
+  background: var(--wt-gold-dim);
+  border-color: var(--wt-gold-dim);
+  color: var(--wt-bg);
+  font-weight: 600;
+}
 .wt-table {
   width: 100%;
   border-collapse: collapse;
@@ -471,7 +497,7 @@ body {
 }
 .wt-qty {
   width: 100%;
-  max-width: 120px;
+  max-width: 160px;
   background: var(--wt-input-bg);
   border: 1px solid var(--wt-line);
   color: var(--wt-text);
