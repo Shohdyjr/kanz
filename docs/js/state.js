@@ -145,6 +145,7 @@ let simModalOpen = false; // "what-if" simulator modal, opened per row from the 
 let simAssetId = null; // which asset the simulator is currently running for
 let simAmount = null; // last amount typed into the simulator (kept across re-renders)
 let simDate = null; // last target date typed into the simulator (YYYY-MM-DD)
+let simStartDate = null; // last start date typed into the simulator (YYYY-MM-DD), defaults to today
 let groupFilter = null; // "savings" | "investments" | "assets" | null (null = show all rows)
 let order = [];
 let itemHistoryModalId = null; // asset id whose history timeline is open, or null

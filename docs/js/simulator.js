@@ -15,8 +15,16 @@
 
 function openSimModal(assetId) {
   simModalOpen = true;
-  simAssetId = assetId && ASSETS.some((a) => a.id === assetId) ? assetId : ASSETS.length ? ASSETS[0].id : null;
+  // Prefer an explicitly-passed asset (opened from a specific row). Otherwise
+  // keep whatever the user had selected last time (the header button passes
+  // no id), and only fall back to the first asset if there's nothing valid.
+  if (assetId && ASSETS.some((a) => a.id === assetId)) {
+    simAssetId = assetId;
+  } else if (!simAssetId || !ASSETS.some((a) => a.id === simAssetId)) {
+    simAssetId = ASSETS.length ? ASSETS[0].id : null;
+  }
   if (simAmount == null && simAssetId) simAmount = qty[simAssetId] || "";
+  if (!simStartDate) simStartDate = todayLocalStr();
   if (!simDate) simDate = todayLocalStr();
   render();
   setTimeout(() => {
@@ -35,12 +43,39 @@ function closeSimModal() {
 function onSimInputChange() {
   const assetEl = document.getElementById("sim-asset");
   const amtEl = document.getElementById("sim-amount");
+  const startDateEl = document.getElementById("sim-start-date");
   const dateEl = document.getElementById("sim-date");
   if (assetEl) simAssetId = assetEl.value || null;
   simAmount = amtEl ? amtEl.value : simAmount;
+  simStartDate = startDateEl ? startDateEl.value : simStartDate;
   simDate = dateEl ? dateEl.value : simDate;
+
+  // Re-rendering the modal replaces the DOM node the user is typing in, which
+  // drops focus after every single keystroke (looked like "have to click for
+  // every digit"). Remember what was focused + the cursor position, rebuild
+  // the modal, then restore both on the fresh element.
+  const active = document.activeElement;
+  const activeId = active && active.id;
+  const canSelect = active && "selectionStart" in active;
+  const selStart = canSelect ? active.selectionStart : null;
+  const selEnd = canSelect ? active.selectionEnd : null;
+
   const root = document.getElementById("wt-sim-modal-root");
   if (root) root.outerHTML = renderSimModal();
+
+  if (activeId) {
+    const newEl = document.getElementById(activeId);
+    if (newEl) {
+      newEl.focus();
+      if (selStart != null) {
+        try {
+          newEl.setSelectionRange(selStart, selEnd);
+        } catch (e) {
+          // Some input types (e.g. number/date) don't support selection ranges — ignore.
+        }
+      }
+    }
+  }
 }
 
 // Effective per-day / per-month / per-year growth amounts an `amount`
@@ -62,12 +97,13 @@ function simIncrementAmounts(rate, amount) {
 }
 
 // Same growth model as projectAssetValue() in return-config.js, but takes an
-// arbitrary principal + target date instead of always using the live qty/today.
-function simProjectedValue(assetId, amount, targetDateStr) {
+// arbitrary principal + start date + target date instead of always using the
+// live qty/today. For tiered certificates, the item's real configured start
+// date is still the one that matters (compounding follows its anniversaries),
+// so the simulator's own start date only applies to flat-APY items.
+function simProjectedValue(assetId, amount, startDateStr, targetDateStr) {
   if (!amount || !targetDateStr) return null;
   const cfg = returnConfig[assetId] || {};
-  const today = new Date();
-  const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const targetDate = parseDateStr(targetDateStr);
 
   if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
@@ -75,8 +111,23 @@ function simProjectedValue(assetId, amount, targetDateStr) {
   }
   const rate = apy[assetId] || 0;
   if (!rate) return amount;
-  const days = Math.max(0, daysBetweenDates(todayMid, targetDate));
+  const startDate = startDateStr ? parseDateStr(startDateStr) : new Date();
+  const days = Math.max(0, daysBetweenDates(startDate, targetDate));
   return amount * Math.pow(1 + rate / 100, days / 365);
+}
+
+// Days between the sim's start/target dates, clamped to 0 — used both for the
+// projection and for the formula text shown to the user.
+function simDaysBetween(startDateStr, targetDateStr) {
+  if (!startDateStr || !targetDateStr) return 0;
+  return Math.max(0, daysBetweenDates(parseDateStr(startDateStr), parseDateStr(targetDateStr)));
+}
+
+// Small helper to format a rate/number for display inside a formula string —
+// always LTR digits, trimmed of unnecessary trailing zeros.
+function fmtFormulaNum(n, maxDigits) {
+  const digits = maxDigits == null ? 4 : maxDigits;
+  return Number(n.toFixed(digits)).toString();
 }
 
 function renderSimModal() {
@@ -112,10 +163,12 @@ function renderSimModal() {
   const rate = apy[a.id] || 0;
   const cfg = returnConfig[a.id] || {};
   const isTiered = !!(cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length);
+  const startDateVal = simStartDate || minDate;
 
   const inc = simIncrementAmounts(rate, amount);
-  const projected = amount && simDate ? simProjectedValue(a.id, amount, simDate) : null;
+  const projected = amount && simDate ? simProjectedValue(a.id, amount, startDateVal, simDate) : null;
   const profit = projected != null ? projected - amount : null;
+  const days = simDaysBetween(startDateVal, simDate);
 
   const noRateNote = !rate && !isTiered ? `<p class="wt-sim-note">${t("simNoRateHint")}</p>` : "";
 
@@ -125,13 +178,31 @@ function renderSimModal() {
       <b class="${val >= 0 ? "wt-sim-pos" : "wt-sim-neg"}">+${fmtByCurrencyPrecise(val, a.currency)}</b>
     </div>`;
 
+  // Plain-language versions of the exact formulas used above, with the
+  // user's own numbers substituted in, so the % and the math behind it are
+  // visible and not just the final result.
+  const rateStr = fmtFormulaNum(rate, 4);
+  const amountStr = fmtFormulaNum(amount, 2);
+  const incFormula =
+    inc && !isTiered
+      ? `<p class="wt-sim-formula" dir="ltr">${amountStr} × ((1 + ${rateStr}/100)^(1/365) − 1) = ${fmtFormulaNum(inc.daily, 4)} ${esc(a.currency)} / ${t("simDaily")}<br>
+         ${amountStr} × ((1 + ${rateStr}/100)^(1/12) − 1) = ${fmtFormulaNum(inc.monthly, 4)} ${esc(a.currency)} / ${t("simMonthly")}<br>
+         ${amountStr} × ((1 + ${rateStr}/100)^(1) − 1) = ${fmtFormulaNum(inc.yearly, 4)} ${esc(a.currency)} / ${t("simYearly")}</p>`
+      : "";
+  const totalFormula =
+    projected != null && !isTiered
+      ? `<p class="wt-sim-formula" dir="ltr">${amountStr} × (1 + ${rateStr}/100)^(${days}/365) = ${fmtFormulaNum(projected, 2)} ${esc(a.currency)}</p>`
+      : projected != null && isTiered
+        ? `<p class="wt-sim-formula">${t("simTieredFormulaHint")}</p>`
+        : "";
+
   return `<div id="wt-sim-modal-root">
   <div class="wt-modal-overlay" onclick="if(event.target===this)closeSimModal()">
     <div class="wt-modal wt-modal-wide">
       <h3>${t("simModalTitle")}</h3>
       <p class="wt-sim-subtitle">${t("simModalHint")}</p>
 
-      <div class="wt-field-row-4">
+      <div class="wt-field-row-5">
         ${assetPicker}
         <div class="wt-field">
           <label for="sim-amount">${t("simAmountLabel")} (${a.currency})</label>
@@ -139,8 +210,13 @@ function renderSimModal() {
             value="${simAmount ?? ""}" placeholder="0" oninput="onSimInputChange()">
         </div>
         <div class="wt-field">
+          <label for="sim-start-date">${t("simStartDateLabel")}</label>
+          <input type="date" id="sim-start-date" dir="ltr"
+            value="${startDateVal}" onchange="onSimInputChange()">
+        </div>
+        <div class="wt-field">
           <label for="sim-date">${t("simDateLabel")}</label>
-          <input type="date" id="sim-date" min="${minDate}" dir="ltr"
+          <input type="date" id="sim-date" min="${startDateVal}" dir="ltr"
             value="${simDate || ""}" onchange="onSimInputChange()">
         </div>
       </div>
@@ -155,6 +231,7 @@ function renderSimModal() {
           ${incRow("simDaily", inc.daily)}
           ${incRow("simMonthly", inc.monthly)}
           ${incRow("simYearly", inc.yearly)}
+          ${incFormula}
         </div>`
             : ""
         }
@@ -171,6 +248,7 @@ function renderSimModal() {
             <span>${t("simProjectedProfit")}</span>
             <b class="${profit >= 0 ? "wt-sim-pos" : "wt-sim-neg"}">${profit >= 0 ? "+" : ""}${fmtByCurrencyPrecise(profit, a.currency)}</b>
           </div>
+          ${totalFormula}
         </div>`
             : ""
         }

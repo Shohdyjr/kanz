@@ -82,9 +82,11 @@ const I18N = {
     projNone: "—",
     simBtnTitle: "محاكاة (كام هيزيد؟)",
     simModalTitle: "المحاكي",
-    simModalHint: "اختار الأصل، واكتب مبلغ وتاريخ مستهدف، وهيوريك المتوقع في التاريخ ده، وكمان قد إيه بيزيد فعليًا يوميًا وشهريًا وسنويًا على المعدل الحالي.",
+    simModalHint:
+      "اختار الأصل، واكتب مبلغ وتاريخ مستهدف، وهيوريك المتوقع في التاريخ ده، وكمان قد إيه بيزيد فعليًا يوميًا وشهريًا وسنويًا على المعدل الحالي.",
     simItemLabel: "الأصل",
     simAmountLabel: "المبلغ",
+    simStartDateLabel: "من تاريخ",
     simDateLabel: "التاريخ المستهدف",
     simNoRateHint: "مفيش نسبة سنوية محددة للبند ده — حدد النسبة أو الإعدادات الأول عشان المحاكي يقدر يحسب.",
     simIncreaseTitle: "قد إيه بيزيد فعليًا",
@@ -94,6 +96,8 @@ const I18N = {
     simOnDateTitle: "المتوقع في تاريخ ",
     simProjectedTotal: "الإجمالي المتوقع",
     simProjectedProfit: "صافي الربح",
+    simTieredFormulaHint:
+      'البند ده شهادة بمعدلات متدرجة، فالحساب بيتم حسب تاريخ بداية الشهادة الفعلي ومعدلاتها من إعدادات النسبة، مش من "من تاريخ" اللي فوق.',
     columnsBtnTitle: "الأعمدة",
     productTypeLabel: "نوع المنتج",
     rateTypeLabel: "نوع النسبة",
@@ -366,9 +370,11 @@ const I18N = {
     projNone: "—",
     simBtnTitle: "Simulate (how much will it grow?)",
     simModalTitle: "Simulator",
-    simModalHint: "Pick an item, then type an amount and a target date to see the projected total on that date, plus how much it actually grows per day, per month, and per year at the current rate.",
+    simModalHint:
+      "Pick an item, then type an amount and a target date to see the projected total on that date, plus how much it actually grows per day, per month, and per year at the current rate.",
     simItemLabel: "Item",
     simAmountLabel: "Amount",
+    simStartDateLabel: "From date",
     simDateLabel: "Target date",
     simNoRateHint: "This item has no APY set yet — set a rate or return config first so the simulator can calculate.",
     simIncreaseTitle: "Actual growth amount",
@@ -378,6 +384,8 @@ const I18N = {
     simOnDateTitle: "Projected on ",
     simProjectedTotal: "Projected total",
     simProjectedProfit: "Net profit",
+    simTieredFormulaHint:
+      'This item is a tiered-rate certificate, so the calculation follows its real configured start date and tier rates from the return config, not the "From date" above.',
     columnsBtnTitle: "Columns",
     productTypeLabel: "Product type",
     rateTypeLabel: "Rate type",
