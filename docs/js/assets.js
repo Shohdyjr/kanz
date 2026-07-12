@@ -1,6 +1,9 @@
 // ── General actions ────────────────────────────────────────
 function setQty(id, v) {
   qty[id] = parseFloat(v) || 0;
+  qtyUpdatedAt[id] = todayLocalStr();
+  const dateEl = document.getElementById("qty-updated-" + id);
+  if (dateEl) dateEl.textContent = fmtDateShort(parseDateStr(qtyUpdatedAt[id]));
   updateTotals();
   scheduleSave();
   renderBreakdown();

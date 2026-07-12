@@ -130,6 +130,11 @@ let baseOverrides = {};
 let ASSETS = [];
 
 let qty = {};
+// Last date (YYYY-MM-DD, local) the user manually typed into an item's qty
+// field — shown as a small subtext under the field, same style as the
+// projection dates. Purely informational (never used in any calculation);
+// unset for items the user hasn't touched since this feature shipped.
+let qtyUpdatedAt = {};
 // Per-item APY (%), e.g. apy["gold"] = 5 means that item grows 5%/year,
 // compounded daily by the backend cron. Keyed by asset id, like `qty`.
 let apy = {};

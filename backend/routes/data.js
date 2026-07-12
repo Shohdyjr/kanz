@@ -38,6 +38,14 @@ const isSafePlainObject = (v) =>
 const isFiniteNumberMap = (v) =>
   isSafePlainObject(v) && Object.values(v).every((n) => typeof n === "number" && Number.isFinite(n));
 
+// `qtyUpdatedAt` is purely informational (shown as a small "last update"
+// subtext under each item's qty field) — never used in any calculation —
+// but still validated as a map of asset id → YYYY-MM-DD string, same
+// dangerous-key/type discipline as everything else stored here.
+const QTY_UPDATED_AT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isValidDateMap = (v) =>
+  isSafePlainObject(v) && Object.values(v).every((d) => typeof d === "string" && QTY_UPDATED_AT_DATE_RE.test(d));
+
 async function getUserRow(username) {
   const { rows } = await pool.query("SELECT data, history, item_history FROM kanz_users WHERE username = $1", [
     username,
@@ -62,6 +70,7 @@ router.get("/data", async (req, res) => {
     savingsGoal: d.savingsGoal || 0,
     apy: d.apy || {},
     returnConfig: d.returnConfig || {},
+    qtyUpdatedAt: d.qtyUpdatedAt || {},
   });
 });
 
@@ -118,14 +127,26 @@ router.put("/data", async (req, res) => {
   const user = await getUserRow(req.username);
   if (!user) return res.json({ ok: false, error: "userNotFound" });
 
-  const { qty, customAssets, excludedBaseIds, baseOverrides, theme, lang, order, savingsGoal, apy, returnConfig } =
-    req.body;
+  const {
+    qty,
+    customAssets,
+    excludedBaseIds,
+    baseOverrides,
+    theme,
+    lang,
+    order,
+    savingsGoal,
+    apy,
+    returnConfig,
+    qtyUpdatedAt,
+  } = req.body;
   if (qty !== undefined && !isFiniteNumberMap(qty)) return res.json({ ok: false, error: "invalidData" });
   if (baseOverrides !== undefined && !isSafePlainObject(baseOverrides))
     return res.json({ ok: false, error: "invalidData" });
   if (apy !== undefined && !isValidApyMap(apy)) return res.json({ ok: false, error: "invalidData" });
   if (returnConfig !== undefined && !isValidReturnConfigMap(returnConfig))
     return res.json({ ok: false, error: "invalidData" });
+  if (qtyUpdatedAt !== undefined && !isValidDateMap(qtyUpdatedAt)) return res.json({ ok: false, error: "invalidData" });
 
   const existing = user.data || {};
   const updated = {
@@ -140,6 +161,7 @@ router.put("/data", async (req, res) => {
     savingsGoal: typeof savingsGoal === "number" ? savingsGoal : existing.savingsGoal || 0,
     apy: apy || existing.apy || {},
     returnConfig: returnConfig || existing.returnConfig || {},
+    qtyUpdatedAt: qtyUpdatedAt || existing.qtyUpdatedAt || {},
   };
 
   await pool.query("UPDATE kanz_users SET data = $1 WHERE username = $2", [JSON.stringify(updated), req.username]);

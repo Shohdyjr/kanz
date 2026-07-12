@@ -461,6 +461,7 @@ function loadData() {
         savingsGoal = typeof j.savingsGoal === "number" ? j.savingsGoal : 0;
         apy = j.apy && typeof j.apy === "object" ? j.apy : {};
         returnConfig = j.returnConfig && typeof j.returnConfig === "object" ? j.returnConfig : {};
+        qtyUpdatedAt = j.qtyUpdatedAt && typeof j.qtyUpdatedAt === "object" ? j.qtyUpdatedAt : {};
 
         rebuildAssets();
         order = Array.isArray(j.order) && j.order.length ? j.order : ASSETS.map((a) => a.id);
