@@ -200,6 +200,7 @@ function render() {
               return `<td class="wt-proj-cell" id="proj-next-${a.id}" title="${t(proj.nextLabelKey)}">${fmtByCurrency(proj.next, a.currency)}</td><td class="wt-proj-cell" id="proj-cycle-${a.id}">${fmtByCurrency(proj.endOfCycle, a.currency)}</td><td class="wt-proj-cell" id="proj-end-${a.id}">${fmtByCurrency(proj.endOfYear, a.currency)}</td>`;
             })()}
             <td><div class="wt-row-actions">
+              <button class="wt-hist" onclick="openSimModal('${a.id}')" title="${t("simBtnTitle")}">🧮</button>
               <button class="wt-hist" onclick="openItemHistoryModal('${a.id}')" title="${t("itemHistoryTitle")}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
               </button>
@@ -281,6 +282,7 @@ function render() {
     ${emailModalOpen ? renderEmailModal() : ""}
     ${itemHistoryModalId ? renderItemHistoryModal() : ""}
     ${returnPanelOpen ? renderReturnPanel() : ""}
+    ${simModalOpen ? renderSimModal() : ""}
   `;
 
   renderSyncBadge();

@@ -141,6 +141,10 @@ let apy = {};
 let returnConfig = {};
 let returnPanelOpen = false; // standalone "return category presets" panel, opened from its own button
 let returnPanelAssetId = null; // which of the user's assets the panel is currently editing
+let simModalOpen = false; // "what-if" simulator modal, opened per row from the table
+let simAssetId = null; // which asset the simulator is currently running for
+let simAmount = null; // last amount typed into the simulator (kept across re-renders)
+let simDate = null; // last target date typed into the simulator (YYYY-MM-DD)
 let groupFilter = null; // "savings" | "investments" | "assets" | null (null = show all rows)
 let order = [];
 let itemHistoryModalId = null; // asset id whose history timeline is open, or null

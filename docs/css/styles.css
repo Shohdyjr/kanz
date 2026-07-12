@@ -749,6 +749,49 @@ body {
   margin-top: 8px;
 }
 
+.wt-sim-subtitle {
+  font-size: 12px;
+  color: var(--wt-text-dim);
+  margin: -6px 0 14px;
+}
+.wt-sim-note {
+  font-size: 12px;
+  color: var(--wt-gold);
+  margin: 8px 0;
+}
+.wt-sim-inc-block,
+.wt-sim-total-block {
+  margin: 14px 0;
+  padding: 12px 14px;
+  background: var(--wt-input-bg);
+  border: 1px solid var(--wt-line);
+  border-radius: 10px;
+}
+.wt-sim-block-title {
+  font-size: 12px;
+  color: var(--wt-text-dim);
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+.wt-sim-inc-row,
+.wt-sim-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.wt-sim-inc-row b,
+.wt-sim-total-row b {
+  font-family: "JetBrains Mono", monospace;
+}
+.wt-sim-pos {
+  color: var(--wt-green);
+}
+.wt-sim-neg {
+  color: var(--wt-red);
+}
+
 .wt-item-hist-list {
   max-height: 340px;
   overflow-y: auto;
