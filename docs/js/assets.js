@@ -258,9 +258,11 @@ function updateTotals() {
     if (el) el.textContent = fmtUsd(t);
     const proj = projectAssetValue(a);
     const nextEl = document.getElementById("proj-next-" + a.id);
+    const cycleEl = document.getElementById("proj-cycle-" + a.id);
     const endEl = document.getElementById("proj-end-" + a.id);
-    if (nextEl) nextEl.textContent = proj ? fmtUsd(proj.next) : t("projNone");
-    if (endEl) endEl.textContent = proj ? fmtUsd(proj.endOfYear) : t("projNone");
+    if (nextEl) nextEl.textContent = proj ? fmtByCurrency(proj.next, a.currency) : t("projNone");
+    if (cycleEl) cycleEl.textContent = proj ? fmtByCurrency(proj.endOfCycle, a.currency) : t("projNone");
+    if (endEl) endEl.textContent = proj ? fmtByCurrency(proj.endOfYear, a.currency) : t("projNone");
   });
   const totalGold = rates.goldUsdPerGram > 0 ? totalUsd / rates.goldUsdPerGram : 0;
   const totalEgp = totalUsd * rates.egpPerUsd;

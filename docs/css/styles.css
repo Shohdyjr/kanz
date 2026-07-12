@@ -428,6 +428,9 @@ body {
   width: 100%;
   border-collapse: collapse;
 }
+.wt-table-scroll {
+  overflow-x: auto;
+}
 .wt-table thead th {
   text-align: start;
   font-size: 12px;
@@ -717,14 +720,14 @@ body {
   max-width: 420px;
 }
 .wt-modal-wide {
-  max-width: 640px;
+  max-width: 980px;
 }
-.wt-field-row {
+.wt-field-row-4 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
-.wt-field-row .wt-field {
+.wt-field-row-4 .wt-field {
   margin-bottom: 0;
 }
 .wt-return-summary {
@@ -1464,6 +1467,14 @@ body {
     max-width: 100%;
   }
   .wt-hist-grid {
+    grid-template-columns: 1fr;
+  }
+  .wt-field-row-4 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 420px) {
+  .wt-field-row-4 {
     grid-template-columns: 1fr;
   }
 }

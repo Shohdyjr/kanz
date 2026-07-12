@@ -74,6 +74,7 @@ const I18N = {
     tierRatesHint:
       "اختياري — للشهادات متعددة السنين بمعدل مختلف كل سنة (زي 27,22,17). لو اتملت، البروجيكشن في الجدول هيستخدمها بدل النسبة السنوية العادية.",
     thProjNext: "المتوقع القادم",
+    thProjCycle: "نهاية الدورة",
     thProjYearEnd: "المتوقع آخر السنة",
     projTomorrow: "بكرة",
     projNextMonth: "الشهر الجاي",
@@ -342,6 +343,7 @@ const I18N = {
     tierRatesHint:
       "Optional — for multi-year certificates with a different rate each year (e.g. 27,22,17). If filled in, the table's projection uses this instead of the plain annual rate.",
     thProjNext: "Next projection",
+    thProjCycle: "End of cycle",
     thProjYearEnd: "End-of-year projection",
     projTomorrow: "Tomorrow",
     projNextMonth: "Next month",

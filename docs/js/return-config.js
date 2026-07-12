@@ -232,7 +232,7 @@ function renderReturnPanel() {
       </div>
 
       <form onsubmit="submitReturnConfig(event)">
-        <div class="wt-field-row">
+        <div class="wt-field-row-4">
           <div class="wt-field">
             <label for="rc-productType">${t("productTypeLabel")}</label>
             <select id="rc-productType">${optionsHtml(t("productTypeOptions"), cfg.productType)}</select>
@@ -241,8 +241,6 @@ function renderReturnPanel() {
             <label for="rc-rateType">${t("rateTypeLabel")}</label>
             <select id="rc-rateType">${optionsHtml(t("rateTypeOptions"), cfg.rateType)}</select>
           </div>
-        </div>
-        <div class="wt-field-row" style="margin-top:12px">
           <div class="wt-field">
             <label for="rc-calcMethod">${t("calcMethodLabel")}</label>
             <select id="rc-calcMethod" onchange="previewReturnCategory()">${optionsHtml(t("calcMethodOptions"), cfg.calcMethod)}</select>
@@ -252,7 +250,7 @@ function renderReturnPanel() {
             <select id="rc-payoutFreq" onchange="previewReturnCategory()">${optionsHtml(t("payoutFreqOptions"), cfg.payoutFreq)}</select>
           </div>
         </div>
-        <div class="wt-field-row" style="margin-top:12px">
+        <div class="wt-field-row-4" style="margin-top:12px">
           <div class="wt-field">
             <label for="rc-compounding">${t("compoundingLabel")}</label>
             <select id="rc-compounding" onchange="previewReturnCategory()">
@@ -265,9 +263,6 @@ function renderReturnPanel() {
             <label for="rc-liquidity">${t("liquidityLabel")}</label>
             <select id="rc-liquidity">${optionsHtml(t("liquidityOptions"), cfg.liquidity)}</select>
           </div>
-        </div>
-
-        <div class="wt-field-row" style="margin-top:12px">
           <div class="wt-field">
             <label for="rc-startDate">${t("startDateLabel")}</label>
             <input type="date" id="rc-startDate" value="${cfg.startDate || ""}">
@@ -278,7 +273,7 @@ function renderReturnPanel() {
               value="${Array.isArray(cfg.tierRates) ? cfg.tierRates.join(",") : ""}">
           </div>
         </div>
-        <p style="font-size:11px;color:var(--wt-text-dim);margin:-6px 0 4px">${t("tierRatesHint")}</p>
+        <p style="font-size:11px;color:var(--wt-text-dim);margin:8px 0 4px">${t("tierRatesHint")}</p>
 
         <!-- The actual number the cron applies every day — shown last, on its
              own, since everything above is just describing why it's what it is. -->
@@ -351,16 +346,19 @@ function tieredValueAt(principal, startDateStr, tierRates, targetDate) {
   return value * Math.pow(1 + lastRate / 100, remDays / 365);
 }
 
-// Returns { next, nextLabelKey, endOfYear } in USD, or null if there's
-// nothing to project (no balance, or no rate configured at all).
+// Returns { next, nextLabelKey, endOfCycle, endOfYear } in the asset's own
+// currency (qty is already stored in native units — EGP stays EGP, gold
+// stays grams, etc. — so there's no USD conversion here at all), or null if
+// there's nothing to project (no balance, or no rate configured at all).
 function projectAssetValue(a) {
-  const principal = (qty[a.id] || 0) * priceFor(a);
+  const principal = qty[a.id] || 0;
   if (!principal) return null;
 
   const cfg = returnConfig[a.id] || {};
   const today = new Date();
   const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const endOfYear = new Date(today.getFullYear(), 11, 31);
+  const endOfCycle = endOfCycleDate(cfg, todayMid);
 
   let nextDate, nextLabelKey;
   if (cfg.payoutFreq === "monthly" || cfg.payoutFreq === "quarterly" || cfg.payoutFreq === "semiAnnual") {
@@ -378,19 +376,39 @@ function projectAssetValue(a) {
     return {
       next: tieredValueAt(principal, cfg.startDate, cfg.tierRates, nextDate),
       nextLabelKey,
+      endOfCycle: tieredValueAt(principal, cfg.startDate, cfg.tierRates, endOfCycle),
       endOfYear: tieredValueAt(principal, cfg.startDate, cfg.tierRates, endOfYear),
     };
   }
 
   const rate = apy[a.id] || 0;
   if (!rate) return null;
-  const daysToNext = Math.max(0, daysBetweenDates(todayMid, nextDate));
-  const daysToEnd = Math.max(0, daysBetweenDates(todayMid, endOfYear));
-  return {
-    next: principal * Math.pow(1 + rate / 100, daysToNext / 365),
-    nextLabelKey,
-    endOfYear: principal * Math.pow(1 + rate / 100, daysToEnd / 365),
+  const grow = (targetDate) => {
+    const days = Math.max(0, daysBetweenDates(todayMid, targetDate));
+    return principal * Math.pow(1 + rate / 100, days / 365);
   };
+  return {
+    next: grow(nextDate),
+    nextLabelKey,
+    endOfCycle: grow(endOfCycle),
+    endOfYear: grow(endOfYear),
+  };
+}
+
+// The natural end of the item's current compounding/payout cycle:
+//  - tiered certificate: the next anniversary of its start date (when the
+//    current step-up year rolls into the next one)
+//  - monthly/quarterly/semi-annual/annual/maturity: end of the current
+//    calendar month
+//  - daily (or unset): end of today
+function endOfCycleDate(cfg, todayMid) {
+  if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
+    let cursor = parseDateStr(cfg.startDate);
+    while (cursor <= todayMid) cursor = addYearsToDate(cursor, 1);
+    return cursor;
+  }
+  if (!cfg.payoutFreq || cfg.payoutFreq === "daily") return todayMid;
+  return new Date(todayMid.getFullYear(), todayMid.getMonth() + 1, 0); // last day of this month
 }
 function previewReturnCategory() {
   const calcMethod = document.getElementById("rc-calcMethod").value;

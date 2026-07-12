@@ -156,6 +156,7 @@ function render() {
           )
           .join("")}
       </div>
+      <div class="wt-table-scroll">
       <table class="wt-table">
         <thead><tr>
           <th class="wt-th-order">${t("thOrder")}</th>
@@ -165,6 +166,7 @@ function render() {
           <th class="num">${t("thUnitPrice")}</th>
           <th class="num">${t("thTotal")}</th>
           <th class="num">${t("thProjNext")}</th>
+          <th class="num">${t("thProjCycle")}</th>
           <th class="num">${t("thProjYearEnd")}</th>
           <th class="wt-th-del"></th>
         </tr></thead>
@@ -187,15 +189,15 @@ function render() {
               value="${qty[a.id] || ""}" placeholder="0"
               oninput="setQty('${a.id}',this.value)"></td>
             <td class="wt-apy-cell" title="${t("apyHint")}">
-              ${apy[a.id] ? fmtNum(apy[a.id], 2) + "%" : `<button type="button" class="wt-apy-set-link" onclick="openReturnPanel('${a.id}')">${t("setApyLink")}</button>`}
+              <button type="button" class="wt-apy-set-link" onclick="openReturnPanel('${a.id}')">${apy[a.id] ? fmtNum(apy[a.id], 2) + "%" : t("setApyLink")}</button>
             </td>
             <td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>
             <td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>
             ${(() => {
               const proj = projectAssetValue(a);
-              if (!proj)
-                return `<td class="wt-proj-cell" id="proj-next-${a.id}">${t("projNone")}</td><td class="wt-proj-cell" id="proj-end-${a.id}">${t("projNone")}</td>`;
-              return `<td class="wt-proj-cell" id="proj-next-${a.id}" title="${t(proj.nextLabelKey)}">${fmtUsd(proj.next)}</td><td class="wt-proj-cell" id="proj-end-${a.id}">${fmtUsd(proj.endOfYear)}</td>`;
+              const none = `<td class="wt-proj-cell" id="proj-next-${a.id}">${t("projNone")}</td><td class="wt-proj-cell" id="proj-cycle-${a.id}">${t("projNone")}</td><td class="wt-proj-cell" id="proj-end-${a.id}">${t("projNone")}</td>`;
+              if (!proj) return none;
+              return `<td class="wt-proj-cell" id="proj-next-${a.id}" title="${t(proj.nextLabelKey)}">${fmtByCurrency(proj.next, a.currency)}</td><td class="wt-proj-cell" id="proj-cycle-${a.id}">${fmtByCurrency(proj.endOfCycle, a.currency)}</td><td class="wt-proj-cell" id="proj-end-${a.id}">${fmtByCurrency(proj.endOfYear, a.currency)}</td>`;
             })()}
             <td><div class="wt-row-actions">
               <button class="wt-hist" onclick="openItemHistoryModal('${a.id}')" title="${t("itemHistoryTitle")}">
@@ -213,6 +215,7 @@ function render() {
           .join("")}
         </tbody>
       </table>
+      </div>
     </div>
 
     <p class="wt-footer-note">
