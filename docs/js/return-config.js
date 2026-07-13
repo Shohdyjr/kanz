@@ -510,8 +510,16 @@ function periodicBoundaryValueAt(principal, startDateStr, ratePercent, payoutFre
   if (!startDateStr || !monthsStep || !ratePercent || targetDate <= fromDate) return principal;
 
   let balance = principal;
-  let cursor = periodStartAtOrBefore(startDateStr, monthsStep, fromDate);
-  let nextBoundary = new Date(cursor.getFullYear(), cursor.getMonth() + monthsStep, cursor.getDate());
+  // periodStart is only used to find where the item's real payout cycle
+  // boundaries fall (e.g. the 8th of each month) — it can legitimately be
+  // BEFORE fromDate (the account's real "since" date is often much earlier
+  // than the date the user is projecting from). The actual balance is only
+  // known as of fromDate, so accrual must start there, never earlier —
+  // otherwise days between periodStart and fromDate get compounded twice
+  // (once implicitly before this projection even starts, and again here).
+  const periodStart = periodStartAtOrBefore(startDateStr, monthsStep, fromDate);
+  let cursor = fromDate;
+  let nextBoundary = new Date(periodStart.getFullYear(), periodStart.getMonth() + monthsStep, periodStart.getDate());
 
   while (nextBoundary <= targetDate) {
     const days = daysBetweenDates(cursor, nextBoundary);
