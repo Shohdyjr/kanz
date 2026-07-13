@@ -919,6 +919,31 @@ body {
   color: var(--wt-gold);
   margin: 8px 0;
 }
+.wt-sim-days-label {
+  font-size: 12px;
+  color: var(--wt-text-dim);
+  margin: 8px 0 0;
+}
+.wt-sim-basis-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+.wt-sim-basis-toggle-label {
+  font-size: 12px;
+  color: var(--wt-text-dim);
+}
+.wt-sim-basis-btn {
+  padding: 4px 14px;
+  font-size: 12px;
+  direction: ltr;
+}
+.wt-sim-basis-btn.is-active {
+  background: var(--wt-gold);
+  color: #1a1a1a;
+  border-color: var(--wt-gold);
+}
 .wt-sim-results {
   display: grid;
   grid-template-columns: 1fr 1fr;

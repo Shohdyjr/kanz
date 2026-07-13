@@ -156,6 +156,11 @@ let simAssetId = null; // which asset the simulator is currently running for
 let simAmount = null; // last amount typed into the simulator (kept across re-renders)
 let simDate = null; // last target date typed into the simulator (YYYY-MM-DD)
 let simStartDate = null; // last start date typed into the simulator (YYYY-MM-DD), defaults to today
+// Which basis ("nominal" | "effective") the simulator currently computes
+// with — lets the user flip APY/APR just for this "what if" run without
+// touching the item's actual saved Return Settings. Reset to the item's own
+// cfg.rateBasis whenever the simulator opens or the selected asset changes.
+let simRateBasis = null;
 let groupFilter = null; // "savings" | "investments" | "assets" | null (null = show all rows)
 let order = [];
 let itemHistoryModalId = null; // asset id whose history timeline is open, or null
