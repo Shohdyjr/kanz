@@ -19,8 +19,10 @@ const MAX_ITEM_HISTORY = 100000;
  * compounding:
  *  - a periodic-boundary product (e.g. Mashreq-style monthly savings) only
  *    gets its accrued interest posted on the real payout day, not every day
- *  - a `compounding: false` product isn't auto-grown here at all, since its
- *    interest is paid out rather than reinvested into this same balance
+ *  - a `compounding: false` product with a real payout schedule (e.g. a
+ *    certificate) still gets its interest computed and logged to
+ *    item_history on the real payout day — it's just never folded back into
+ *    qty, since that interest is paid out rather than reinvested
  *  - anything else keeps the original daily-compounded behaviour
  * Idempotent: if an entry for (itemId, todayStr) already exists, that item is
  * skipped — so re-running the cron twice in the same target hour (the route
@@ -47,12 +49,17 @@ function applyItemGrowth(data, itemHistory, todayStr) {
     if (nextHistory.some((e) => e.itemId === id && e.date === todayStr)) continue; // already applied today
 
     const before = nextQty[id];
-    const delta = dailyGrowthDelta(before, apy[id], returnConfig[id], todayStr);
-    if (delta == null) continue; // not a payout day for this item's real schedule, or paid out elsewhere
+    const growth = dailyGrowthDelta(before, apy[id], returnConfig[id], todayStr);
+    if (growth == null) continue; // not a payout day for this item's real schedule, or nothing configured
 
-    const after = before + delta;
-    nextQty[id] = after;
-    nextHistory.push({ itemId: id, date: todayStr, before, after, delta: after - before, apy: apy[id] });
+    // `reinvest: false` (e.g. a certificate's coupon, paid out rather than
+    // reinvested) still gets logged as an earned-interest event — `after`
+    // just stays equal to `before`, since the balance itself doesn't grow.
+    // This is the fix for the old bug where compounding:false interest was
+    // silently dropped entirely (never computed, never logged).
+    const after = growth.reinvest ? before + growth.amount : before;
+    if (growth.reinvest) nextQty[id] = after;
+    nextHistory.push({ itemId: id, date: todayStr, before, after, delta: growth.amount, apy: apy[id] });
     changed = true;
   }
 

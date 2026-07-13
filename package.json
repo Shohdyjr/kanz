@@ -6,7 +6,9 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --check .",
-    "format:fix": "prettier --write ."
+    "format:fix": "prettier --write .",
+    "sync-pipeline": "node scripts/sync-growth-pipeline.js",
+    "sync-pipeline:check": "node scripts/sync-growth-pipeline.js --check"
   },
   "devDependencies": {
     "eslint": "^9.9.0",

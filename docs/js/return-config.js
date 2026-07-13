@@ -51,7 +51,7 @@ const RETURN_PRESETS = [
     productType: "savings",
     rateType: "variable",
     rateBasis: "nominal",
-    calcMethod: "dailyBalance",
+    calcMethod: "lowestMonthlyBalance",
     payoutFreq: "monthly",
     compounding: true,
     liquidity: "monthly",
@@ -131,6 +131,34 @@ function onReturnPanelAssetChange(id) {
   if (root) root.outerHTML = renderReturnPanel();
 }
 
+// productType is a TEMPLATE only — it never drives the calculation itself
+// (see growth-pipeline.js header comment). Picking it here just pre-fills
+// sensible defaults for the fields that actually do: calcMethod, compounding,
+// rateBasis. The user can still override any of them afterwards. Only fields
+// left empty/unset by the user are touched — this never overwrites a value
+// they already typed in.
+const PRODUCT_TYPE_DEFAULTS = {
+  savings: { calcMethod: "lowestMonthlyBalance", compounding: true, rateBasis: "nominal" },
+  fixedDeposit: { calcMethod: "lowestMonthlyBalance", compounding: true, rateBasis: "nominal" },
+  certificate: { calcMethod: "fixedPrincipal", compounding: false, rateBasis: "nominal" },
+  moneyMarketFund: { calcMethod: "navBased", compounding: true, rateBasis: "effective" },
+  fixedIncomeFund: { calcMethod: "navBased", compounding: true, rateBasis: "effective" },
+  investmentFund: { calcMethod: "navBased", compounding: true, rateBasis: "effective" },
+};
+
+function applyProductTypeDefaults(productType) {
+  const defaults = PRODUCT_TYPE_DEFAULTS[productType];
+  if (!defaults) return;
+  const setIfEmpty = (fieldId, value) => {
+    const el = document.getElementById(fieldId);
+    if (el && !el.value) el.value = String(value);
+  };
+  setIfEmpty("rc-calcMethod", defaults.calcMethod);
+  setIfEmpty("rc-compounding", defaults.compounding);
+  setIfEmpty("rc-rateBasis", defaults.rateBasis);
+  previewReturnCategory();
+}
+
 // Fills the form fields from a preset with one click — the user can still
 // tweak anything afterwards before saving.
 function applyReturnPreset(presetId) {
@@ -207,32 +235,8 @@ function clearReturnConfig() {
   scheduleSave();
 }
 
-// Evaluates a user-written growth-formula expression against
-// {principal, rate, days} and returns the interest amount, or null if the
-// formula is empty/invalid (callers fall back to the built-in default in
-// that case). This is a single-user personal app — the formula an account
-// owner writes only ever runs against their own data, in their own browser
-// or their own serverless cron invocation — so a plain expression evaluator
-// is an acceptable trade for "you can fix the math yourself, right now,
-// without waiting on a code change".
-function evalGrowthFormula(formula, principal, rate, days) {
-  if (!formula || !formula.trim()) return null;
-  try {
-    const fn = new Function("principal", "rate", "days", `"use strict"; return (${formula});`);
-    const result = fn(principal, rate, days);
-    return typeof result === "number" && Number.isFinite(result) ? result : null;
-  } catch (_err) {
-    return null;
-  }
-}
-
-// The interest for one segment (principal, rate%, days) — a custom formula
-// if the item has one configured, otherwise the built-in simple-interest
-// default (principal × rate/100/365 × days).
-function segmentInterest(cfg, principal, ratePercent, days) {
-  const custom = cfg && cfg.growthFormula ? evalGrowthFormula(cfg.growthFormula, principal, ratePercent, days) : null;
-  return custom != null ? custom : principal * (ratePercent / 100 / 365) * days;
-}
+// evalGrowthFormula / segmentInterest now live in growth-pipeline.js (shared
+// with the backend and the simulator — see that file's header comment).
 
 // Live "if I plug in X" example shown right under the formula box in the
 // panel, using whatever amount/rate/days the user has typed elsewhere in
@@ -305,7 +309,7 @@ function renderReturnPanel() {
         <div class="wt-field-row-5">
           <div class="wt-field">
             <label for="rc-productType">${t("productTypeLabel")}</label>
-            <select id="rc-productType">${optionsHtml(t("productTypeOptions"), cfg.productType)}</select>
+            <select id="rc-productType" onchange="applyProductTypeDefaults(this.value)">${optionsHtml(t("productTypeOptions"), cfg.productType)}</select>
           </div>
           <div class="wt-field">
             <label for="rc-rateType">${t("rateTypeLabel")}</label>
@@ -403,20 +407,8 @@ function renderReturnPanel() {
 //    - "endOfYear": value on Dec 31 of the current calendar year
 // ══════════════════════════════════════════════════════
 
-function daysBetweenDates(d1, d2) {
-  return Math.round((d2 - d1) / 86400000);
-}
-
-function addYearsToDate(d, n) {
-  const nd = new Date(d);
-  nd.setFullYear(nd.getFullYear() + n);
-  return nd;
-}
-
-function parseDateStr(dateStr) {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
+// parseDateStr / daysBetweenDates / addYearsToDate now live in
+// growth-pipeline.js (loaded before this file — see index.html).
 
 // Short human-readable date for the small "as of" label shown under each
 // projection amount in the table (e.g. "12 Jul 2026" / "١٢ يوليو ٢٠٢٦").
@@ -426,222 +418,15 @@ function fmtDateShort(d) {
   return `${d.getDate()} ${monthName} ${d.getFullYear()}`;
 }
 
-// ──────────────────────────────────────────────────────────────────────
-//  Growth models — which formula actually matches how a bank pays interest.
-//
-//  Real products fall into (at least) three buckets, and using the wrong
-//  one for a product silently gives numbers that don't match what actually
-//  lands in the account:
-//
-//  1) TIERED CERTIFICATE (handled by tieredValueAt, unchanged): a fixed
-//     principal that compounds once a year at a rate that steps down/up.
-//
-//  2) PERIODIC-BOUNDARY COMPOUNDING (new): products like "بنك المشرق"
-//     savings — during the month the bank accrues *simple* interest
-//     (principal × rate/365 × days), it does NOT compound day to day. Only
-//     when the month actually closes does that accrued interest get paid
-//     into the balance, and the *next* month's simple interest is then
-//     calculated on the new, larger balance. So growth is a staircase:
-//     flat within a period, a jump at each payout boundary.
-//     Needs `returnConfig.startDate` (anchors which day-of-month/quarter/
-//     year the boundary falls on) + `payoutFreq` that maps to a period
-//     length (monthly/quarterly/semiAnnual/annual) + `compounding: true`.
-//
-//  3) FLAT SIMPLE INTEREST (new): `compounding: false` — the interest is
-//     paid out elsewhere (not reinvested into this same balance), so this
-//     item's own principal never compounds; it just accrues linearly off
-//     the *original* principal for as long as it's held.
-//
-//  4) Anything else (no returnConfig, or a daily payout with no monthly
-//     boundary) keeps the original behaviour: continuous daily compounding
-//     via (1 + rate/100)^(days/365) — unchanged, for backward compatibility
-//     with existing items/history.
-// ──────────────────────────────────────────────────────────────────────
-
-// Walks forward in `monthsStep`-sized jumps from `startDateStr`, anchored to
-// its day-of-month, until passing `dateObj`. Returns the boundary date
-// exactly matching `dateObj` and the one immediately before it, or null if
-// `dateObj` doesn't fall exactly on a boundary (i.e. mid-period).
-function periodBoundaryAt(startDateStr, monthsStep, dateObj) {
-  if (!startDateStr || !monthsStep) return null;
-  let cursor = parseDateStr(startDateStr);
-  if (dateObj <= cursor) return null;
-  let prev = cursor;
-  while (cursor < dateObj) {
-    prev = cursor;
-    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + monthsStep, cursor.getDate());
-  }
-  return cursor.getTime() === dateObj.getTime() ? { periodStart: prev, periodEnd: cursor } : null;
-}
-
-// Simple interest within each period (principal × rate/365 × days), only
-// folded into the balance at each real payout boundary — matching a product
-// like Mashreq that doesn't compound mid-month but does start the next month
-// from the new, larger balance. Under this model the balance never changes
-// mid-period (it only jumps at each boundary), so a `fromDate` that falls
-// inside an already-open period is treated as if it were that period's
-// start — otherwise the days between the period's real start and `fromDate`
-// would silently drop out of the interest calculation. Boundaries are always
-// anchored to `startDateStr`'s day-of-month.
-function periodStartAtOrBefore(startDateStr, monthsStep, at) {
-  let cursor = parseDateStr(startDateStr);
-  // The anchor date can be AFTER `at` (e.g. the item's real "since" date is
-  // today, but the simulator is asked to project from an earlier hypothetical
-  // date). Walk backwards through anniversaries until we find the period
-  // boundary at-or-before `at`, instead of returning the anchor itself —
-  // otherwise the caller ends up with a cursor later than the target date,
-  // remDays gets clamped to 0, and the whole projection silently comes back
-  // as zero growth.
-  if (cursor > at) {
-    while (cursor > at) {
-      cursor = new Date(cursor.getFullYear(), cursor.getMonth() - monthsStep, cursor.getDate());
-    }
-    return cursor;
-  }
-  let prev = cursor;
-  while (cursor <= at) {
-    prev = cursor;
-    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + monthsStep, cursor.getDate());
-  }
-  return prev;
-}
-function periodicBoundaryValueAt(principal, startDateStr, ratePercent, payoutFreq, fromDate, targetDate, cfg) {
-  const monthsStep = monthsStepForFreq(payoutFreq);
-  if (!startDateStr || !monthsStep || !ratePercent || targetDate <= fromDate) return principal;
-
-  let balance = principal;
-  // periodStart is only used to find where the item's real payout cycle
-  // boundaries fall (e.g. the 8th of each month) — it can legitimately be
-  // BEFORE fromDate (the account's real "since" date is often much earlier
-  // than the date the user is projecting from). The actual balance is only
-  // known as of fromDate, so accrual must start there, never earlier —
-  // otherwise days between periodStart and fromDate get compounded twice
-  // (once implicitly before this projection even starts, and again here).
-  const periodStart = periodStartAtOrBefore(startDateStr, monthsStep, fromDate);
-  let cursor = fromDate;
-  let nextBoundary = new Date(periodStart.getFullYear(), periodStart.getMonth() + monthsStep, periodStart.getDate());
-
-  while (nextBoundary <= targetDate) {
-    const days = daysBetweenDates(cursor, nextBoundary);
-    balance += segmentInterest(cfg, balance, ratePercent, days);
-    cursor = nextBoundary;
-    nextBoundary = new Date(cursor.getFullYear(), cursor.getMonth() + monthsStep, cursor.getDate());
-  }
-  const remDays = Math.max(0, daysBetweenDates(cursor, targetDate));
-  if (remDays > 0) balance += segmentInterest(cfg, balance, ratePercent, remDays);
-  return balance;
-}
-
-// Plain simple interest off the original principal, never compounded —
-// for products where the interest is paid out rather than reinvested here.
-function simpleFlatValueAt(principal, ratePercent, fromDate, targetDate, cfg) {
-  if (!ratePercent || targetDate <= fromDate) return principal;
-  const days = daysBetweenDates(fromDate, targetDate);
-  return principal + segmentInterest(cfg, principal, ratePercent, days);
-}
-
-// Single entry point used by both the table projections below and the
-// simulator — picks the model that matches the item's actual configured
-// return category instead of always assuming daily compounding. A custom
-// `growthFormula` on the item (set from the Return Settings panel) always
-// takes priority over the built-in default math for whichever segment shape
-// applies (periodic-boundary staircase if payout settings are configured,
-// otherwise one flat calculation over the whole span) — tiered certificates
-// are the one exception, since their compounding follows fixed tier
-// anniversaries rather than a single rate.
-// Converts between a Nominal APR (simple annual rate, unaffected by how
-// often it compounds — the convention most Egyptian banks quote) and an
-// Effective APY/EAR (the true annual yield once compounding at `m` times a
-// year is folded in — the convention some funds/platforms quote, e.g.
-// Thndr). The two only diverge when `m > 1`; at m=1 (annual compounding,
-// e.g. flat interest or a once-a-year tiered certificate) they're
-// identical, so callers can apply these unconditionally without a special
-// case for models that compound at most once a year.
-function nominalToEffective(nominalPct, m) {
-  if (!(m > 1)) return nominalPct;
-  return (Math.pow(1 + nominalPct / 100 / m, m) - 1) * 100;
-}
-function effectiveToNominal(effectivePct, m) {
-  if (!(m > 1)) return effectivePct;
-  return (Math.pow(1 + effectivePct / 100, 1 / m) - 1) * m * 100;
-}
-
+// All growth-model math (periodic-boundary, flat/certificate, tiered,
+// nominal↔effective conversion) now lives in growth-pipeline.js — the single
+// source of truth shared with the backend cron and the simulator. This is
+// now a thin wrapper that just pulls this item's live `apy`/`returnConfig`
+// globals and hands them to the shared projectValueAt().
 function computeGrowthValueAt(assetId, principal, fromDate, targetDate) {
-  if (!principal || targetDate <= fromDate) return principal;
   const cfg = returnConfig[assetId] || {};
-
-  if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
-    return tieredValueAt(principal, cfg.startDate, cfg.tierRates, targetDate);
-  }
-
   const rate = apy[assetId] || 0;
-  if (!rate) return principal;
-
-  const monthsStep = monthsStepForFreq(cfg.payoutFreq);
-  if (cfg.startDate && monthsStep && cfg.compounding === true) {
-    // periodicBoundaryValueAt's internal math is simple/nominal-style
-    // (rate/365 × days). If the stored number is actually an Effective
-    // APY/EAR, convert it down to this product's own compounding
-    // frequency (periods/year = 12/monthsStep) first, so the per-period
-    // simple interest still adds up to the effective annual yield the
-    // user actually has.
-    const periodsPerYear = 12 / monthsStep;
-    const nominalRate = cfg.rateBasis === "effective" ? effectiveToNominal(rate, periodsPerYear) : rate;
-    return periodicBoundaryValueAt(principal, cfg.startDate, nominalRate, cfg.payoutFreq, fromDate, targetDate, cfg);
-  }
-  // Both branches below never get auto-grown by the daily cron (see
-  // growthEngine.js: compounding:false is skipped entirely, and a custom
-  // formula outside a period structure isn't posted automatically either)
-  // — so unlike the daily-compounding fallback at the bottom, `principal`
-  // here is NOT already "as of today". If the user has recorded a "since
-  // when" date for the item, that's the real anchor to accrue from; only
-  // fall back to `fromDate` when no such date has been set.
-  const flatBasisDate = cfg.startDate ? parseDateStr(cfg.startDate) : fromDate;
-  if (cfg.growthFormula) {
-    // No period structure configured, but a custom formula exists — apply
-    // it once, flat, over the whole span (same shape as simpleFlatValueAt).
-    const days = Math.max(0, daysBetweenDates(flatBasisDate, targetDate));
-    return principal + segmentInterest(cfg, principal, rate, days);
-  }
-  if (cfg.compounding === false) {
-    return simpleFlatValueAt(principal, rate, flatBasisDate, targetDate, cfg);
-  }
-
-  // Fallback: original daily-compounding assumption (daily payout, or no
-  // return category configured at all). The daily cron already grows this
-  // item's qty every day (see growthEngine.js), so `principal` here IS
-  // already "as of today" — always accrue from `fromDate`, never from
-  // `startDate`, or today's already-applied growth would be double-counted.
-  // This formula treats `rate` as an Effective APY/EAR already (compounding
-  // it daily reproduces exactly that annual yield). If the stored number is
-  // actually a Nominal APR instead, convert it up to its daily-compounded
-  // effective equivalent first.
-  const effectiveRate = cfg.rateBasis === "nominal" ? nominalToEffective(rate, 365) : rate;
-  const days = Math.max(0, daysBetweenDates(fromDate, targetDate));
-  return principal * Math.pow(1 + effectiveRate / 100, days / 365);
-}
-// Compounds `principal` from `startDateStr` up to `targetDate`, switching to
-// the next rate in `tierRates` at every anniversary of the start date. Once
-// past the last defined tier, keeps compounding at that last tier's rate
-// (a reasonable assumption for "what happens if I don't withdraw" — edit the
-// tierRates list in the panel if the real terms differ).
-function tieredValueAt(principal, startDateStr, tierRates, targetDate) {
-  if (!startDateStr || !Array.isArray(tierRates) || !tierRates.length) return principal;
-  let cursor = parseDateStr(startDateStr);
-  if (targetDate <= cursor) return principal;
-
-  let value = principal;
-  for (let i = 0; i < tierRates.length; i++) {
-    const yearEnd = addYearsToDate(cursor, 1);
-    const segmentEnd = targetDate < yearEnd ? targetDate : yearEnd;
-    const days = Math.max(0, daysBetweenDates(cursor, segmentEnd));
-    value *= Math.pow(1 + tierRates[i] / 100, days / 365);
-    if (targetDate <= yearEnd) return value;
-    cursor = yearEnd;
-  }
-  const lastRate = tierRates[tierRates.length - 1];
-  const remDays = Math.max(0, daysBetweenDates(cursor, targetDate));
-  return value * Math.pow(1 + lastRate / 100, remDays / 365);
+  return projectValueAt(principal, rate, cfg, fromDate, targetDate);
 }
 
 // Next date that is startDateStr + N*monthsStep (integer N), strictly after
@@ -659,13 +444,7 @@ function anniversaryAfter(startDateStr, monthsStep, after) {
   return cursor;
 }
 
-function monthsStepForFreq(payoutFreq) {
-  if (payoutFreq === "monthly") return 1;
-  if (payoutFreq === "quarterly") return 3;
-  if (payoutFreq === "semiAnnual") return 6;
-  if (payoutFreq === "annual" || payoutFreq === "maturity") return 12;
-  return null;
-}
+// monthsStepForFreq now lives in growth-pipeline.js.
 
 // Returns { next, nextLabelKey, nextDate, endOfCycle, endOfCycleDate, endOfYear, endOfYearDate }
 // in the asset's own currency (qty is already stored in native units — EGP

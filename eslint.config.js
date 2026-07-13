@@ -22,7 +22,7 @@ module.exports = [
 
   // Backend: Node.js, CommonJS
   {
-    files: ["backend/**/*.js"],
+    files: ["backend/**/*.js", "scripts/**/*.js"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "commonjs",

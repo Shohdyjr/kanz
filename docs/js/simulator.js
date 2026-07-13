@@ -99,40 +99,16 @@ function setSimRateBasis(basis) {
   if (root) root.outerHTML = renderSimModal();
 }
 
-// Same growth model as computeGrowthValueAt (return-config.js), except the
-// Nominal-APR/Effective-APY basis is an explicit parameter instead of always
-// reading cfg.rateBasis — so the simulator's APY/APR toggle can re-run the
-// exact same math under the other interpretation without touching the
-// item's actual saved Return Settings. Structurally identical branches to
-// computeGrowthValueAt; only ever diverges from it in which basis is fed in.
+// Same growth model as computeGrowthValueAt (return-config.js) — both are
+// now thin wrappers around the shared projectValueAt() in growth-pipeline.js.
+// Here the Nominal-APR/Effective-APY basis is an explicit parameter instead
+// of always reading cfg.rateBasis — so the simulator's APY/APR toggle can
+// re-run the exact same math under the other interpretation without
+// touching the item's actual saved Return Settings.
 function simComputeGrowthValueAt(assetId, principal, fromDate, targetDate, basis) {
-  if (!principal || targetDate <= fromDate) return principal;
   const cfg = returnConfig[assetId] || {};
-
-  if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
-    return tieredValueAt(principal, cfg.startDate, cfg.tierRates, targetDate);
-  }
-
   const rate = apy[assetId] || 0;
-  if (!rate) return principal;
-
-  const monthsStep = monthsStepForFreq(cfg.payoutFreq);
-  if (cfg.startDate && monthsStep && cfg.compounding === true) {
-    const periodsPerYear = 12 / monthsStep;
-    const nominalRate = basis === "effective" ? effectiveToNominal(rate, periodsPerYear) : rate;
-    return periodicBoundaryValueAt(principal, cfg.startDate, nominalRate, cfg.payoutFreq, fromDate, targetDate, cfg);
-  }
-  const flatBasisDate = cfg.startDate ? parseDateStr(cfg.startDate) : fromDate;
-  if (cfg.growthFormula) {
-    const days = Math.max(0, daysBetweenDates(flatBasisDate, targetDate));
-    return principal + segmentInterest(cfg, principal, rate, days);
-  }
-  if (cfg.compounding === false) {
-    return simpleFlatValueAt(principal, rate, flatBasisDate, targetDate, cfg);
-  }
-  const effectiveRate = basis === "nominal" ? nominalToEffective(rate, 365) : rate;
-  const days = Math.max(0, daysBetweenDates(fromDate, targetDate));
-  return principal * Math.pow(1 + effectiveRate / 100, days / 365);
+  return projectValueAt(principal, rate, cfg, fromDate, targetDate, basis);
 }
 
 // The rate actually fed into whichever formula branch runs above — used for
