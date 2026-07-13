@@ -71,6 +71,23 @@ function segmentInterest(cfg, principal, ratePercent, days) {
   return custom != null ? custom : principal * (ratePercent / 100 / 365) * days;
 }
 
+// Converts between a Nominal APR (simple annual rate, unaffected by how
+// often it compounds — the convention most Egyptian banks quote) and an
+// Effective APY/EAR (the true annual yield once compounding at `m` times a
+// year is folded in — the convention some funds/platforms quote, e.g.
+// Thndr). The two only diverge when `m > 1`; at m=1 (annual compounding,
+// e.g. flat interest or a once-a-year tiered certificate) they're
+// identical, so callers can apply these unconditionally without a special
+// case for models that compound at most once a year.
+function nominalToEffective(nominalPct, m) {
+  if (!(m > 1)) return nominalPct;
+  return (Math.pow(1 + nominalPct / 100 / m, m) - 1) * 100;
+}
+function effectiveToNominal(effectivePct, m) {
+  if (!(m > 1)) return effectivePct;
+  return (Math.pow(1 + effectivePct / 100, 1 / m) - 1) * m * 100;
+}
+
 /**
  * Returns the interest to add to `qty` for `todayStr`, given the item's
  * `apy` and `returnConfig`, or null if nothing should be posted today
@@ -92,13 +109,22 @@ function dailyGrowthDelta(qty, apyPercent, cfg, todayStr) {
     const periodStart = periodBoundaryAt(config.startDate, monthsStep, today);
     if (!periodStart) return null; // not a payout day — balance stays flat, as it should
     const days = daysBetweenDates(periodStart, today);
-    return segmentInterest(config, qty, rate, days);
+    // segmentInterest's built-in formula is simple/nominal-style
+    // (rate/365 × days) — if the stored number is actually an Effective
+    // APY/EAR, convert it down to the nominal rate equivalent for this
+    // product's own compounding frequency (periods/year = 12/monthsStep)
+    // first, so the per-period simple interest still adds up to the
+    // effective annual yield the user actually has.
+    const periodsPerYear = 12 / monthsStep;
+    const nominalRate = config.rateBasis === "effective" ? effectiveToNominal(rate, periodsPerYear) : rate;
+    return segmentInterest(config, qty, nominalRate, days);
   }
 
   if (config.growthFormula) {
     // No period structure configured, but a custom formula exists — the
     // cron runs once a day, so this posts the formula's result for a
-    // single day's worth of interest.
+    // single day's worth of interest. No nominal/effective distinction
+    // applies here (annual/m=1) — the formula gets the rate as stored.
     return segmentInterest(config, qty, rate, 1);
   }
 
@@ -110,8 +136,21 @@ function dailyGrowthDelta(qty, apyPercent, cfg, todayStr) {
 
   // Fallback: original continuous daily compounding for items with no
   // return category configured, or a genuinely daily payout/compounding.
-  const dailyRate = Math.pow(1 + rate / 100, 1 / 365) - 1;
+  // This formula treats `rate` as an Effective APY/EAR already (compounding
+  // it daily reproduces exactly that annual yield). If the stored number is
+  // actually a Nominal APR instead, convert it up to its daily-compounded
+  // effective equivalent first.
+  const effectiveRate = config.rateBasis === "nominal" ? nominalToEffective(rate, 365) : rate;
+  const dailyRate = Math.pow(1 + effectiveRate / 100, 1 / 365) - 1;
   return qty * dailyRate;
 }
 
-module.exports = { dailyGrowthDelta, monthsStepForFreq, periodBoundaryAt, parseDateStr, daysBetweenDates };
+module.exports = {
+  dailyGrowthDelta,
+  monthsStepForFreq,
+  periodBoundaryAt,
+  parseDateStr,
+  daysBetweenDates,
+  nominalToEffective,
+  effectiveToNominal,
+};

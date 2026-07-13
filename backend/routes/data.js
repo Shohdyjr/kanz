@@ -91,6 +91,12 @@ const RETURN_CONFIG_ENUMS = {
   calcMethod: ["dailyBalance", "lowestMonthlyBalance", "fixedPrincipal", "navBased"],
   payoutFreq: ["daily", "monthly", "quarterly", "semiAnnual", "annual", "maturity"],
   liquidity: ["daily", "monthly", "quarterly", "maturity", "restricted"],
+  // Whether the % rate stored in `apy` is the bank's quoted Nominal APR
+  // (simple annual rate, the convention most Egyptian banks quote) or an
+  // already-compounded Effective APY/EAR (common for money-market/fixed
+  // income funds like Thndr). Missing/null keeps the pre-existing implicit
+  // assumption for whichever calc path applies (see growthEngine.js).
+  rateBasis: ["nominal", "effective"],
 };
 const RETURN_CONFIG_KEYS = [
   ...Object.keys(RETURN_CONFIG_ENUMS),

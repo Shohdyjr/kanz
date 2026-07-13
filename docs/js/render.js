@@ -195,8 +195,9 @@ function render() {
               value="${qty[a.id] || ""}" placeholder="0"
               oninput="setQty('${a.id}',this.value)">
               <div class="wt-proj-date" id="qty-updated-${a.id}" title="${t("lastUpdate")}">${qtyUpdatedAt[a.id] ? fmtDateShort(parseDateStr(qtyUpdatedAt[a.id])) : ""}</div>
+              ${renderSinceDateBtn(a)}
             </td>
-            ${isColHidden("apy") ? "" : `<td class="wt-apy-cell" title="${t("apyHint")}"><button type="button" class="wt-apy-set-link" onclick="openReturnPanel('${a.id}')">${apy[a.id] ? fmtNum(apy[a.id], 2) + "%" : t("setApyLink")}</button></td>`}
+            ${isColHidden("apy") ? "" : `<td class="wt-apy-cell" title="${t("apyHint")}"><button type="button" class="wt-apy-set-link" onclick="openReturnPanel('${a.id}')">${apy[a.id] ? fmtNum(apy[a.id], 2) + "%" : t("setApyLink")}</button>${apy[a.id] && returnConfig[a.id] && returnConfig[a.id].rateBasis ? `<div class="wt-proj-date" dir="auto" title="${t("rateBasisHint")}">${t("rateBasisShort")[returnConfig[a.id].rateBasis]}</div>` : ""}</td>`}
             ${isColHidden("unitPrice") ? "" : `<td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>`}
             ${isColHidden("total") ? "" : `<td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>`}
             ${(() => {

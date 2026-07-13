@@ -586,6 +586,111 @@ body {
 .wt-apy-set-link:hover {
   text-decoration: underline;
 }
+.wt-since-wrap {
+  position: relative;
+  margin-top: 2px;
+}
+.wt-since-btn {
+  background: transparent;
+  border: none;
+  color: var(--wt-text-dim);
+  font-family: "Tajawal", sans-serif;
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+  padding: 1px 0;
+  opacity: 0.85;
+}
+.wt-since-btn:hover {
+  text-decoration: underline;
+  opacity: 1;
+}
+.wt-since-btn.is-set {
+  color: var(--wt-gold-light);
+}
+.wt-since-popover-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+.wt-since-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline-start: 0;
+  z-index: 41;
+  width: 230px;
+  background: var(--wt-panel);
+  border: 1px solid var(--wt-line-strong);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  text-align: start;
+  white-space: normal;
+}
+.wt-since-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wt-text);
+  margin: 0 0 4px;
+}
+.wt-since-hint {
+  font-size: 11px;
+  color: var(--wt-text-dim);
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+.wt-since-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.wt-since-preset {
+  background: var(--wt-panel-2);
+  border: 1px solid var(--wt-line);
+  color: var(--wt-text);
+  font-family: "Tajawal", sans-serif;
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.wt-since-preset:hover {
+  border-color: var(--wt-gold-dim);
+  color: var(--wt-gold-light);
+}
+.wt-since-custom-label {
+  display: block;
+  font-size: 11px;
+  color: var(--wt-text-dim);
+  margin-bottom: 4px;
+}
+.wt-since-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--wt-input-bg);
+  border: 1px solid var(--wt-line-strong);
+  border-radius: 8px;
+  color: var(--wt-text);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  padding: 6px 8px;
+  direction: ltr;
+}
+.wt-since-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+.wt-since-clear {
+  font-size: 11px;
+  padding: 5px 10px;
+}
+.wt-since-done {
+  font-size: 11px;
+  padding: 5px 14px;
+}
 .wt-price-cell {
   font-family: "JetBrains Mono", monospace;
   color: var(--wt-text-dim);

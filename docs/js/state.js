@@ -146,6 +146,11 @@ let apy = {};
 let returnConfig = {};
 let returnPanelOpen = false; // standalone "return category presets" panel, opened from its own button
 let returnPanelAssetId = null; // which of the user's assets the panel is currently editing
+// Which asset's quick "since when has this money been here" popover is open
+// (see docs/js/since-date.js) — null when none is open. A lightweight,
+// per-row shortcut into returnConfig[id].startDate, so setting/correcting
+// just that one date doesn't require opening the full Return Settings panel.
+let sinceDatePopoverId = null;
 let simModalOpen = false; // "what-if" simulator modal, opened per row from the table
 let simAssetId = null; // which asset the simulator is currently running for
 let simAmount = null; // last amount typed into the simulator (kept across re-renders)
