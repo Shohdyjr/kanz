@@ -163,6 +163,11 @@ function submitReturnConfig(ev) {
   const productType = val("rc-productType");
   const rateType = val("rc-rateType");
   const rateBasis = val("rc-rateBasis");
+  if (!rateBasis) {
+    const el = document.getElementById("rc-rateBasis");
+    if (el) el.reportValidity ? el.reportValidity() : alert(t("rateBasisRequiredAlert"));
+    return;
+  }
   const calcMethod = val("rc-calcMethod");
   const payoutFreq = val("rc-payoutFreq");
   const compounding = val("rc-compounding") === "true";
@@ -307,8 +312,16 @@ function renderReturnPanel() {
             <select id="rc-rateType">${optionsHtml(t("rateTypeOptions"), cfg.rateType)}</select>
           </div>
           <div class="wt-field">
-            <label for="rc-rateBasis">${t("rateBasisLabel")}</label>
-            <select id="rc-rateBasis" title="${t("rateBasisHint")}">${optionsHtml(t("rateBasisOptions"), cfg.rateBasis)}</select>
+            <label for="rc-rateBasis">${t("rateBasisLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+            <select id="rc-rateBasis" required title="${t("rateBasisHint")}">
+              <option value="" disabled ${!cfg.rateBasis ? "selected" : ""}>${t("rateBasisChoosePrompt")}</option>
+              ${Object.keys(t("rateBasisOptions"))
+                .map(
+                  (k) =>
+                    `<option value="${k}" ${k === cfg.rateBasis ? "selected" : ""}>${t("rateBasisOptions")[k]}</option>`
+                )
+                .join("")}
+            </select>
           </div>
           <div class="wt-field">
             <label for="rc-calcMethod">${t("calcMethodLabel")}</label>
@@ -472,7 +485,19 @@ function periodBoundaryAt(startDateStr, monthsStep, dateObj) {
 // anchored to `startDateStr`'s day-of-month.
 function periodStartAtOrBefore(startDateStr, monthsStep, at) {
   let cursor = parseDateStr(startDateStr);
-  if (cursor >= at) return cursor;
+  // The anchor date can be AFTER `at` (e.g. the item's real "since" date is
+  // today, but the simulator is asked to project from an earlier hypothetical
+  // date). Walk backwards through anniversaries until we find the period
+  // boundary at-or-before `at`, instead of returning the anchor itself —
+  // otherwise the caller ends up with a cursor later than the target date,
+  // remDays gets clamped to 0, and the whole projection silently comes back
+  // as zero growth.
+  if (cursor > at) {
+    while (cursor > at) {
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() - monthsStep, cursor.getDate());
+    }
+    return cursor;
+  }
   let prev = cursor;
   while (cursor <= at) {
     prev = cursor;

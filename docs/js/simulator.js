@@ -120,6 +120,25 @@ function fmtFormulaNum(n, maxDigits) {
   return Number(n.toFixed(digits)).toString();
 }
 
+// Tiny, non-intrusive hint: if the item's rate is stored as APY (effective),
+// show what that works out to as a Nominal APR, and vice versa — just the
+// one extra number, using the same nominalToEffective/effectiveToNominal
+// conversion the real growth math already uses (so it's never a separate,
+// possibly-inconsistent formula). Uses the product's own compounding
+// frequency (monthly/quarterly/etc from payoutFreq) when configured, since
+// that's the frequency the rate basis actually corresponds to; falls back to
+// daily (365) to match the daily-compounding assumption used elsewhere for
+// items with no periodic payout configured.
+function otherBasisEquivalent(cfg, rate) {
+  if (!cfg || !cfg.rateBasis || !rate) return null;
+  const monthsStep = monthsStepForFreq(cfg.payoutFreq);
+  const m = monthsStep ? 12 / monthsStep : 365;
+  if (cfg.rateBasis === "effective") {
+    return { labelKey: "simApyToAprLabel", value: effectiveToNominal(rate, m) };
+  }
+  return { labelKey: "simAprToApyLabel", value: nominalToEffective(rate, m) };
+}
+
 function renderSimModal() {
   if (!simModalOpen) return `<div id="wt-sim-modal-root"></div>`;
 
@@ -165,6 +184,10 @@ function renderSimModal() {
   const days = simDaysBetween(startDateVal, simDate);
 
   const noRateNote = !rate && !isTiered ? `<p class="wt-sim-note">${t("simNoRateHint")}</p>` : "";
+  const otherBasis = rate ? otherBasisEquivalent(cfg, rate) : null;
+  const otherBasisNote = otherBasis
+    ? `<p class="wt-sim-note" dir="ltr" style="font-size:11px">${t(otherBasis.labelKey)}: ${fmtFormulaNum(otherBasis.value, 2)}%</p>`
+    : "";
 
   const incRow = (labelKey, val) => `
     <div class="wt-sim-inc-row">
@@ -236,6 +259,7 @@ function renderSimModal() {
       </div>
 
       ${noRateNote}
+      ${otherBasisNote}
 
       <div class="wt-sim-results">
         ${
