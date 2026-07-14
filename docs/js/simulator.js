@@ -335,7 +335,7 @@ function renderSimModal() {
             ? `<div class="wt-sim-total-block">
           <p class="wt-sim-block-title">${t("simOnDateTitle")}(${esc(simDate)})</p>
           <div class="wt-sim-total-row">
-            <span>${t("simProjectedTotal")}</span>
+            <span>${t("simProjectedTotal")}${cfg.calcMethod === "navBased" ? ` <span class="wt-proj-date" title="${t("projEstimateHint")}">≈</span>` : ""}</span>
             <b>${fmtByCurrencyPrecise(projected, a.currency)}</b>
           </div>
           <div class="wt-sim-total-row">

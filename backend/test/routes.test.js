@@ -94,3 +94,18 @@ test("isValidReturnConfigMap: rejects unknown enum values, unknown keys, and wro
   assert.equal(dataRouter.isValidReturnConfigMap([1, 2, 3]), false);
   assert.equal(dataRouter.isValidReturnConfigMap(null), false);
 });
+
+test("isValidReturnConfigMap: rejects startDate values that match the YYYY-MM-DD shape but aren't real calendar dates", () => {
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { startDate: "2026-02-30" } }), false); // Feb has no 30th
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { startDate: "2026-13-01" } }), false); // no month 13
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { startDate: "2026-04-31" } }), false); // April has 30 days
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { startDate: "2028-02-29" } }), true); // 2028 is a leap year
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { startDate: "2026-02-29" } }), false); // 2026 is not
+});
+
+test("isValidReturnConfigMap: rejects a growthFormula that fails to parse", () => {
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { growthFormula: "principal * * days" } }), false);
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { growthFormula: "process.exit(1)" } }), false);
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { growthFormula: "principal * (rate/100/365) * days" } }), true);
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { growthFormula: "" } }), true); // empty -> use default
+});

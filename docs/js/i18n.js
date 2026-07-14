@@ -100,6 +100,7 @@ const I18N = {
     projNextMonth: "الشهر الجاي",
     projNextYear: "السنة الجاية",
     projNone: "—",
+    projEstimateHint: "تقديري — بيفترض إن النسبة الحالية هتفضل ثابتة، وده مش مضمون لمنتجات زي دي",
     simBtnTitle: "محاكاة (كام هيزيد؟)",
     simModalTitle: "المحاكي",
     simModalHint:
@@ -430,6 +431,8 @@ const I18N = {
     projNextMonth: "Next month",
     projNextYear: "Next year",
     projNone: "—",
+    projEstimateHint:
+      "Estimated — assumes today's rate holds constant, which isn't guaranteed for this kind of product",
     simBtnTitle: "Simulate (how much will it grow?)",
     simModalTitle: "Simulator",
     simModalHint:

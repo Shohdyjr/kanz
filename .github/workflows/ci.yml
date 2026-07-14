@@ -51,7 +51,11 @@ jobs:
         # Only pure-logic tests run here — no live DATABASE_URL is available in
         # CI, so anything touching Postgres (kanz_settings gold-price cache,
         # user rows, etc.) is intentionally left as manual/integration testing.
+        # TZ=Africa/Cairo: growthPipeline.test.js checks day-counting across
+        # Egypt's real 2026 DST transitions — meaningless under the runner's
+        # default UTC, which has no DST at all.
         env:
           DATABASE_URL: postgres://ci:ci@localhost:5432/kanz_ci
           JWT_SECRET: ci-only-secret-not-used-in-production
+          TZ: Africa/Cairo
         run: npm test

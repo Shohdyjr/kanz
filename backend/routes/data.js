@@ -3,6 +3,7 @@ const rateLimit = require("express-rate-limit");
 const pool = require("../db/pool");
 const { requireAuth } = require("../lib/auth");
 const { validate } = require("../lib/validate");
+const growthPipeline = require("../lib/growthPipeline");
 const router = express.Router();
 
 // All /api/data, /api/history, /api/contributions endpoints are auth-gated;
@@ -106,6 +107,16 @@ const RETURN_CONFIG_KEYS = [
   "growthFormula",
 ];
 const RETURN_CONFIG_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Regex only checks the shape (YYYY-MM-DD) — this also rejects dates that
+// don't exist on the calendar (e.g. 2026-02-30), which the regex alone would
+// let through and growthPipeline.js would then silently misinterpret via
+// JS Date's auto-rollover (Feb 30 -> Mar 2).
+const isRealCalendarDate = (dateStr) => {
+  if (!RETURN_CONFIG_DATE_RE.test(dateStr)) return false;
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+};
 // Capped well above any reasonable formula (the UI's textarea is two rows)
 // so a save can't smuggle in something absurd, while leaving plenty of room
 // for a real expression like "principal * (rate/100/365) * days".
@@ -117,14 +128,25 @@ const isValidTierRates = (v) =>
     v.length <= 15 &&
     v.every((n) => typeof n === "number" && Number.isFinite(n) && n >= -100 && n <= 1000));
 
+// A formula that fails to parse would otherwise just silently fall back to
+// the default calculation the first time it's used (see evalGrowthFormula in
+// growthPipeline.js) — catching it here means the save itself fails with a
+// clear error, instead of the user only noticing days or weeks later that
+// their custom formula was never actually being applied.
+const isValidGrowthFormula = (formula) => {
+  if (formula == null) return true;
+  if (typeof formula !== "string" || formula.length > MAX_GROWTH_FORMULA_LEN) return false;
+  if (!formula.trim()) return true;
+  return growthPipeline.evalGrowthFormula(formula, 1000, 10, 30) != null;
+};
+
 const isValidReturnConfigEntry = (v) =>
   isSafePlainObject(v) &&
   Object.keys(v).every((k) => RETURN_CONFIG_KEYS.includes(k)) &&
   Object.entries(RETURN_CONFIG_ENUMS).every(([field, allowed]) => v[field] == null || allowed.includes(v[field])) &&
   (v.compounding == null || typeof v.compounding === "boolean") &&
-  (v.startDate == null || RETURN_CONFIG_DATE_RE.test(v.startDate)) &&
-  (v.growthFormula == null ||
-    (typeof v.growthFormula === "string" && v.growthFormula.length <= MAX_GROWTH_FORMULA_LEN)) &&
+  (v.startDate == null || isRealCalendarDate(v.startDate)) &&
+  isValidGrowthFormula(v.growthFormula) &&
   isValidTierRates(v.tierRates);
 
 const isValidReturnConfigMap = (v) => isSafePlainObject(v) && Object.values(v).every(isValidReturnConfigEntry);

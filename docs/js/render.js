@@ -209,17 +209,27 @@ function render() {
               )
                 return "";
               const proj = projectAssetValue(a);
+              // Thndr-style money-market/fund products (navBased) don't
+              // guarantee their rate — it floats daily with the market. Every
+              // projection here necessarily assumes today's rate holds
+              // constant for the whole span, which is a real assumption, not
+              // a fact, and shouldn't be presented as if it were guaranteed
+              // like a fixed-rate bank product's number is.
+              const isEstimate = returnConfig[a.id] && returnConfig[a.id].calcMethod === "navBased";
+              const estimatePrefix = isEstimate ? "≈ " : "";
+              const estimateTitleSuffix = isEstimate ? ` — ${t("projEstimateHint")}` : "";
               const dateSub = (d) => `<div class="wt-proj-date">${fmtDateShort(d)}</div>`;
               const cell = (id, labelTitle, val, dateVal) => {
                 if (!proj) return `<td class="wt-proj-cell" id="${id}-${a.id}">${t("projNone")}</td>`;
-                return `<td class="wt-proj-cell" id="${id}-${a.id}" ${labelTitle ? `title="${labelTitle}"` : ""}>${fmtByCurrencyPrecise(val, a.currency)}${dateSub(dateVal)}</td>`;
+                const title = labelTitle || estimateTitleSuffix ? `${labelTitle}${estimateTitleSuffix}` : "";
+                return `<td class="wt-proj-cell" id="${id}-${a.id}" ${title ? `title="${title}"` : ""}>${estimatePrefix}${fmtByCurrencyPrecise(val, a.currency)}${dateSub(dateVal)}</td>`;
               };
               const nextAddVal = proj ? proj.next - (qty[a.id] || 0) : null;
               return (
                 (isColHidden("nextAdd")
                   ? ""
                   : proj
-                    ? `<td class="wt-proj-cell wt-proj-add-cell" id="next-add-${a.id}" title="${t(proj.nextLabelKey)}"><b id="next-add-val-${a.id}" class="${nextAddVal >= 0 ? "wt-sim-pos" : "wt-sim-neg"}">${nextAddVal >= 0 ? "+" : ""}${fmtByCurrencyPrecise(nextAddVal, a.currency)}</b>${dateSub(proj.nextDate)}</td>`
+                    ? `<td class="wt-proj-cell wt-proj-add-cell" id="next-add-${a.id}" title="${t(proj.nextLabelKey)}${estimateTitleSuffix}"><b id="next-add-val-${a.id}" class="${nextAddVal >= 0 ? "wt-sim-pos" : "wt-sim-neg"}">${nextAddVal >= 0 ? "+" : ""}${estimatePrefix}${fmtByCurrencyPrecise(nextAddVal, a.currency)}</b>${dateSub(proj.nextDate)}</td>`
                     : `<td class="wt-proj-cell" id="next-add-${a.id}">${t("projNone")}</td>`) +
                 (isColHidden("projNext")
                   ? ""

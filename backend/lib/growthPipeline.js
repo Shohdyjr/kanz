@@ -119,17 +119,161 @@ function anniversaryAfter(startDateStr, monthsStep, after) {
   return cursor;
 }
 
+// ── Safe expression evaluator for user-written growth formulas ─────────
+// Previously this used `new Function(...)`, i.e. arbitrary JS code
+// execution. Even in a single-user app, running text as code is an
+// unnecessary risk (and blocks any future move to multi-user use) for what
+// is really just an arithmetic expression over 3 known variables. This is a
+// small recursive-descent parser: no code execution, only numbers,
+// +-*/^(), unary minus, and a short whitelist of math functions.
+const SAFE_FORMULA_FUNCTIONS = {
+  pow: Math.pow,
+  min: Math.min,
+  max: Math.max,
+  sqrt: Math.sqrt,
+  abs: Math.abs,
+};
+
+function tokenizeFormula(src) {
+  const tokens = [];
+  const re = /\s*(?:([A-Za-z_][A-Za-z0-9_]*)|(\d+(?:\.\d+)?)|([+\-*/^(),]))/g;
+  let m;
+  let pos = 0;
+  while (pos < src.length) {
+    re.lastIndex = pos;
+    m = re.exec(src);
+    if (!m || m.index !== pos) throw new Error(`Unexpected character at position ${pos}`);
+    pos = re.lastIndex;
+    if (m[1]) tokens.push({ type: "ident", value: m[1] });
+    else if (m[2]) tokens.push({ type: "number", value: parseFloat(m[2]) });
+    else if (m[3]) tokens.push({ type: "op", value: m[3] });
+  }
+  return tokens;
+}
+
+// Grammar (standard precedence climbing):
+//   expr   := term (('+' | '-') term)*
+//   term   := unary (('*' | '/') unary)*
+//   unary  := '-' unary | power
+//   power  := atom ('^' unary)?         (right-associative)
+//   atom   := number | ident | ident '(' args ')' | '(' expr ')'
+function parseFormulaAst(tokens) {
+  let i = 0;
+  const peek = () => tokens[i];
+  const expect = (value) => {
+    const t = tokens[i];
+    if (!t || t.value !== value) throw new Error(`Expected '${value}'`);
+    i++;
+    return t;
+  };
+
+  function parseExpr() {
+    let node = parseTerm();
+    while (peek() && peek().type === "op" && (peek().value === "+" || peek().value === "-")) {
+      const op = tokens[i++].value;
+      node = { type: "bin", op, left: node, right: parseTerm() };
+    }
+    return node;
+  }
+  function parseTerm() {
+    let node = parseUnary();
+    while (peek() && peek().type === "op" && (peek().value === "*" || peek().value === "/")) {
+      const op = tokens[i++].value;
+      node = { type: "bin", op, left: node, right: parseUnary() };
+    }
+    return node;
+  }
+  function parseUnary() {
+    if (peek() && peek().type === "op" && peek().value === "-") {
+      i++;
+      return { type: "neg", value: parseUnary() };
+    }
+    return parsePower();
+  }
+  function parsePower() {
+    const node = parseAtom();
+    if (peek() && peek().type === "op" && peek().value === "^") {
+      i++;
+      return { type: "bin", op: "^", left: node, right: parseUnary() };
+    }
+    return node;
+  }
+  function parseAtom() {
+    const t = peek();
+    if (!t) throw new Error("Unexpected end of formula");
+    if (t.type === "number") {
+      i++;
+      return { type: "num", value: t.value };
+    }
+    if (t.type === "ident") {
+      i++;
+      if (peek() && peek().value === "(") {
+        i++;
+        const args = [];
+        if (peek() && peek().value !== ")") {
+          args.push(parseExpr());
+          while (peek() && peek().value === ",") {
+            i++;
+            args.push(parseExpr());
+          }
+        }
+        expect(")");
+        return { type: "call", name: t.value, args };
+      }
+      return { type: "var", name: t.value };
+    }
+    if (t.type === "op" && t.value === "(") {
+      i++;
+      const node = parseExpr();
+      expect(")");
+      return node;
+    }
+    throw new Error(`Unexpected token '${t.value}'`);
+  }
+
+  const ast = parseExpr();
+  if (i !== tokens.length) throw new Error("Unexpected trailing input");
+  return ast;
+}
+
+function evalFormulaAst(node, vars) {
+  switch (node.type) {
+    case "num":
+      return node.value;
+    case "neg":
+      return -evalFormulaAst(node.value, vars);
+    case "var":
+      if (!(node.name in vars)) throw new Error(`Unknown variable '${node.name}'`);
+      return vars[node.name];
+    case "call": {
+      const fn = SAFE_FORMULA_FUNCTIONS[node.name];
+      if (!fn) throw new Error(`Unknown function '${node.name}'`);
+      return fn(...node.args.map((a) => evalFormulaAst(a, vars)));
+    }
+    case "bin": {
+      const l = evalFormulaAst(node.left, vars);
+      const r = evalFormulaAst(node.right, vars);
+      if (node.op === "+") return l + r;
+      if (node.op === "-") return l - r;
+      if (node.op === "*") return l * r;
+      if (node.op === "/") return l / r;
+      if (node.op === "^") return Math.pow(l, r);
+      throw new Error(`Unknown operator '${node.op}'`);
+    }
+    default:
+      throw new Error(`Unknown node type '${node.type}'`);
+  }
+}
+
 // Evaluates a user-written formula (returnConfig[id].growthFormula) against
 // {principal, rate, days}, returning the interest amount, or null if the
 // formula is empty/invalid — callers fall back to the built-in default.
-// This is a single-user personal app — the formula an account owner writes
-// only ever runs against their own data — so a plain expression evaluator is
-// an acceptable trade for "you can fix the math yourself, no code change".
+// Safe expression parser only — no code execution (see above).
 function evalGrowthFormula(formula, principal, rate, days) {
   if (!formula || !String(formula).trim()) return null;
   try {
-    const fn = new Function("principal", "rate", "days", `"use strict"; return (${formula});`);
-    const result = fn(principal, rate, days);
+    const ast = parseFormulaAst(tokenizeFormula(String(formula)));
+    const result = evalFormulaAst(ast, { principal, rate, days });
     return typeof result === "number" && Number.isFinite(result) ? result : null;
   } catch (_err) {
     return null;
