@@ -161,21 +161,36 @@ function effectiveToNominal(effectivePct, m) {
 // interest back into the running balance at every real payout boundary
 // ("Bank Engine" — e.g. Mashreq-style monthly savings). Only used for
 // compounding===true items — see calculateScheduledInterest.
-function periodicBoundaryValueAt(principal, startDateStr, ratePercent, payoutFreq, fromDate, targetDate, cfg) {
+//
+// `assumeContinuous` distinguishes two different questions callers ask:
+//   - true  (table projections): `principal` is the item's REAL current
+//     balance, which has genuinely been sitting there — and accruing,
+//     un-posted — since the period's real start, not just since `fromDate`
+//     (`fromDate` there is only ever "today"). The currently-open period
+//     must be counted in full from its true start, or the projection
+//     undercounts exactly what the cron will actually post at the boundary.
+//   - false (simulator, default): `principal` is a hypothetical amount that
+//     only starts existing at `fromDate` (a custom date/amount the user is
+//     testing) — it cannot have earned interest before it existed, even if
+//     the item's real Since-date implies an earlier period start.
+function periodicBoundaryValueAt(
+  principal,
+  startDateStr,
+  ratePercent,
+  payoutFreq,
+  fromDate,
+  targetDate,
+  cfg,
+  assumeContinuous
+) {
   const monthsStep = monthsStepForFreq(payoutFreq);
   if (!startDateStr || !monthsStep || !ratePercent || targetDate <= fromDate) return principal;
 
   let balance = principal;
   const periodStart = periodStartAtOrBefore(startDateStr, monthsStep, fromDate);
-  // The cron never touches qty mid-period (it only posts on the real payout
-  // boundary — see dailyGrowthDelta below), so the account has genuinely
-  // been accruing interest since the period's real start, not since
-  // `fromDate`. Starting the accrual cursor at `fromDate` would silently
-  // drop every day already elapsed this period — undercounting exactly what
-  // the cron will actually post on the next boundary. Always start from the
-  // true period start; `fromDate`/`targetDate` only gate whether there's
-  // anything to project at all (see the guard clause above).
-  let cursor = periodStart;
+  // periodStart is always at-or-before fromDate by construction — so this
+  // is a no-op (cursor = fromDate) when assumeContinuous is false.
+  let cursor = assumeContinuous ? periodStart : fromDate;
   let nextBoundary = new Date(periodStart.getFullYear(), periodStart.getMonth() + monthsStep, periodStart.getDate());
 
   while (nextBoundary <= targetDate) {
@@ -225,7 +240,7 @@ function tieredValueAt(principal, startDateStr, tierRates, targetDate) {
 // `basisOverride`, when given, replaces cfg.rateBasis (the simulator's
 // APY/APR toggle re-runs this exact math under the other interpretation
 // without touching the item's saved config).
-function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverride) {
+function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverride, assumeContinuous) {
   if (!principal || targetDate <= fromDate) return principal;
   const config = cfg || {};
 
@@ -252,7 +267,8 @@ function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverrid
       config.payoutFreq,
       fromDate,
       targetDate,
-      config
+      config,
+      !!assumeContinuous
     );
   }
 

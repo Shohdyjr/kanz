@@ -426,7 +426,7 @@ function fmtDateShort(d) {
 function computeGrowthValueAt(assetId, principal, fromDate, targetDate) {
   const cfg = returnConfig[assetId] || {};
   const rate = apy[assetId] || 0;
-  return projectValueAt(principal, rate, cfg, fromDate, targetDate);
+  return projectValueAt(principal, rate, cfg, fromDate, targetDate, undefined, true);
 }
 
 // Next date that is startDateStr + N*monthsStep (integer N), strictly after

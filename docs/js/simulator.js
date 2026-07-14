@@ -105,6 +105,11 @@ function setSimRateBasis(basis) {
 // of always reading cfg.rateBasis — so the simulator's APY/APR toggle can
 // re-run the exact same math under the other interpretation without
 // touching the item's actual saved Return Settings.
+//
+// Deliberately does NOT pass assumeContinuous=true: `principal`/`fromDate`
+// here are a hypothetical amount+date the user is testing, not the item's
+// real current balance — it can't have earned interest before `fromDate`,
+// even if the item's real Since-date implies an earlier period start.
 function simComputeGrowthValueAt(assetId, principal, fromDate, targetDate, basis) {
   const cfg = returnConfig[assetId] || {};
   const rate = apy[assetId] || 0;
