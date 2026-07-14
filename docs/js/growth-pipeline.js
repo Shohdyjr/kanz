@@ -55,6 +55,13 @@ function parseDateStr(dateStr) {
   return new Date(y, m - 1, d);
 }
 
+function formatDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function daysBetweenDates(d1, d2) {
   return Math.round((d2 - d1) / 86400000);
 }
@@ -245,7 +252,8 @@ function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverrid
   const config = cfg || {};
 
   if (config.startDate && Array.isArray(config.tierRates) && config.tierRates.length) {
-    return tieredValueAt(principal, config.startDate, config.tierRates, targetDate);
+    const tierAnchor = assumeContinuous ? config.startDate : formatDateStr(fromDate);
+    return tieredValueAt(principal, tierAnchor, config.tierRates, targetDate);
   }
   if (!rate) return principal;
 
@@ -260,9 +268,17 @@ function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverrid
     // effective annual yield the user actually has.
     const periodsPerYear = 12 / monthsStep;
     const nominalRate = basis === "effective" ? effectiveToNominal(rate, periodsPerYear) : rate;
+    // Which date anchors the monthly/quarterly/... boundary days:
+    //   - assumeContinuous (table): the item's REAL Since-date — boundaries
+    //     must land on the account's actual real-world payout days.
+    //   - otherwise (simulator): the hypothetical `fromDate` the user typed
+    //     — a self-contained "what if" shouldn't inherit boundary days from
+    //     an unrelated real account, even one previously configured on this
+    //     same item.
+    const anchorDate = assumeContinuous ? config.startDate : formatDateStr(fromDate);
     return periodicBoundaryValueAt(
       principal,
-      config.startDate,
+      anchorDate,
       nominalRate,
       config.payoutFreq,
       fromDate,
@@ -274,9 +290,12 @@ function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverrid
 
   // Flat cases below are never auto-grown by the daily cron (a compounding:
   // false product isn't reinvested, and a custom formula outside a period
-  // structure isn't posted automatically either) — so `principal` here is
-  // NOT already "as of today". Anchor to the item's own "since" date if set.
-  const flatBasisDate = config.startDate ? parseDateStr(config.startDate) : fromDate;
+  // structure isn't posted automatically either) — so for the table
+  // (assumeContinuous), `principal` here is NOT already "as of today";
+  // anchor to the item's real Since-date if set. The simulator instead
+  // always anchors to its own chosen `fromDate` — same self-containment
+  // rule as the periodic-boundary branch above.
+  const flatBasisDate = assumeContinuous && config.startDate ? parseDateStr(config.startDate) : fromDate;
 
   if (config.growthFormula) {
     const days = Math.max(0, daysBetweenDates(flatBasisDate, targetDate));
