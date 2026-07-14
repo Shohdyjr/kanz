@@ -201,7 +201,11 @@ function submitReturnConfig(ev) {
   const compounding = val("rc-compounding") === "true";
   const liquidity = val("rc-liquidity");
   const apyVal = parseFloat(val("rc-apy"));
-  const startDate = val("rc-startDate");
+  // startDate is no longer edited from this panel — it's the exact same
+  // returnConfig[id].startDate field the per-row "Since" button
+  // (since-date.js) manages, kept here only so saving this form doesn't
+  // wipe out whatever that button already set.
+  const startDate = (returnConfig[id] && returnConfig[id].startDate) || null;
   const tierRates = val("rc-tierRates")
     .split(",")
     .map((s) => parseFloat(s.trim()))
@@ -348,10 +352,6 @@ function renderReturnPanel() {
           <div class="wt-field">
             <label for="rc-liquidity">${t("liquidityLabel")}</label>
             <select id="rc-liquidity">${optionsHtml(t("liquidityOptions"), cfg.liquidity)}</select>
-          </div>
-          <div class="wt-field">
-            <label for="rc-startDate">${t("startDateLabel")}</label>
-            <input type="date" id="rc-startDate" value="${cfg.startDate || ""}">
           </div>
           <div class="wt-field">
             <label for="rc-tierRates">${t("tierRatesLabel")}</label>

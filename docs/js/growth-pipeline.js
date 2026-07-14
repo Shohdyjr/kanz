@@ -167,7 +167,15 @@ function periodicBoundaryValueAt(principal, startDateStr, ratePercent, payoutFre
 
   let balance = principal;
   const periodStart = periodStartAtOrBefore(startDateStr, monthsStep, fromDate);
-  let cursor = fromDate;
+  // The cron never touches qty mid-period (it only posts on the real payout
+  // boundary — see dailyGrowthDelta below), so the account has genuinely
+  // been accruing interest since the period's real start, not since
+  // `fromDate`. Starting the accrual cursor at `fromDate` would silently
+  // drop every day already elapsed this period — undercounting exactly what
+  // the cron will actually post on the next boundary. Always start from the
+  // true period start; `fromDate`/`targetDate` only gate whether there's
+  // anything to project at all (see the guard clause above).
+  let cursor = periodStart;
   let nextBoundary = new Date(periodStart.getFullYear(), periodStart.getMonth() + monthsStep, periodStart.getDate());
 
   while (nextBoundary <= targetDate) {
