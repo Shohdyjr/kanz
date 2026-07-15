@@ -67,7 +67,33 @@ function daysBetweenDates(d1, d2) {
 }
 
 function addYearsToDate(d, n) {
-  return new Date(d.getFullYear() + n, d.getMonth(), d.getDate());
+  return addMonthsClamped(d, n * 12);
+}
+
+// Steps `d` forward (or backward, for negative `months`) by whole calendar
+// months, clamping the day-of-month to the last real day of the destination
+// month instead of letting it overflow.
+//
+// `new Date(y, m + step, day)` — the naive version this replaces — does NOT
+// clamp: JS Date silently rolls extra days into the FOLLOWING month, e.g.
+// `new Date(2026, 0, 31)` stepped "+1 month" the naive way is
+// `new Date(2026, 1, 31)`, which JS normalizes to **March 3, 2026** (Feb
+// 2026 only has 28 days). For an item anchored on the 29th/30th/31st, every
+// boundary/anniversary calculation built on that primitive (payout-boundary
+// detection, "next payout" projection, tiered-certificate anniversaries)
+// would silently skip the February cycle entirely and permanently shift
+// the anchor date forward by however many days it overflowed by. This
+// clamps instead, matching real-world "same day next month, or the last day
+// of the month if it doesn't have one" bank behaviour (Jan 31 → Feb 28/29 →
+// Mar 31 → Apr 30 → ... — the day resets to 31 whenever the new month is
+// long enough again, it does not stay pinned at the clamped value).
+function addMonthsClamped(d, months) {
+  const y = d.getFullYear();
+  const m = d.getMonth() + months;
+  const firstOfTarget = new Date(y, m, 1);
+  const daysInTarget = new Date(firstOfTarget.getFullYear(), firstOfTarget.getMonth() + 1, 0).getDate();
+  firstOfTarget.setDate(Math.min(d.getDate(), daysInTarget));
+  return firstOfTarget;
 }
 
 function monthsStepForFreq(payoutFreq) {
@@ -85,12 +111,20 @@ function monthsStepForFreq(payoutFreq) {
 // daily cron, which only ever needs to know "is today a payout day".
 function periodBoundaryAt(startDateStr, monthsStep, dateObj) {
   if (!startDateStr || !monthsStep) return null;
-  let cursor = parseDateStr(startDateStr);
-  if (dateObj <= cursor) return null;
-  let prev = cursor;
+  const anchor = parseDateStr(startDateStr);
+  if (dateObj <= anchor) return null;
+  // Step count `n` is always applied to the ORIGINAL anchor (addMonthsClamped(anchor, n*step)),
+  // never chained cursor-to-cursor — otherwise a day-31 anchor that gets
+  // clamped to 28 in February would permanently degrade to the 28th every
+  // month after, instead of resetting to 31 once months are long enough
+  // again (see addMonthsClamped's doc comment).
+  let n = 0;
+  let cursor = anchor;
+  let prev = anchor;
   while (cursor < dateObj) {
+    n++;
     prev = cursor;
-    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + monthsStep, cursor.getDate());
+    cursor = addMonthsClamped(anchor, n * monthsStep);
   }
   return cursor.getTime() === dateObj.getTime() ? prev : null;
 }
@@ -101,17 +135,23 @@ function periodBoundaryAt(startDateStr, monthsStep, dateObj) {
 // at-or-before `at`, walking backwards through anniversaries if the anchor
 // date itself is still in the future relative to `at`.
 function periodStartAtOrBefore(startDateStr, monthsStep, at) {
-  let cursor = parseDateStr(startDateStr);
-  if (cursor > at) {
+  const anchor = parseDateStr(startDateStr);
+  if (anchor > at) {
+    let n = 0;
+    let cursor = anchor;
     while (cursor > at) {
-      cursor = new Date(cursor.getFullYear(), cursor.getMonth() - monthsStep, cursor.getDate());
+      n--;
+      cursor = addMonthsClamped(anchor, n * monthsStep);
     }
     return cursor;
   }
-  let prev = cursor;
+  let n = 0;
+  let cursor = anchor;
+  let prev = anchor;
   while (cursor <= at) {
+    n++;
     prev = cursor;
-    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + monthsStep, cursor.getDate());
+    cursor = addMonthsClamped(anchor, n * monthsStep);
   }
   return prev;
 }
@@ -119,10 +159,13 @@ function periodStartAtOrBefore(startDateStr, monthsStep, at) {
 // Next date that is startDateStr + N*monthsStep (integer N), strictly after
 // `after`. Anchors "next payout" to the account's actual opening date.
 function anniversaryAfter(startDateStr, monthsStep, after) {
-  let cursor = parseDateStr(startDateStr);
-  if (cursor > after) return cursor;
+  const anchor = parseDateStr(startDateStr);
+  if (anchor > after) return anchor;
+  let n = 0;
+  let cursor = anchor;
   while (cursor <= after) {
-    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + monthsStep, cursor.getDate());
+    n++;
+    cursor = addMonthsClamped(anchor, n * monthsStep);
   }
   return cursor;
 }
@@ -342,13 +385,18 @@ function periodicBoundaryValueAt(
   // periodStart is always at-or-before fromDate by construction — so this
   // is a no-op (cursor = fromDate) when assumeContinuous is false.
   let cursor = assumeContinuous ? periodStart : fromDate;
-  let nextBoundary = new Date(periodStart.getFullYear(), periodStart.getMonth() + monthsStep, periodStart.getDate());
+  // Each boundary is computed via anniversaryAfter(startDateStr, ...), which
+  // always steps from the TRUE anchor date, not from the previous boundary —
+  // chaining `new Date(cursor.year, cursor.month + step, cursor.date)`
+  // cursor-to-cursor would permanently degrade a day-29/30/31 anchor to
+  // whatever it got clamped to the first time it crossed a February.
+  let nextBoundary = anniversaryAfter(startDateStr, monthsStep, periodStart);
 
   while (nextBoundary <= targetDate) {
     const days = daysBetweenDates(cursor, nextBoundary);
     balance += segmentInterest(cfg, balance, ratePercent, days);
     cursor = nextBoundary;
-    nextBoundary = new Date(cursor.getFullYear(), cursor.getMonth() + monthsStep, cursor.getDate());
+    nextBoundary = anniversaryAfter(startDateStr, monthsStep, nextBoundary);
   }
   const remDays = Math.max(0, daysBetweenDates(cursor, targetDate));
   if (remDays > 0) balance += segmentInterest(cfg, balance, ratePercent, remDays);

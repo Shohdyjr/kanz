@@ -56,13 +56,110 @@
     return rateBasis === "effective" ? Math.pow(1 + annual, 1 / 365) - 1 : annual / 365;
   }
   // Legacy formulas remain supported, but only as arithmetic expressions over
-  // the documented numeric variables.  No property access, calls, strings or
-  // globals are allowed, so a saved formula cannot execute server code.
+  // the documented numeric variables (principal, rate, days). This is a
+  // small recursive-descent parser over a fixed token set (numbers, the
+  // three variable names, +-*/^(), unary minus) — no property access, no
+  // function calls, no strings, no globals, and critically no `Function`/
+  // `eval` construction, so a saved formula can never execute arbitrary
+  // code. Mirrors the safe parser already used by growthPipeline.js.
+  function tokenizeFormula(src) {
+    const tokens = [];
+    const re = /\s*(?:([A-Za-z_][A-Za-z0-9_]*)|(\d+(?:\.\d+)?)|([+\-*/^()]))/g;
+    let pos = 0;
+    while (pos < src.length) {
+      re.lastIndex = pos;
+      const m = re.exec(src);
+      if (!m || m.index !== pos) throw new Error(`Unexpected character at position ${pos}`);
+      pos = re.lastIndex;
+      if (m[1]) tokens.push({ type: "ident", value: m[1] });
+      else if (m[2]) tokens.push({ type: "number", value: parseFloat(m[2]) });
+      else if (m[3]) tokens.push({ type: "op", value: m[3] });
+    }
+    return tokens;
+  }
+  function parseFormulaAst(tokens) {
+    let i = 0;
+    const peek = () => tokens[i];
+    const expect = (value) => {
+      const tok = tokens[i];
+      if (!tok || tok.value !== value) throw new Error(`Expected '${value}'`);
+      i++;
+      return tok;
+    };
+    function parseExpr() {
+      let node = parseTerm();
+      while (peek() && peek().type === "op" && (peek().value === "+" || peek().value === "-")) {
+        const op = tokens[i++].value;
+        node = { type: "bin", op, left: node, right: parseTerm() };
+      }
+      return node;
+    }
+    function parseTerm() {
+      let node = parseUnary();
+      while (peek() && peek().type === "op" && (peek().value === "*" || peek().value === "/")) {
+        const op = tokens[i++].value;
+        node = { type: "bin", op, left: node, right: parseUnary() };
+      }
+      return node;
+    }
+    function parseUnary() {
+      if (peek() && peek().type === "op" && peek().value === "-") {
+        i++;
+        return { type: "neg", value: parseUnary() };
+      }
+      return parsePower();
+    }
+    function parsePower() {
+      const node = parseAtom();
+      if (peek() && peek().type === "op" && peek().value === "^") {
+        i++;
+        return { type: "bin", op: "^", left: node, right: parseUnary() };
+      }
+      return node;
+    }
+    function parseAtom() {
+      const tok = peek();
+      if (!tok) throw new Error("Unexpected end of formula");
+      if (tok.type === "number") { i++; return { type: "num", value: tok.value }; }
+      if (tok.type === "ident") { i++; return { type: "var", name: tok.value }; }
+      if (tok.type === "op" && tok.value === "(") {
+        i++;
+        const node = parseExpr();
+        expect(")");
+        return node;
+      }
+      throw new Error(`Unexpected token '${tok.value}'`);
+    }
+    const ast = parseExpr();
+    if (i !== tokens.length) throw new Error("Unexpected trailing input");
+    return ast;
+  }
+  function evalFormulaAst(node, vars) {
+    switch (node.type) {
+      case "num": return node.value;
+      case "neg": return -evalFormulaAst(node.value, vars);
+      case "var":
+        if (!(node.name in vars)) throw new Error(`Unknown variable '${node.name}'`);
+        return vars[node.name];
+      case "bin": {
+        const l = evalFormulaAst(node.left, vars);
+        const r = evalFormulaAst(node.right, vars);
+        if (node.op === "+") return l + r;
+        if (node.op === "-") return l - r;
+        if (node.op === "*") return l * r;
+        if (node.op === "/") return l / r;
+        if (node.op === "^") return Math.pow(l, r);
+        throw new Error(`Unknown operator '${node.op}'`);
+      }
+      default: throw new Error(`Unknown node type '${node.type}'`);
+    }
+  }
   function formulaInterest(formula, principal, rate, days) {
-    if (!formula || !/^[\d\s+\-*/%.()principalratedays]+$/.test(formula)) return null;
+    if (!formula || !String(formula).trim()) return null;
     try {
-      const value = Function("principal", "rate", "days", `"use strict"; return (${formula});`)(principal, rate, days);
-      return Number.isFinite(value) ? value : null;
+      const ast = parseFormulaAst(tokenizeFormula(String(formula)));
+      const value = evalFormulaAst(ast, { principal, rate, days });
+      return typeof value === "number" && Number.isFinite(value) ? value : null;
     } catch (_error) { return null; }
   }
   function tierRate(config, fallbackRate, atDate) {
@@ -87,8 +184,18 @@
       return date.getUTCMonth() === 11 && date.getUTCDate() === 31;
     }
     if (date <= anchor) return false;
+    // `n` is always applied to the ORIGINAL anchor via addMonths(anchor, n*step),
+    // never chained cursor-to-cursor. addMonths() clamps an overflowing day
+    // (e.g. day 31 stepping into a 28/29/30-day month) to that month's last
+    // day — chaining from an already-clamped cursor would permanently
+    // degrade a day-31 anchor to day-28 forever after the first February it
+    // crosses, instead of resetting to 31 once months are long enough again.
+    let n = 0;
     let cursor = anchor;
-    while (cursor < date) cursor = addMonths(cursor, step);
+    while (cursor < date) {
+      n++;
+      cursor = addMonths(anchor, n * step);
+    }
     return cursor.getTime() === date.getTime();
   }
   function isHistoryDue(date, config) { return isBoundary(date, config, config.accrualFrequency); }
