@@ -624,6 +624,51 @@ function cycleMilestoneLabelKey(cfg) {
   return MILESTONE_LABELS.cycle[cfg.payoutFreq] || MILESTONE_LABELS.cycle.default;
 }
 
+// ── kind / status / priority metadata ───────────────────────────────────
+// `kind` is a STABLE internal identifier for what a milestone actually is,
+// independent of its (localized, product-phrasing-aware) title. Business
+// logic — sorting, filtering, future analytics/UI — must key off `kind`,
+// never off `titleKey`/`title`, so that adding a translation or rewording a
+// label can never silently change behaviour.
+function nextMilestoneKind(cfg) {
+  const freq = cfg.payoutFreq;
+  if (!freq || freq === "daily") return cfg.calcMethod === "navBased" ? "nav-update" : "interest-payment";
+  if (freq === "monthly") return "month-end";
+  if (freq === "quarterly") return "quarter-end";
+  if (freq === "semiAnnual") return "interest-payment";
+  if (freq === "annual") return "interest-payment";
+  if (freq === "maturity") return "maturity";
+  return "interest-payment";
+}
+
+function cycleMilestoneKind(cfg) {
+  if (cfg.calcMethod === "navBased") return "nav-update";
+  if (cfg.payoutFreq === "monthly") return "month-end";
+  if (cfg.payoutFreq === "quarterly") return "quarter-end";
+  if (cfg.payoutFreq === "semiAnnual" || cfg.payoutFreq === "annual") return "year-end";
+  return "month-end";
+}
+
+// priority is purely additional metadata for future UI use (e.g. sorting
+// "important" milestones to the top of a dashboard) — chronological
+// ordering below always continues to use `date`, never `priority`.
+const MILESTONE_PRIORITY = { next: 100, maturityBoost: 90, cycle: 70, year: 50 };
+
+function priorityFor(id, kind) {
+  if (kind === "maturity") return MILESTONE_PRIORITY.maturityBoost;
+  return MILESTONE_PRIORITY[id] || 50;
+}
+
+// status replaces the old plain boolean `estimated` flag with an explicit
+// tri-state: "estimated" (NAV-based/Thndr-style projections that can move
+// with market price), "guaranteed" (a contractually fixed payout — e.g. a
+// certificate's maturity value), or "actual" — applied by the caller once
+// a milestone's date is in the past (see `completed` below).
+function statusFor(kind, estimated) {
+  if (estimated) return "estimated";
+  return "guaranteed";
+}
+
 // Returns every upcoming milestone for an asset, soonest date first — NOT
 // assumed to be [next, cycle, year] in that order, since a product's
 // calendar "cycle" boundary can fall before its "next" event (e.g. a
@@ -636,22 +681,30 @@ function generateMilestones(a) {
   if (!proj) return [];
   const cfg = returnConfig[a.id] || {};
   const estimated = cfg.calcMethod === "navBased";
+  const todayMid = new Date();
+  todayMid.setHours(0, 0, 0, 0);
 
-  const candidates = [
-    { id: "next", titleKey: nextMilestoneLabelKey(cfg), date: proj.nextDate, value: proj.next, estimated },
+  const rawCandidates = [
+    {
+      id: "next",
+      kind: nextMilestoneKind(cfg),
+      titleKey: nextMilestoneLabelKey(cfg),
+      date: proj.nextDate,
+      value: proj.next,
+    },
     {
       id: "cycle",
+      kind: cycleMilestoneKind(cfg),
       titleKey: cycleMilestoneLabelKey(cfg),
       date: proj.endOfCycleDate,
       value: proj.endOfCycle,
-      estimated,
     },
     {
       id: "year",
+      kind: "projection",
       titleKey: "milestoneOneYear",
       date: proj.endOfYearDate,
       value: proj.endOfYear,
-      estimated,
       descriptionKey: estimated ? "milestoneEstimateDesc" : null,
     },
   ];
@@ -661,12 +714,32 @@ function generateMilestones(a) {
   // IS its cycle boundary), the earlier-declared one (next > cycle > year,
   // the more specific/important label) wins the tie and the duplicate is
   // dropped right after.
-  candidates.sort((x, y) => x.date - y.date);
+  rawCandidates.sort((x, y) => x.date - y.date);
   const milestones = [];
-  for (const m of candidates) {
+  for (const m of rawCandidates) {
     const prev = milestones[milestones.length - 1];
     if (prev && prev.date.getTime() === m.date.getTime()) continue; // duplicate event, already have it
-    milestones.push(m);
+    const completed = m.date.getTime() < todayMid.getTime();
+    milestones.push({
+      ...m,
+      // Rich metadata (target model). `title`/`subtitle`/`description` are
+      // resolved eagerly against the current `lang` — generateMilestones()
+      // re-runs on every render() (including on language toggle), so this
+      // stays live; `titleKey`/`descriptionKey` are kept alongside for
+      // existing call sites and any future re-localization without
+      // recomputation.
+      title: t(m.titleKey),
+      subtitle: null,
+      description: m.descriptionKey ? t(m.descriptionKey) : null,
+      status: completed ? "actual" : statusFor(m.kind, estimated),
+      priority: priorityFor(m.id, m.kind),
+      daysRemaining: completed ? 0 : Math.max(0, daysBetweenDates(todayMid, m.date)),
+      completed,
+      // Back-compat: existing render.js / assets.js read `m.estimated`
+      // directly. Derive it from the new tri-state `status` so both stay
+      // in sync — no separate boolean to drift out of step.
+      estimated: completed ? false : statusFor(m.kind, estimated) === "estimated",
+    });
   }
   return milestones;
 }
