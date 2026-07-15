@@ -80,10 +80,6 @@ function render() {
         if (!w && !m && !mtd && !y && !a) return "";
         const chip = (g, label, showReal = true) => {
           if (!g) return "";
-          const up = g.diff >= 0;
-          const color = up ? "var(--wt-green)" : "var(--wt-red)";
-          const arrow = up ? "▲" : "▼";
-          const sign = up ? "+" : "";
           // Real Growth is rendered per-window, right inside that window's own
           // chip — never as a single value tacked on after the last window.
           // `showReal` is the actual granularity gate: contributions are
@@ -96,27 +92,47 @@ function render() {
           // shown whenever the window has data — including when
           // `contributed` is exactly 0 (nothing logged that period), since
           // "real growth == total growth" is itself a correct, meaningful
-          // answer, not a missing one. (Previously this was additionally
-          // gated on `contributed !== 0`, which silently hid an otherwise
-          // fully-computed value any month/year nothing was logged — in
-          // practice making the line look like it only ever appeared next
-          // to All Time, since a long enough history is far more likely to
-          // contain at least one logged contribution somewhere in it.)
-          const realUp = (g.realDiff || 0) >= 0;
-          const realColor = realUp ? "var(--wt-green)" : "var(--wt-red)";
-          const realArrow = realUp ? "▲" : "▼";
-          const realSign = realUp ? "+" : "";
+          // answer, not a missing one.
+          //
+          // `growthExclContrib` (toggled via the button below) swaps which
+          // figure is primary/secondary for windows that support the split —
+          // both numbers are always computed already (attachRealGrowth in
+          // helpers.js runs unconditionally), this only changes which one
+          // leads. 7d/30d ignore the toggle entirely since they never
+          // support the split regardless of its state.
+          const exclPrimary = showReal && growthExclContrib;
+          const primaryPct = exclPrimary ? g.realPct : g.pct;
+          const primaryDiff = exclPrimary ? g.realDiff : g.diff;
+          const up = primaryDiff >= 0;
+          const color = up ? "var(--wt-green)" : "var(--wt-red)";
+          const arrow = up ? "▲" : "▼";
+          const sign = up ? "+" : "";
+
+          const secondaryPct = exclPrimary ? g.pct : g.realPct;
+          const secondaryDiff = exclPrimary ? g.diff : g.realDiff;
+          const secondaryUp = secondaryDiff >= 0;
+          const secondaryColor = secondaryUp ? "var(--wt-green)" : "var(--wt-red)";
+          const secondaryArrow = secondaryUp ? "▲" : "▼";
+          const secondarySign = secondaryUp ? "+" : "";
+          const secondaryPrefix = exclPrimary ? t("growthInclPrefix") : t("realGrowthPrefix");
+
           return `<div class="wt-growth-chip" style="color:${color}">
-            <span>${arrow} ${sign}${g.pct.toFixed(1)}%</span>
-            <span class="wt-growth-sub">(${sign}${fmtUsd(g.diff)}) ${label}</span>
+            <span>${arrow} ${sign}${primaryPct.toFixed(1)}%</span>
+            <span class="wt-growth-sub">(${sign}${fmtUsd(primaryDiff)}) ${label}</span>
             ${
               showReal
-                ? `<span class="wt-growth-real" style="color:${realColor}">${t("realGrowthPrefix")} ${realArrow} ${realSign}${g.realPct.toFixed(1)}%</span>`
+                ? `<span class="wt-growth-real" style="color:${secondaryColor}">${secondaryPrefix} ${secondaryArrow} ${secondarySign}${secondaryPct.toFixed(1)}%</span>`
                 : ""
             }
           </div>`;
         };
-        return `<div class="wt-growth-row">${chip(w, t("growthWeek"), false)}${chip(m, t("growthMonth"), false)}${chip(mtd, t("growthMtd"))}${chip(y, t("growthYtd")(currentYear))}${chip(a, t("growthAllTime"))}</div>`;
+        const anySupportsReal = !!(mtd || y || a);
+        const toggleBtn = anySupportsReal
+          ? `<button type="button" class="wt-growth-toggle-btn" onclick="toggleGrowthExclContrib()">${
+              growthExclContrib ? t("growthToggleShowIncl") : t("growthToggleShowExcl")
+            }</button>`
+          : "";
+        return `<div class="wt-growth-row">${chip(w, t("growthWeek"), false)}${chip(m, t("growthMonth"), false)}${chip(mtd, t("growthMtd"))}${chip(y, t("growthYtd")(currentYear))}${chip(a, t("growthAllTime"))}${toggleBtn}</div>`;
       })()}
       ${
         savingsGoal > 0

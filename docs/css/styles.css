@@ -302,6 +302,24 @@ body {
   direction: rtl;
   unicode-bidi: plaintext;
 }
+.wt-growth-toggle-btn {
+  align-self: center;
+  background: transparent;
+  border: 1px solid var(--wt-line);
+  color: var(--wt-text);
+  opacity: 0.75;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-family: "Tajawal", sans-serif;
+  font-size: 11px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.wt-growth-toggle-btn:hover {
+  opacity: 1;
+  border-color: var(--wt-gold-dim);
+  color: var(--wt-gold-light);
+}
 .wt-contrib-list {
   display: flex;
   flex-direction: column;

@@ -162,6 +162,12 @@ let simStartDate = null; // last start date typed into the simulator (YYYY-MM-DD
 // cfg.rateBasis whenever the simulator opens or the selected asset changes.
 let simRateBasis = null;
 let groupFilter = null; // "savings" | "investments" | "assets" | null (null = show all rows)
+// Toggles the hero growth chips between "Return" (raw) and "Real growth"
+// (excl. contributions) as the PRIMARY number shown. Session-only, like the
+// other UI toggles here — not persisted server-side. Only affects MTD/YTD/
+// All Time, the windows that actually support the excl.-contributions split
+// (see chip() in render.js); 7d/30d always show raw regardless.
+let growthExclContrib = false;
 let order = [];
 let itemHistoryModalId = null; // asset id whose history timeline is open, or null
 let itemHistoryEntries = []; // entries loaded for itemHistoryModalId
@@ -281,6 +287,11 @@ function applyTheme() {
   const el = document.getElementById("bodyRoot");
   if (theme === "light") el.classList.add("theme-light");
   else el.classList.remove("theme-light");
+}
+
+function toggleGrowthExclContrib() {
+  growthExclContrib = !growthExclContrib;
+  render();
 }
 
 function toggleTheme() {
