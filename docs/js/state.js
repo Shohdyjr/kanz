@@ -224,6 +224,21 @@ try {
 } catch (e) {
   // corrupt/old value — ignore and start with everything visible
 }
+// One-time migration: the 4 old fixed projection columns (nextAdd/projNext/
+// projCycle/projYearEnd) collapsed into a single "projection" column. Only
+// carry over "hidden" if ALL FOUR were hidden before — a deliberate "I don't
+// want to see any projections" choice — otherwise default the new column to
+// visible, same as everything else previously-untouched.
+const OLD_PROJECTION_COL_KEYS = ["nextAdd", "projNext", "projCycle", "projYearEnd"];
+if (OLD_PROJECTION_COL_KEYS.some((k) => hiddenCols.has(k))) {
+  if (OLD_PROJECTION_COL_KEYS.every((k) => hiddenCols.has(k))) hiddenCols.add("projection");
+  OLD_PROJECTION_COL_KEYS.forEach((k) => hiddenCols.delete(k));
+  try {
+    localStorage.setItem("kanz_hidden_cols_v1", JSON.stringify([...hiddenCols]));
+  } catch (e) {
+    // storage unavailable — safe to ignore, migration just re-runs next load
+  }
+}
 let columnPanelOpen = false; // the small "choose columns" popover, opened from the table header
 
 function slugify(s) {

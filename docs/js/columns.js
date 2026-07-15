@@ -12,10 +12,7 @@ const COLUMN_DEFS = [
   { key: "apy", labelKey: "thApy" },
   { key: "unitPrice", labelKey: "thUnitPrice" },
   { key: "total", labelKey: "thTotal" },
-  { key: "nextAdd", labelKey: "thNextAdd" },
-  { key: "projNext", labelKey: "thProjNext" },
-  { key: "projCycle", labelKey: "thProjCycle" },
-  { key: "projYearEnd", labelKey: "thProjYearEnd" },
+  { key: "projection", labelKey: "thProjection" },
 ];
 
 function isColHidden(key) {

@@ -170,10 +170,7 @@ function render() {
           ${isColHidden("apy") ? "" : `<th>${t("thApy")}</th>`}
           ${isColHidden("unitPrice") ? "" : `<th class="num">${t("thUnitPrice")}</th>`}
           ${isColHidden("total") ? "" : `<th class="num">${t("thTotal")}</th>`}
-          ${isColHidden("nextAdd") ? "" : `<th class="num">${t("thNextAdd")}</th>`}
-          ${isColHidden("projNext") ? "" : `<th class="num">${t("thProjNext")}</th>`}
-          ${isColHidden("projCycle") ? "" : `<th class="num">${t("thProjCycle")}</th>`}
-          ${isColHidden("projYearEnd") ? "" : `<th class="num">${t("thProjYearEnd")}</th>`}
+          ${isColHidden("projection") ? "" : `<th class="num">${t("thProjection")}</th>`}
           <th class="wt-th-del"></th>
         </tr></thead>
         <tbody>
@@ -200,48 +197,21 @@ function render() {
             ${isColHidden("apy") ? "" : `<td class="wt-apy-cell" title="${t("apyHint")}"><button type="button" class="wt-apy-set-link" onclick="openReturnPanel('${a.id}')">${apy[a.id] ? fmtNum(apy[a.id], 2) + "%" : t("setApyLink")}</button>${apy[a.id] && returnConfig[a.id] && returnConfig[a.id].rateBasis ? `<div class="wt-proj-date" dir="auto" title="${t("rateBasisHint")}">${t("rateBasisShort")[returnConfig[a.id].rateBasis]}</div>` : ""}</td>`}
             ${isColHidden("unitPrice") ? "" : `<td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>`}
             ${isColHidden("total") ? "" : `<td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>`}
-            ${(() => {
-              if (
-                isColHidden("nextAdd") &&
-                isColHidden("projNext") &&
-                isColHidden("projCycle") &&
-                isColHidden("projYearEnd")
-              )
-                return "";
-              const proj = projectAssetValue(a);
-              // Thndr-style money-market/fund products (navBased) don't
-              // guarantee their rate — it floats daily with the market. Every
-              // projection here necessarily assumes today's rate holds
-              // constant for the whole span, which is a real assumption, not
-              // a fact, and shouldn't be presented as if it were guaranteed
-              // like a fixed-rate bank product's number is.
-              const isEstimate = returnConfig[a.id] && returnConfig[a.id].calcMethod === "navBased";
-              const estimatePrefix = isEstimate ? "≈ " : "";
-              const estimateTitleSuffix = isEstimate ? ` — ${t("projEstimateHint")}` : "";
-              const dateSub = (d) => `<div class="wt-proj-date">${fmtDateShort(d)}</div>`;
-              const cell = (id, labelTitle, val, dateVal) => {
-                if (!proj) return `<td class="wt-proj-cell" id="${id}-${a.id}">${t("projNone")}</td>`;
-                const title = labelTitle || estimateTitleSuffix ? `${labelTitle}${estimateTitleSuffix}` : "";
-                return `<td class="wt-proj-cell" id="${id}-${a.id}" ${title ? `title="${title}"` : ""}>${estimatePrefix}${fmtByCurrencyPrecise(val, a.currency)}${dateSub(dateVal)}</td>`;
-              };
-              const nextAddVal = proj ? proj.next - (qty[a.id] || 0) : null;
-              return (
-                (isColHidden("nextAdd")
-                  ? ""
-                  : proj
-                    ? `<td class="wt-proj-cell wt-proj-add-cell" id="next-add-${a.id}" title="${t(proj.nextLabelKey)}${estimateTitleSuffix}"><b id="next-add-val-${a.id}" class="${nextAddVal >= 0 ? "wt-sim-pos" : "wt-sim-neg"}">${nextAddVal >= 0 ? "+" : ""}${estimatePrefix}${fmtByCurrencyPrecise(nextAddVal, a.currency)}</b>${dateSub(proj.nextDate)}</td>`
-                    : `<td class="wt-proj-cell" id="next-add-${a.id}">${t("projNone")}</td>`) +
-                (isColHidden("projNext")
-                  ? ""
-                  : cell("proj-next", proj ? t(proj.nextLabelKey) : "", proj && proj.next, proj && proj.nextDate)) +
-                (isColHidden("projCycle")
-                  ? ""
-                  : cell("proj-cycle", "", proj && proj.endOfCycle, proj && proj.endOfCycleDate)) +
-                (isColHidden("projYearEnd")
-                  ? ""
-                  : cell("proj-end", "", proj && proj.endOfYear, proj && proj.endOfYearDate))
-              );
-            })()}
+            ${
+              isColHidden("projection")
+                ? ""
+                : (() => {
+                    const m = primaryMilestone(a);
+                    if (!m) return `<td class="wt-proj-cell" id="projection-${a.id}">${t("projNone")}</td>`;
+                    const estimatePrefix = m.estimated ? "≈ " : "";
+                    const title = m.estimated ? `${t(m.titleKey)} — ${t("projEstimateHint")}` : t(m.titleKey);
+                    return `<td class="wt-proj-cell wt-proj-clickable" id="projection-${a.id}" title="${title}" onclick="openReturnPanel('${a.id}')">
+                    <div class="wt-proj-label">${t(m.titleKey)}</div>
+                    ${estimatePrefix}${fmtByCurrencyPrecise(m.value, a.currency)}
+                    <div class="wt-proj-date">${fmtDateShort(m.date)}</div>
+                  </td>`;
+                  })()
+            }
             <td><div class="wt-row-actions">
               <button class="wt-hist" onclick="openItemHistoryModal('${a.id}')" title="${t("itemHistoryTitle")}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>

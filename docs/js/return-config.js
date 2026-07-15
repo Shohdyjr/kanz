@@ -275,6 +275,32 @@ function optionsHtml(optionsMap, selected) {
   );
 }
 
+// The Return Settings panel's "detail view": every upcoming milestone for
+// the selected asset, not just the primary one shown in the table.
+function renderMilestonesSection(a) {
+  const milestones = generateMilestones(a);
+  if (!milestones.length) return "";
+  return `
+      <div class="wt-field wt-milestones-block">
+        <label>${t("milestonesLabel")}</label>
+        <div class="wt-milestones-list">
+          ${milestones
+            .map(
+              (m) => `
+            <div class="wt-milestone-row">
+              <div class="wt-milestone-info">
+                <span class="wt-milestone-title">${t(m.titleKey)}</span>
+                <span class="wt-proj-date">${fmtDateShort(m.date)}</span>
+                ${m.descriptionKey ? `<span class="wt-milestone-desc">${t(m.descriptionKey)}</span>` : ""}
+              </div>
+              <b class="wt-milestone-value">${m.estimated ? "≈ " : ""}${fmtByCurrencyPrecise(m.value, a.currency)}</b>
+            </div>`
+            )
+            .join("")}
+        </div>
+      </div>`;
+}
+
 function renderReturnPanel() {
   const id = returnPanelAssetId;
   const a = ASSETS.find((x) => x.id === id);
@@ -308,6 +334,8 @@ function renderReturnPanel() {
           ).join("")}
         </div>
       </div>
+
+      ${renderMilestonesSection(a)}
 
       <form onsubmit="submitReturnConfig(event)">
         <div class="wt-field-row-5">
@@ -399,12 +427,18 @@ function renderReturnPanel() {
 }
 
 // ══════════════════════════════════════════════════════
-//  Projections — shown as extra read-only columns in the assets table.
-//  Purely a forward-looking display estimate; never written back anywhere,
-//  never touches qty/apy/history. Two numbers per item, always:
-//    - "next": value at the item's next natural payout point (tomorrow for
-//      daily items, next month for monthly, next year for annual/maturity)
-//    - "endOfYear": value on Dec 31 of the current calendar year
+//  Projections — surfaced as milestones (see generateMilestones below),
+//  not fixed table columns. Purely a forward-looking display estimate;
+//  never written back anywhere, never touches qty/apy/history.
+//  projectAssetValue computes three underlying dates/values:
+//    - "next": the item's next natural payout point (tomorrow for daily
+//      items, next month for monthly, next year for annual/maturity —
+//      anchored to the item's real Since-date when one is set)
+//    - "endOfCycle": the current payout cycle's real calendar boundary
+//      (e.g. the last day of this month) — distinct from "next" when
+//      there's no Since-date to anchor "next" to a real cycle
+//    - "endOfYear": a genuine rolling one-year-from-today projection (not
+//      calendar Dec 31 — that could be just days away in December)
 // ══════════════════════════════════════════════════════
 
 // parseDateStr / daysBetweenDates / addYearsToDate now live in
@@ -446,12 +480,13 @@ function anniversaryAfter(startDateStr, monthsStep, after) {
 
 // monthsStepForFreq now lives in growth-pipeline.js.
 
-// Returns { next, nextLabelKey, nextDate, endOfCycle, endOfCycleDate, endOfYear, endOfYearDate }
+// Returns { next, nextDate, endOfCycle, endOfCycleDate, endOfYear, endOfYearDate }
 // in the asset's own currency (qty is already stored in native units — EGP
 // stays EGP, gold stays grams, etc. — so there's no USD conversion here at
 // all), or null if there's nothing to project (no balance, or no rate
-// configured at all). The *Date fields are plain JS Date objects, used to
-// show a small "as of <date>" label under each projected amount in the table.
+// configured at all). The *Date fields are plain JS Date objects. Smart,
+// product-aware labels for these dates are computed separately by
+// generateMilestones() below — this function only knows dates/values.
 function projectAssetValue(a) {
   const principal = qty[a.id] || 0;
   if (!principal) return null;
@@ -459,34 +494,32 @@ function projectAssetValue(a) {
   const cfg = returnConfig[a.id] || {};
   const today = new Date();
   const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const endOfYear = new Date(today.getFullYear(), 11, 31);
+  // A true rolling "one year from today" (not calendar Dec 31 — that could
+  // be just days away if today is in December, which wouldn't match the
+  // "One year from now" milestone label at all).
+  const oneYearOut = addYearsToDate(todayMid, 1);
   const endOfCycle = endOfCycleDate(cfg, todayMid);
 
   const monthsStep = monthsStepForFreq(cfg.payoutFreq);
-  let nextDate, nextLabelKey;
+  let nextDate;
   if (cfg.startDate && monthsStep) {
     nextDate = anniversaryAfter(cfg.startDate, monthsStep, todayMid);
-    nextLabelKey = monthsStep === 12 ? "projNextYear" : "projNextMonth";
   } else if (cfg.payoutFreq === "monthly" || cfg.payoutFreq === "quarterly" || cfg.payoutFreq === "semiAnnual") {
     nextDate = new Date(todayMid.getFullYear(), todayMid.getMonth() + 1, todayMid.getDate());
-    nextLabelKey = "projNextMonth";
   } else if (cfg.payoutFreq === "annual" || cfg.payoutFreq === "maturity") {
     nextDate = addYearsToDate(todayMid, 1);
-    nextLabelKey = "projNextYear";
   } else {
     nextDate = new Date(todayMid.getFullYear(), todayMid.getMonth(), todayMid.getDate() + 1);
-    nextLabelKey = "projTomorrow";
   }
 
   if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
     return {
       next: computeGrowthValueAt(a.id, principal, todayMid, nextDate),
-      nextLabelKey,
       nextDate,
       endOfCycle: computeGrowthValueAt(a.id, principal, todayMid, endOfCycle),
       endOfCycleDate: endOfCycle,
-      endOfYear: computeGrowthValueAt(a.id, principal, todayMid, endOfYear),
-      endOfYearDate: endOfYear,
+      endOfYear: computeGrowthValueAt(a.id, principal, todayMid, oneYearOut),
+      endOfYearDate: oneYearOut,
     };
   }
 
@@ -494,12 +527,11 @@ function projectAssetValue(a) {
   if (!rate) return null;
   return {
     next: computeGrowthValueAt(a.id, principal, todayMid, nextDate),
-    nextLabelKey,
     nextDate,
     endOfCycle: computeGrowthValueAt(a.id, principal, todayMid, endOfCycle),
     endOfCycleDate: endOfCycle,
-    endOfYear: computeGrowthValueAt(a.id, principal, todayMid, endOfYear),
-    endOfYearDate: endOfYear,
+    endOfYear: computeGrowthValueAt(a.id, principal, todayMid, oneYearOut),
+    endOfYearDate: oneYearOut,
   };
 }
 
@@ -525,6 +557,127 @@ function endOfCycleDate(cfg, todayMid) {
   if (!cfg.payoutFreq || cfg.payoutFreq === "daily") return todayMid;
   return new Date(todayMid.getFullYear(), todayMid.getMonth() + 1, 0); // last day of this month
 }
+
+// ──────────────────────────────────────────────────────────────────────
+//  Milestones — one generic, product-aware layer instead of fixed
+//  next/endOfCycle/endOfYear table columns. A product's shape (calcMethod +
+//  payoutFreq + compounding) already fully determines both which milestones
+//  make sense for it AND what to call them — so this is a plain lookup, not
+//  a switch statement duplicated in the UI. Adding a new product later only
+//  ever means adding a returnConfig preset (return-config.js) with the right
+//  attribute combination; this function needs no changes for it.
+// ──────────────────────────────────────────────────────────────────────
+const MILESTONE_LABELS = {
+  next: {
+    navBasedDaily: "milestoneNextNav",
+    tomorrow: "milestoneTomorrow",
+    monthly: "milestoneEndOfMonth",
+    quarterly: "milestoneQuarterEnd",
+    semiAnnual: "milestoneHalfYearEnd",
+    annualPayout: "milestoneAnnualPayout",
+    nextInterest: "milestoneNextInterest",
+    maturity: "milestoneMaturity",
+    // No real Since-date to anchor a calendar boundary to — "N periods from
+    // today" is a rolling estimate, not a locked-in date, so it needs
+    // wording distinct from the cycle milestone's true calendar end (which
+    // would otherwise show the same label on a different date right below).
+    unanchoredMonthly: "milestoneNextMonth",
+    unanchoredQuarterly: "milestoneNextQuarter",
+    unanchoredSemiAnnual: "milestoneNextHalfYear",
+    unanchoredAnnual: "milestoneNextYear",
+  },
+  cycle: {
+    navBased: "milestoneNavEstimate",
+    monthly: "milestoneEndOfMonth",
+    quarterly: "milestoneQuarterEnd",
+    semiAnnual: "milestoneHalfYearEnd",
+    default: "milestoneEndOfCycle",
+  },
+};
+
+function nextMilestoneLabelKey(cfg) {
+  const freq = cfg.payoutFreq;
+  if (!freq || freq === "daily") {
+    return cfg.calcMethod === "navBased" ? MILESTONE_LABELS.next.navBasedDaily : MILESTONE_LABELS.next.tomorrow;
+  }
+  // A real Since-date anchors "next" to an actual calendar boundary (e.g.
+  // "the 8th of next month") — without one it's just "roughly a month from
+  // today" and needs the softer "unanchored" wording (see comment above).
+  const anchored = !!cfg.startDate;
+  if (freq === "monthly") return anchored ? MILESTONE_LABELS.next.monthly : MILESTONE_LABELS.next.unanchoredMonthly;
+  if (freq === "quarterly")
+    return anchored ? MILESTONE_LABELS.next.quarterly : MILESTONE_LABELS.next.unanchoredQuarterly;
+  if (freq === "semiAnnual")
+    return anchored ? MILESTONE_LABELS.next.semiAnnual : MILESTONE_LABELS.next.unanchoredSemiAnnual;
+  if (freq === "annual")
+    return cfg.compounding === false
+      ? MILESTONE_LABELS.next.nextInterest
+      : anchored
+        ? MILESTONE_LABELS.next.annualPayout
+        : MILESTONE_LABELS.next.unanchoredAnnual;
+  if (freq === "maturity") return MILESTONE_LABELS.next.maturity;
+  return MILESTONE_LABELS.next.tomorrow;
+}
+
+function cycleMilestoneLabelKey(cfg) {
+  if (cfg.calcMethod === "navBased") return MILESTONE_LABELS.cycle.navBased;
+  return MILESTONE_LABELS.cycle[cfg.payoutFreq] || MILESTONE_LABELS.cycle.default;
+}
+
+// Returns every upcoming milestone for an asset, soonest date first — NOT
+// assumed to be [next, cycle, year] in that order, since a product's
+// calendar "cycle" boundary can fall before its "next" event (e.g. a
+// monthly product with no Since-date set yet: "next" is an arbitrary
+// 1-month-from-today estimate, but the calendar month itself may end
+// sooner). The table shows milestones[0]; the Return Settings panel shows
+// the full list.
+function generateMilestones(a) {
+  const proj = projectAssetValue(a);
+  if (!proj) return [];
+  const cfg = returnConfig[a.id] || {};
+  const estimated = cfg.calcMethod === "navBased";
+
+  const candidates = [
+    { id: "next", titleKey: nextMilestoneLabelKey(cfg), date: proj.nextDate, value: proj.next, estimated },
+    {
+      id: "cycle",
+      titleKey: cycleMilestoneLabelKey(cfg),
+      date: proj.endOfCycleDate,
+      value: proj.endOfCycle,
+      estimated,
+    },
+    {
+      id: "year",
+      titleKey: "milestoneOneYear",
+      date: proj.endOfYearDate,
+      value: proj.endOfYear,
+      estimated,
+      descriptionKey: estimated ? "milestoneEstimateDesc" : null,
+    },
+  ];
+
+  // Sort chronologically. Array.sort is stable, so when two milestones land
+  // on the exact same date (very common — a monthly product's "next" often
+  // IS its cycle boundary), the earlier-declared one (next > cycle > year,
+  // the more specific/important label) wins the tie and the duplicate is
+  // dropped right after.
+  candidates.sort((x, y) => x.date - y.date);
+  const milestones = [];
+  for (const m of candidates) {
+    const prev = milestones[milestones.length - 1];
+    if (prev && prev.date.getTime() === m.date.getTime()) continue; // duplicate event, already have it
+    milestones.push(m);
+  }
+  return milestones;
+}
+
+// The single number the table shows for this asset — always the soonest
+// upcoming milestone, whatever it's called for this particular product.
+function primaryMilestone(a) {
+  const milestones = generateMilestones(a);
+  return milestones.length ? milestones[0] : null;
+}
+
 function previewReturnCategory() {
   const calcMethod = document.getElementById("rc-calcMethod").value;
   const payoutFreq = document.getElementById("rc-payoutFreq").value;

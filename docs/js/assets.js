@@ -259,18 +259,15 @@ function updateTotals() {
     totalUsd += t;
     const el = document.getElementById("total-" + a.id);
     if (el) el.textContent = fmtUsd(t);
-    const proj = projectAssetValue(a);
-    const nextEl = document.getElementById("proj-next-" + a.id);
-    const cycleEl = document.getElementById("proj-cycle-" + a.id);
-    const endEl = document.getElementById("proj-end-" + a.id);
-    if (nextEl) nextEl.textContent = proj ? fmtByCurrency(proj.next, a.currency) : t("projNone");
-    if (cycleEl) cycleEl.textContent = proj ? fmtByCurrency(proj.endOfCycle, a.currency) : t("projNone");
-    if (endEl) endEl.textContent = proj ? fmtByCurrency(proj.endOfYear, a.currency) : t("projNone");
-    const nextAddEl = document.getElementById("next-add-val-" + a.id);
-    if (nextAddEl && proj) {
-      const nextAddVal = proj.next - (qty[a.id] || 0);
-      nextAddEl.className = nextAddVal >= 0 ? "wt-sim-pos" : "wt-sim-neg";
-      nextAddEl.textContent = (nextAddVal >= 0 ? "+" : "") + fmtByCurrency(nextAddVal, a.currency);
+    const m = primaryMilestone(a);
+    const projEl = document.getElementById("projection-" + a.id);
+    if (projEl) {
+      if (m) {
+        const estimatePrefix = m.estimated ? "≈ " : "";
+        projEl.innerHTML = `<div class="wt-proj-label">${t(m.titleKey)}</div>${estimatePrefix}${fmtByCurrency(m.value, a.currency)}<div class="wt-proj-date">${fmtDateShort(m.date)}</div>`;
+      } else {
+        projEl.textContent = t("projNone");
+      }
     }
   });
   const totalGold = rates.goldUsdPerGram > 0 ? totalUsd / rates.goldUsdPerGram : 0;

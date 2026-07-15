@@ -531,6 +531,62 @@ body {
   direction: ltr;
   white-space: nowrap;
 }
+.wt-proj-clickable {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.wt-proj-clickable:hover {
+  opacity: 0.75;
+}
+.wt-proj-label {
+  font-family: "Tajawal", sans-serif;
+  font-size: 10px;
+  color: var(--wt-text-dim);
+  white-space: nowrap;
+  margin-bottom: 1px;
+}
+.wt-milestones-block {
+  background: var(--wt-panel-alt, rgba(255, 255, 255, 0.03));
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.wt-milestones-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wt-milestone-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--wt-line, rgba(255, 255, 255, 0.06));
+}
+.wt-milestone-row:last-child {
+  border-bottom: none;
+}
+.wt-milestone-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wt-milestone-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.wt-milestone-desc {
+  font-size: 11px;
+  color: var(--wt-text-dim);
+}
+.wt-milestone-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  color: var(--wt-green);
+  direction: ltr;
+  white-space: nowrap;
+}
 .wt-col-panel-overlay {
   position: fixed;
   inset: 0;
