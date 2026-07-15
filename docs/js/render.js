@@ -84,16 +84,24 @@ function render() {
           const color = up ? "var(--wt-green)" : "var(--wt-red)";
           const arrow = up ? "▲" : "▼";
           const sign = up ? "+" : "";
-          // Only show the "real growth" line when contributions were actually
-          // logged for this period — otherwise it's identical to the total
-          // and just adds noise for users who don't bother logging them.
-          // Also gated by `showReal`: contributions are logged with monthly
-          // granularity (always the 1st of the month — see contributions.js),
-          // so splitting a rolling 7/30-day window into "added vs grew" isn't
-          // meaningful — a contribution can't be attributed to a specific
-          // week within its month. Only MTD/YTD/all-time (whole-month-aligned
-          // windows) get the split.
-          const hasContribution = showReal && Math.abs(g.contributed || 0) > 0.005;
+          // Real Growth is rendered per-window, right inside that window's own
+          // chip — never as a single value tacked on after the last window.
+          // `showReal` is the actual granularity gate: contributions are
+          // logged with monthly granularity (always the 1st of the month —
+          // see contributions.js), so splitting a rolling 7/30-day window
+          // into "added vs grew" isn't meaningful — a contribution can't be
+          // attributed to a specific week within its month, so those two
+          // windows never render this metric. MTD/YTD/all-time are
+          // month-aligned, so the split IS always accurate for them and is
+          // shown whenever the window has data — including when
+          // `contributed` is exactly 0 (nothing logged that period), since
+          // "real growth == total growth" is itself a correct, meaningful
+          // answer, not a missing one. (Previously this was additionally
+          // gated on `contributed !== 0`, which silently hid an otherwise
+          // fully-computed value any month/year nothing was logged — in
+          // practice making the line look like it only ever appeared next
+          // to All Time, since a long enough history is far more likely to
+          // contain at least one logged contribution somewhere in it.)
           const realUp = (g.realDiff || 0) >= 0;
           const realColor = realUp ? "var(--wt-green)" : "var(--wt-red)";
           const realArrow = realUp ? "▲" : "▼";
@@ -102,7 +110,7 @@ function render() {
             <span>${arrow} ${sign}${g.pct.toFixed(1)}%</span>
             <span class="wt-growth-sub">(${sign}${fmtUsd(g.diff)}) ${label}</span>
             ${
-              hasContribution
+              showReal
                 ? `<span class="wt-growth-real" style="color:${realColor}">${t("realGrowthPrefix")} ${realArrow} ${realSign}${g.realPct.toFixed(1)}%</span>`
                 : ""
             }
