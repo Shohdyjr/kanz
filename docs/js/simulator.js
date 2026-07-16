@@ -121,12 +121,13 @@ function simComputeGrowthValueAt(assetId, principal, fromDate, targetDate, basis
 // printed in the equation is always the one really being multiplied, never
 // the raw stored value dressed up as something it isn't.
 function simDisplayedRate(cfg, rate, basis) {
-  const monthsStep = monthsStepForFreq(cfg.payoutFreq);
-  if (cfg.startDate && monthsStep && cfg.compounding === true) {
+  const compounds = cfg.compoundingFrequency && cfg.compoundingFrequency !== "none";
+  const monthsStep = monthsStepForFreq(cfg.growthFrequency);
+  if (cfg.growthSource !== "nav" && cfg.startDate && monthsStep && compounds) {
     const periodsPerYear = 12 / monthsStep;
     return basis === "effective" ? effectiveToNominal(rate, periodsPerYear) : rate;
   }
-  if (!cfg.growthFormula && cfg.compounding !== false) {
+  if (!cfg.growthFormula && compounds) {
     return basis === "nominal" ? nominalToEffective(rate, 365) : rate;
   }
   return rate;
@@ -204,10 +205,11 @@ function renderSimModal() {
   const rate = apy[a.id] || 0;
   const cfg = returnConfig[a.id] || {};
   const isTiered = !!(cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length);
-  const monthsStep = monthsStepForFreq(cfg.payoutFreq);
-  const isPeriodicBoundary = !isTiered && !!(cfg.startDate && monthsStep && cfg.compounding === true);
-  const isSimpleFlat = !isTiered && !isPeriodicBoundary && cfg.compounding === false;
-  const hasCustomFormula = !isTiered && !!cfg.growthFormula;
+  const compounds = cfg.compoundingFrequency && cfg.compoundingFrequency !== "none";
+  const monthsStep = monthsStepForFreq(cfg.growthFrequency);
+  const isPeriodicBoundary = !isTiered && cfg.growthSource !== "nav" && !!(cfg.startDate && monthsStep && compounds);
+  const isSimpleFlat = !isTiered && !isPeriodicBoundary && cfg.growthSource !== "nav" && !compounds;
+  const hasCustomFormula = !isTiered && cfg.growthSource === "manual" && !!cfg.growthFormula;
   const startDateVal = simStartDate || minDate;
 
   // The basis this run actually uses: the user's per-run toggle if they've
@@ -335,7 +337,7 @@ function renderSimModal() {
             ? `<div class="wt-sim-total-block">
           <p class="wt-sim-block-title">${t("simOnDateTitle")}(${esc(simDate)})</p>
           <div class="wt-sim-total-row">
-            <span>${t("simProjectedTotal")}${cfg.calcMethod === "navBased" ? ` <span class="wt-proj-date" title="${t("projEstimateHint")}">≈</span>` : ""}</span>
+            <span>${t("simProjectedTotal")}${cfg.growthSource === "nav" ? ` <span class="wt-proj-date" title="${t("projEstimateHint")}">≈</span>` : ""}</span>
             <b>${fmtByCurrencyPrecise(projected, a.currency)}</b>
           </div>
           <div class="wt-sim-total-row">

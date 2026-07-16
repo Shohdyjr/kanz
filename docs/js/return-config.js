@@ -17,6 +17,11 @@
 
 // Fixed for every user — not editable from the UI. Update this list in code
 // when a bank/platform changes its terms or a new product should be offered.
+// Fields are the real domain model (see backend/lib/growthPipeline.js):
+// growthSource/growthFrequency describe HOW/HOW OFTEN the value changes,
+// distributionFrequency is WHEN cash is paid out, compoundingFrequency is
+// WHEN growth is reinvested, liquidityFrequency is WHEN funds are
+// redeemable — four independent concepts, not one overloaded payoutFreq.
 const RETURN_PRESETS = [
   {
     id: "thndr_cloud_instant",
@@ -25,10 +30,11 @@ const RETURN_PRESETS = [
     productType: "fixedIncomeFund",
     rateType: "variable",
     rateBasis: "effective",
-    calcMethod: "navBased",
-    payoutFreq: "daily",
-    compounding: true,
-    liquidity: "daily",
+    growthSource: "nav",
+    growthFrequency: "daily",
+    distributionFrequency: "none",
+    compoundingFrequency: "daily",
+    liquidityFrequency: "daily",
     suggestedApy: 18.11,
   },
   {
@@ -38,10 +44,13 @@ const RETURN_PRESETS = [
     productType: "fixedIncomeFund",
     rateType: "variable",
     rateBasis: "effective",
-    calcMethod: "navBased",
-    payoutFreq: "monthly",
-    compounding: true,
-    liquidity: "monthly",
+    growthSource: "nav",
+    // Grows daily — NAV moves every day. Never distributes: all growth is
+    // reflected in the price. Only liquidity (redemption) is monthly.
+    growthFrequency: "daily",
+    distributionFrequency: "none",
+    compoundingFrequency: "daily",
+    liquidityFrequency: "monthly",
     suggestedApy: 20.06,
   },
   {
@@ -51,10 +60,12 @@ const RETURN_PRESETS = [
     productType: "savings",
     rateType: "variable",
     rateBasis: "nominal",
-    calcMethod: "lowestMonthlyBalance",
-    payoutFreq: "monthly",
-    compounding: true,
-    liquidity: "monthly",
+    growthSource: "fixedRate",
+    balanceBasis: "lowestPeriodBalance",
+    growthFrequency: "monthly",
+    distributionFrequency: "none",
+    compoundingFrequency: "monthly",
+    liquidityFrequency: "monthly",
     suggestedApy: 18,
   },
   {
@@ -64,10 +75,12 @@ const RETURN_PRESETS = [
     productType: "savings",
     rateType: "variable",
     rateBasis: "nominal",
-    calcMethod: "dailyBalance",
-    payoutFreq: "daily",
-    compounding: true,
-    liquidity: "daily",
+    growthSource: "fixedRate",
+    balanceBasis: "currentBalance",
+    growthFrequency: "daily",
+    distributionFrequency: "none",
+    compoundingFrequency: "daily",
+    liquidityFrequency: "daily",
     suggestedApy: 15,
   },
   {
@@ -77,13 +90,80 @@ const RETURN_PRESETS = [
     productType: "certificate",
     rateType: "fixed",
     rateBasis: "nominal",
-    calcMethod: "fixedPrincipal",
-    payoutFreq: "annual",
-    compounding: false,
-    liquidity: "restricted",
+    growthSource: "fixedRate",
+    balanceBasis: "fixedPrincipal",
+    growthFrequency: "annual",
+    distributionFrequency: "annual",
+    compoundingFrequency: "none",
+    liquidityFrequency: "maturity",
     tierRates: [27, 22, 17],
   },
 ];
+
+// ── Legacy-shaped view of the domain model ──────────────────────────────
+// The Return Settings FORM (below) still asks the questions the old
+// calcMethod/payoutFreq/compounding/liquidity fields asked — that UI is
+// unchanged by this refactor. What's genuinely new is that the SAVED data
+// (returnConfig[id]) is the real domain model, not those four fields.
+// `toDomainModel` converts a form submission into the domain model;
+// `toLegacyShape` converts a saved domain-model config back into the same
+// four-field shape so the milestone/category-label logic further down
+// (which is legitimately about "what does the UI call this", not "how is
+// it calculated") doesn't need to be rewritten twice.
+function toDomainModel(form) {
+  const isNav = form.calcMethod === "navBased";
+  const growthSource = form.growthFormula ? "manual" : isNav ? "nav" : "fixedRate";
+  const growthFrequency = isNav ? "daily" : form.payoutFreq || "daily";
+  const balanceBasis =
+    form.calcMethod === "fixedPrincipal"
+      ? "fixedPrincipal"
+      : form.calcMethod === "lowestMonthlyBalance"
+        ? "lowestPeriodBalance"
+        : "currentBalance";
+  const compoundingFrequency = form.compounding ? growthFrequency : "none";
+  const distributionFrequency = isNav ? "none" : !form.compounding ? form.payoutFreq || "maturity" : "none";
+  const liquidityFrequency = form.liquidity || (isNav ? "daily" : form.payoutFreq || "daily");
+  return {
+    productType: form.productType || null,
+    rateType: form.rateType || null,
+    rateBasis: form.rateBasis || null,
+    growthSource,
+    growthFrequency,
+    balanceBasis,
+    compoundingFrequency,
+    distributionFrequency,
+    liquidityFrequency,
+    startDate: form.startDate || null,
+    tierRates: form.tierRates && form.tierRates.length ? form.tierRates : null,
+    growthFormula: form.growthFormula || null,
+  };
+}
+
+function toLegacyShape(cfg) {
+  const c = cfg || {};
+  const isNav = c.growthSource === "nav";
+  return {
+    calcMethod: isNav
+      ? "navBased"
+      : c.balanceBasis === "fixedPrincipal"
+        ? "fixedPrincipal"
+        : c.balanceBasis === "lowestPeriodBalance"
+          ? "lowestMonthlyBalance"
+          : "dailyBalance",
+    // The milestone/category logic below cares about "what cadence does
+    // this product's schedule follow", which — for a NAV product — is its
+    // liquidity window (Thunder Cloud Monthly grows daily but its milestone
+    // is still "End of Month", because that's when redemption/the estimate
+    // actually matters), not its (daily) growth tick.
+    payoutFreq: isNav ? c.liquidityFrequency || "daily" : c.growthFrequency || "daily",
+    compounding: c.compoundingFrequency ? c.compoundingFrequency !== "none" : true,
+    liquidity: c.liquidityFrequency || null,
+    startDate: c.startDate,
+    tierRates: c.tierRates,
+    growthFormula: c.growthFormula,
+    rateBasis: c.rateBasis,
+  };
+}
 
 // Derives the "Category" code (e.g. DAILY_MONTHLY, FUND_DAILY) from the
 // calculation method + payout frequency + compounding combo, matching the
@@ -168,13 +248,14 @@ function applyReturnPreset(presetId) {
     const el = document.getElementById(fieldId);
     if (el) el.value = value == null ? "" : String(value);
   };
+  const legacy = toLegacyShape(p);
   set("rc-productType", p.productType);
   set("rc-rateType", p.rateType);
   set("rc-rateBasis", p.rateBasis || "");
-  set("rc-calcMethod", p.calcMethod);
-  set("rc-payoutFreq", p.payoutFreq);
-  set("rc-compounding", p.compounding);
-  set("rc-liquidity", p.liquidity);
+  set("rc-calcMethod", legacy.calcMethod);
+  set("rc-payoutFreq", legacy.payoutFreq);
+  set("rc-compounding", legacy.compounding);
+  set("rc-liquidity", p.liquidityFrequency);
   set("rc-apy", p.suggestedApy);
   set("rc-tierRates", p.tierRates ? p.tierRates.join(",") : "");
   set("rc-growthFormula", "");
@@ -212,18 +293,18 @@ function submitReturnConfig(ev) {
     .filter((n) => Number.isFinite(n));
   const growthFormula = val("rc-growthFormula").trim();
 
-  returnConfig[id] = {
-    productType: productType || null,
-    rateType: rateType || null,
-    rateBasis: rateBasis || null,
-    calcMethod: calcMethod || null,
-    payoutFreq: payoutFreq || null,
+  returnConfig[id] = toDomainModel({
+    productType,
+    rateType,
+    rateBasis,
+    calcMethod,
+    payoutFreq,
     compounding,
-    liquidity: liquidity || null,
-    startDate: startDate || null,
-    tierRates: tierRates.length ? tierRates : null,
-    growthFormula: growthFormula || null,
-  };
+    liquidity,
+    startDate,
+    tierRates,
+    growthFormula,
+  });
   if (Number.isFinite(apyVal) && apyVal > 0) apy[id] = Math.min(apyVal, 100);
 
   render();
@@ -305,7 +386,8 @@ function renderReturnPanel() {
   const id = returnPanelAssetId;
   const a = ASSETS.find((x) => x.id === id);
   const cfg = (a && returnConfig[id]) || {};
-  const category = a ? deriveReturnCategory(cfg.calcMethod, cfg.payoutFreq, cfg.compounding) : null;
+  const legacyCfg = toLegacyShape(cfg);
+  const category = a ? deriveReturnCategory(legacyCfg.calcMethod, legacyCfg.payoutFreq, legacyCfg.compounding) : null;
   const lang_ = lang; // presets are only ever labeled in ar/en, no i18n() needed
 
   return `
@@ -361,11 +443,11 @@ function renderReturnPanel() {
           </div>
           <div class="wt-field">
             <label for="rc-calcMethod">${t("calcMethodLabel")}</label>
-            <select id="rc-calcMethod" onchange="previewReturnCategory()">${optionsHtml(t("calcMethodOptions"), cfg.calcMethod)}</select>
+            <select id="rc-calcMethod" onchange="previewReturnCategory()">${optionsHtml(t("calcMethodOptions"), legacyCfg.calcMethod)}</select>
           </div>
           <div class="wt-field">
             <label for="rc-payoutFreq">${t("payoutFreqLabel")}</label>
-            <select id="rc-payoutFreq" onchange="previewReturnCategory()">${optionsHtml(t("payoutFreqOptions"), cfg.payoutFreq)}</select>
+            <select id="rc-payoutFreq" onchange="previewReturnCategory()">${optionsHtml(t("payoutFreqOptions"), legacyCfg.payoutFreq)}</select>
           </div>
         </div>
         <div class="wt-field-row-4" style="margin-top:12px">
@@ -373,13 +455,13 @@ function renderReturnPanel() {
             <label for="rc-compounding">${t("compoundingLabel")}</label>
             <select id="rc-compounding" onchange="previewReturnCategory()">
               <option value="">${t("noneOption")}</option>
-              <option value="true" ${cfg.compounding === true ? "selected" : ""}>${t("compoundingYes")}</option>
-              <option value="false" ${cfg.compounding === false ? "selected" : ""}>${t("compoundingNo")}</option>
+              <option value="true" ${legacyCfg.compounding === true ? "selected" : ""}>${t("compoundingYes")}</option>
+              <option value="false" ${legacyCfg.compounding === false ? "selected" : ""}>${t("compoundingNo")}</option>
             </select>
           </div>
           <div class="wt-field">
             <label for="rc-liquidity">${t("liquidityLabel")}</label>
-            <select id="rc-liquidity">${optionsHtml(t("liquidityOptions"), cfg.liquidity)}</select>
+            <select id="rc-liquidity">${optionsHtml(t("liquidityOptions"), legacyCfg.liquidity)}</select>
           </div>
           <div class="wt-field">
             <label for="rc-tierRates">${t("tierRatesLabel")}</label>
@@ -492,6 +574,7 @@ function projectAssetValue(a) {
   if (!principal) return null;
 
   const cfg = returnConfig[a.id] || {};
+  const legacyCfg = toLegacyShape(cfg);
   const today = new Date();
   const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   // A true rolling "one year from today" (not calendar Dec 31 — that could
@@ -500,19 +583,19 @@ function projectAssetValue(a) {
   const oneYearOut = addYearsToDate(todayMid, 1);
   const endOfCycle = endOfCycleDate(cfg, todayMid);
 
-  const monthsStep = monthsStepForFreq(cfg.payoutFreq);
+  const monthsStep = monthsStepForFreq(legacyCfg.payoutFreq);
   let nextDate;
-  if (cfg.startDate && monthsStep) {
-    nextDate = anniversaryAfter(cfg.startDate, monthsStep, todayMid);
-  } else if (cfg.payoutFreq === "monthly" || cfg.payoutFreq === "quarterly" || cfg.payoutFreq === "semiAnnual") {
+  if (legacyCfg.startDate && monthsStep) {
+    nextDate = anniversaryAfter(legacyCfg.startDate, monthsStep, todayMid);
+  } else if (legacyCfg.payoutFreq === "monthly" || legacyCfg.payoutFreq === "quarterly" || legacyCfg.payoutFreq === "semiAnnual") {
     nextDate = new Date(todayMid.getFullYear(), todayMid.getMonth() + 1, todayMid.getDate());
-  } else if (cfg.payoutFreq === "annual" || cfg.payoutFreq === "maturity") {
+  } else if (legacyCfg.payoutFreq === "annual" || legacyCfg.payoutFreq === "maturity") {
     nextDate = addYearsToDate(todayMid, 1);
   } else {
     nextDate = new Date(todayMid.getFullYear(), todayMid.getMonth(), todayMid.getDate() + 1);
   }
 
-  if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
+  if (legacyCfg.startDate && Array.isArray(legacyCfg.tierRates) && legacyCfg.tierRates.length) {
     return {
       next: computeGrowthValueAt(a.id, principal, todayMid, nextDate),
       nextDate,
@@ -544,7 +627,8 @@ function projectAssetValue(a) {
 //  - monthly/quarterly/semi-annual/annual/maturity with no start date: end
 //    of the current calendar month
 //  - daily (or unset): end of today
-function endOfCycleDate(cfg, todayMid) {
+function endOfCycleDate(rawCfg, todayMid) {
+  const cfg = toLegacyShape(rawCfg);
   if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
     let cursor = parseDateStr(cfg.startDate);
     while (cursor <= todayMid) cursor = addYearsToDate(cursor, 1);
@@ -595,7 +679,8 @@ const MILESTONE_LABELS = {
   },
 };
 
-function nextMilestoneLabelKey(cfg) {
+function nextMilestoneLabelKey(rawCfg) {
+  const cfg = toLegacyShape(rawCfg);
   const freq = cfg.payoutFreq;
   if (!freq || freq === "daily") {
     return cfg.calcMethod === "navBased" ? MILESTONE_LABELS.next.navBasedDaily : MILESTONE_LABELS.next.tomorrow;
@@ -619,7 +704,8 @@ function nextMilestoneLabelKey(cfg) {
   return MILESTONE_LABELS.next.tomorrow;
 }
 
-function cycleMilestoneLabelKey(cfg) {
+function cycleMilestoneLabelKey(rawCfg) {
+  const cfg = toLegacyShape(rawCfg);
   if (cfg.calcMethod === "navBased") return MILESTONE_LABELS.cycle.navBased;
   return MILESTONE_LABELS.cycle[cfg.payoutFreq] || MILESTONE_LABELS.cycle.default;
 }
@@ -630,7 +716,8 @@ function cycleMilestoneLabelKey(cfg) {
 // logic — sorting, filtering, future analytics/UI — must key off `kind`,
 // never off `titleKey`/`title`, so that adding a translation or rewording a
 // label can never silently change behaviour.
-function nextMilestoneKind(cfg) {
+function nextMilestoneKind(rawCfg) {
+  const cfg = toLegacyShape(rawCfg);
   const freq = cfg.payoutFreq;
   if (!freq || freq === "daily") return cfg.calcMethod === "navBased" ? "nav-update" : "interest-payment";
   if (freq === "monthly") return "month-end";
@@ -641,7 +728,8 @@ function nextMilestoneKind(cfg) {
   return "interest-payment";
 }
 
-function cycleMilestoneKind(cfg) {
+function cycleMilestoneKind(rawCfg) {
+  const cfg = toLegacyShape(rawCfg);
   if (cfg.calcMethod === "navBased") return "nav-update";
   if (cfg.payoutFreq === "monthly") return "month-end";
   if (cfg.payoutFreq === "quarterly") return "quarter-end";
@@ -680,7 +768,7 @@ function generateMilestones(a) {
   const proj = projectAssetValue(a);
   if (!proj) return [];
   const cfg = returnConfig[a.id] || {};
-  const estimated = cfg.calcMethod === "navBased";
+  const estimated = cfg.growthSource === "nav";
   const todayMid = new Date();
   todayMid.setHours(0, 0, 0, 0);
 

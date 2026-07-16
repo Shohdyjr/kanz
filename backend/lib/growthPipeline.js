@@ -1,6 +1,8 @@
 // ══════════════════════════════════════════════════════════════════════════
 //  growthPipeline.js — SINGLE SOURCE OF TRUTH for every interest/return
-//  calculation in Kanz.
+//  calculation in Kanz. This is the ONLY financial engine in the project —
+//  docs/js/financial-product-engine.js (an earlier, never-wired-up
+//  prototype) has been deleted; do not recreate a second engine.
 //
 //  This exact file is used by:
 //    - the backend (required by growthEngine.js / the nightly cron)
@@ -8,109 +10,70 @@
 //      which MUST be an exact copy of this file; run `npm run sync-pipeline`
 //      after editing this file, before committing/pushing)
 //
-//  Previously this math was hand-duplicated in THREE places (backend
-//  growthEngine.js, docs/js/return-config.js, docs/js/simulator.js) and kept
-//  in sync manually. Any future fix now happens once, here.
+//  ── The domain model ─────────────────────────────────────────────────────
+//  `returnConfig[itemId]` is stored directly in this shape. Every field maps
+//  to exactly one financial concept — there is no overloaded field standing
+//  in for two or three different meanings anymore (that was the old
+//  calcMethod/payoutFreq/compounding design; see MIGRATION.md for the
+//  history and backend/scripts/migrate-to-domain-model.js for the one-time
+//  conversion that retired it):
 //
-//  ── How an item's return is actually calculated ─────────────────────────
-//  `returnConfig[itemId]` fields and what they control:
-//    - calcMethod:   labels *how* interest is computed. Authoritative only in
-//                    the one case where nothing else disambiguates it (a flat
-//                    item with no payout schedule) — see calculateFlatInterest.
-//                    For scheduled items, the actual formula is fully
-//                    determined by payoutFreq + compounding + startDate below;
-//                    calcMethod is kept in sync with those (see
-//                    deriveReturnCategory in return-config.js) for display,
-//                    but does not re-decide the branch on its own — this
-//                    avoids changing behaviour for existing saved items whose
-//                    calcMethod label may predate this field being meaningful.
-//    - rateBasis:    whether the stored `apy` % is a Nominal APR (simple
-//                    annual rate, unaffected by compounding frequency — the
-//                    convention most Egyptian banks quote) or an Effective
-//                    APY/EAR (the true annual yield with compounding already
-//                    folded in — e.g. Thndr). Converted via
-//                    nominalToEffective/effectiveToNominal below.
-//    - compounding:  true  → interest folds back into the item's own balance
-//                    false → interest is paid out elsewhere; this item's
-//                            balance never grows from it directly
-//    - payoutFreq:   when a scheduled payout actually happens (monthly /
-//                    quarterly / semiAnnual / annual / maturity / daily)
-//    - startDate:    the anchor date payout boundaries are counted from
-//    - growthFormula: an optional user-written override for the per-segment
-//                    interest formula (principal, rate, days) => amount
-//    - tierRates:    step-up certificate: a different rate each year,
-//                    starting from startDate
-// ══════════════════════════════════════════════════════════════════════════
-
-// ══════════════════════════════════════════════════════════════════════════
-//  Product model note (domain clarification, not a new calculation path)
-//  ──────────────────────────────────────────────────────────────────────
-//  `payoutFreq` is a single stored field but historically stands for THREE
-//  different financial concepts depending on the product shape:
-//    - how often the item's VALUE changes            (growth)
-//    - when profit is actually PAID to the investor   (distribution)
-//    - when the money becomes REDEEMABLE              (liquidity)
-//  For most products in this app all three happen to coincide (a monthly
-//  savings account grows, pays, and is liquid on the same monthly boundary),
-//  which is why one field has been enough so far. It stops being enough for
-//  a product like a NAV fund with monthly redemption windows: it GROWS daily
-//  (NAV moves every day), never DISTRIBUTES (nothing is paid out — it all
-//  compounds into NAV), and is only LIQUID monthly.
+//    - growthSource:          WHY the value changes.
+//                             fixedRate | nav | manual
+//    - growthFrequency:       HOW OFTEN the value itself updates.
+//                             daily | monthly | quarterly | semiAnnual | annual | maturity
+//    - distributionFrequency: WHEN profit is actually paid out in cash.
+//                             none | daily | monthly | quarterly | annual | maturity
+//    - compoundingFrequency:  WHEN growth is reinvested into the balance.
+//                             none | daily | monthly | quarterly | semiAnnual | annual | maturity
+//    - liquidityFrequency:    WHEN funds become redeemable.
+//                             daily | weekly | monthly | quarterly | maturity
+//    - balanceBasis:          WHICH principal growth is computed against
+//                             (only meaningful for growthSource:"fixedRate").
+//                             currentBalance | fixedPrincipal
+//    - rateBasis:             whether the stored `apy` % is a Nominal APR or
+//                             an Effective APY/EAR. nominal | effective
+//    - startDate:             the anchor date period boundaries count from.
+//    - growthFormula:         optional user-written override for the
+//                             per-segment interest formula.
+//    - tierRates:             step-up certificate: a different rate each
+//                             year, starting from startDate.
 //
-//  `deriveProductModel` below reads the existing calcMethod/payoutFreq/
-//  compounding/startDate fields (unchanged, still authoritative for every
-//  actual calculation above) and exposes that same configuration under the
-//  four disambiguated concepts, for display/validation/future use. It does
-//  not change balances, projections, milestones, or history.
+//  A product is internally consistent when compoundingFrequency and
+//  distributionFrequency are never both "active" at once (growth is either
+//  retained or paid out, never both) — see validateDomainModel below, which
+//  every returnConfig write is checked against (backend/routes/data.js).
 // ══════════════════════════════════════════════════════════════════════════
-function deriveProductModel(cfg) {
-  const config = cfg || {};
-  const isNavLike = config.calcMethod === "navBased" || config.calcMethod === "dailyBalance";
-  const scheduled = !!(config.startDate && monthsStepForFreq(config.payoutFreq));
 
-  // growthSource: HOW the value changes.
-  const growthSource = config.growthFormula ? "manual" : isNavLike ? "nav" : "fixedRate";
+// Domain rules. Explains exactly *why* a config is invalid — no silent
+// coercion. Called from backend/routes/data.js on every write; the engine
+// itself assumes it only ever receives configs that already passed this.
+function validateDomainModel(cfg) {
+  const c = cfg || {};
+  const errors = [];
+  if (!c.growthSource) return { valid: true, errors }; // not configured yet — nothing to validate
+  const distributing = c.distributionFrequency && c.distributionFrequency !== "none";
+  const compounding = c.compoundingFrequency && c.compoundingFrequency !== "none";
 
-  // growthFrequency: how often the value itself updates. NAV-like products
-  // (navBased/dailyBalance) always update daily — that's what NAV/daily-
-  // balance means — regardless of any payoutFreq set on them. Everything
-  // else grows on its payout boundary.
-  const growthFrequency = isNavLike ? "daily" : config.payoutFreq || "daily";
-
-  // distributionFrequency: when profit is actually paid OUT to the investor.
-  // NAV-like products never distribute cash — growth is entirely reflected
-  // in the price/NAV itself, there's no separate coupon. Otherwise, only
-  // meaningful when compounding is explicitly false (money leaves the item;
-  // compounding:true means growth is retained, so nothing is "distributed").
-  const distributionFrequency = isNavLike ? "none" : config.compounding === false ? config.payoutFreq || "maturity" : "none";
-
-  // liquidityFrequency: when funds become redeemable. `config.liquidity` is
-  // already a real, user-editable field (see return-config.js / rc-liquidity)
-  // — it's the authoritative source whenever set, since it's the one place
-  // redemption terms are actually captured independent of the payout
-  // schedule (e.g. Thunder Cloud Monthly: growth is effectively daily via
-  // NAV, but liquidity is monthly). Only falls back to inferring from the
-  // schedule for older configs saved before this field existed.
-  const liquidityFrequency = config.liquidity || (scheduled ? config.payoutFreq : "daily");
-
-  // compoundingFrequency: how often profit is reinvested into the balance.
-  const compoundingFrequency = config.compounding === false ? "none" : growthFrequency;
-
-  return { growthSource, growthFrequency, distributionFrequency, liquidityFrequency, compoundingFrequency };
-}
-
-// Flags internally-inconsistent combinations for the UI to warn about.
-// Non-blocking: existing saved configs must keep working even if flagged.
-function validateProductModel(cfg) {
-  const model = deriveProductModel(cfg);
-  const warnings = [];
-  if (model.growthSource === "nav" && model.distributionFrequency !== "none") {
-    warnings.push("NAV-based growth with a non-'none' distributionFrequency is unusual: NAV products normally reinvest everything into price, they don't also pay cash out.");
+  if (c.growthSource === "nav" && distributing) {
+    errors.push("NAV-based products cannot have an active distributionFrequency: growth is entirely reflected in the price, there is no separate cash coupon to distribute.");
   }
-  if (model.distributionFrequency !== "none" && (cfg || {}).compounding !== false) {
-    warnings.push("distributionFrequency is set but compounding isn't false — distributed cash should not also be marked as reinvested.");
+  if (c.growthSource === "nav" && c.growthFrequency !== "daily") {
+    errors.push("NAV-based products grow continuously with the market and must use growthFrequency: 'daily'.");
   }
-  return { valid: warnings.length === 0, warnings, model };
+  if (c.growthSource === "fixedRate" && c.growthFrequency === "market") {
+    errors.push("Fixed-rate products cannot use market-driven growth — that combination belongs to growthSource: 'nav' or 'marketPrice'.");
+  }
+  if (distributing && compounding) {
+    errors.push("A product cannot both distribute cash and compound automatically at the same time — growth is either paid out or reinvested, not both.");
+  }
+  if (Array.isArray(c.tierRates) && c.tierRates.length && c.growthSource !== "fixedRate") {
+    errors.push("Tiered step-up rates (tierRates) only apply to growthSource: 'fixedRate' certificates.");
+  }
+  if (!distributing && !compounding && c.growthSource !== "manual" && !Array.isArray(c.tierRates)) {
+    errors.push("A product must either distribute or compound its growth somehow (distributionFrequency or compoundingFrequency must be active), or declare growthSource: 'manual' with a custom formula.");
+  }
+  return { valid: errors.length === 0, errors };
 }
 
 function parseDateStr(dateStr) {
@@ -159,11 +122,11 @@ function addMonthsClamped(d, months) {
   return firstOfTarget;
 }
 
-function monthsStepForFreq(payoutFreq) {
-  if (payoutFreq === "monthly") return 1;
-  if (payoutFreq === "quarterly") return 3;
-  if (payoutFreq === "semiAnnual") return 6;
-  if (payoutFreq === "annual" || payoutFreq === "maturity") return 12;
+function monthsStepForFreq(frequency) {
+  if (frequency === "monthly") return 1;
+  if (frequency === "quarterly") return 3;
+  if (frequency === "semiAnnual") return 6;
+  if (frequency === "annual" || frequency === "maturity") return 12;
   return null;
 }
 
@@ -434,13 +397,13 @@ function periodicBoundaryValueAt(
   principal,
   startDateStr,
   ratePercent,
-  payoutFreq,
+  growthFrequency,
   fromDate,
   targetDate,
   cfg,
   assumeContinuous
 ) {
-  const monthsStep = monthsStepForFreq(payoutFreq);
+  const monthsStep = monthsStepForFreq(growthFrequency);
   if (!startDateStr || !monthsStep || !ratePercent || targetDate <= fromDate) return principal;
 
   let balance = principal;
@@ -513,9 +476,10 @@ function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverrid
   if (!rate) return principal;
 
   const basis = basisOverride || config.rateBasis;
-  const monthsStep = monthsStepForFreq(config.payoutFreq);
+  const compounds = config.compoundingFrequency && config.compoundingFrequency !== "none";
+  const monthsStep = monthsStepForFreq(config.growthFrequency);
 
-  if (config.startDate && monthsStep && config.compounding === true) {
+  if (config.growthSource !== "nav" && config.startDate && monthsStep && compounds) {
     // periodicBoundaryValueAt's internal math is simple/nominal-style
     // (rate/365 × days). If the stored number is actually an Effective
     // APY/EAR, convert it down to this product's own compounding frequency
@@ -535,7 +499,7 @@ function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverrid
       principal,
       anchorDate,
       nominalRate,
-      config.payoutFreq,
+      config.growthFrequency,
       fromDate,
       targetDate,
       config,
@@ -543,32 +507,32 @@ function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverrid
     );
   }
 
-  // Flat cases below are never auto-grown by the daily cron (a compounding:
-  // false product isn't reinvested, and a custom formula outside a period
-  // structure isn't posted automatically either) — so for the table
-  // (assumeContinuous), `principal` here is NOT already "as of today";
-  // anchor to the item's real Since-date if set. The simulator instead
-  // always anchors to its own chosen `fromDate` — same self-containment
-  // rule as the periodic-boundary branch above.
+  // Flat cases below are never auto-grown by the daily cron (a product with
+  // no active compoundingFrequency isn't reinvested, and a custom formula
+  // outside a period structure isn't posted automatically either) — so for
+  // the table (assumeContinuous), `principal` here is NOT already "as of
+  // today"; anchor to the item's real Since-date if set. The simulator
+  // instead always anchors to its own chosen `fromDate` — same
+  // self-containment rule as the periodic-boundary branch above.
   const flatBasisDate = assumeContinuous && config.startDate ? parseDateStr(config.startDate) : fromDate;
 
-  if (config.growthFormula) {
+  if (config.growthSource === "manual" && config.growthFormula) {
     const days = Math.max(0, daysBetweenDates(flatBasisDate, targetDate));
     return principal + segmentInterest(config, principal, rate, days);
   }
 
-  // Flat, no period structure: this is the one case where calcMethod is the
-  // deciding signal (compounding alone can't tell "certificate, never
-  // reinvest" apart from "no schedule configured yet"). fixedPrincipal
-  // always means simple interest off the original principal.
-  if (config.calcMethod === "fixedPrincipal" || config.compounding === false) {
+  // Flat, no active compounding: simple interest off the original
+  // principal (balanceBasis:"fixedPrincipal") or the fallback "not
+  // reinvested" case (compoundingFrequency:"none" with no schedule).
+  if (config.growthSource !== "nav" && (config.balanceBasis === "fixedPrincipal" || !compounds)) {
     return simpleFlatValueAt(principal, rate, flatBasisDate, targetDate, config);
   }
 
-  // Fallback: continuous daily compounding (dailyBalance / navBased / no
-  // return category configured). The daily cron already grows this item's
-  // qty every day, so `principal` here IS already "as of today" — always
-  // accrue from `fromDate`, never `startDate`.
+  // Fallback: continuous daily compounding — growthSource:"nav" (the daily
+  // cron already grows this item's qty every day, so `principal` here IS
+  // already "as of today" — always accrue from `fromDate`, never
+  // `startDate`), or a fixedRate product with no schedule that still
+  // compounds daily.
   const effectiveRate = basis === "nominal" ? nominalToEffective(rate, 365) : rate;
   const days = Math.max(0, daysBetweenDates(fromDate, targetDate));
   return principal * Math.pow(1 + effectiveRate / 100, days / 365);
@@ -579,54 +543,53 @@ function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverrid
 // posted today. Return shape:
 //   { amount, reinvest: true }   → add `amount` to qty AND log it
 //   { amount, reinvest: false }  → do NOT touch qty, but still log `amount`
-//                                  as interest earned today (paid out
+//                                  as interest earned today (distributed
 //                                  elsewhere — e.g. a certificate's coupon)
 //   null                         → not a payout day / nothing configured
 //
-// FIX vs the old growthEngine.js: compounding:false items with a real
-// payout schedule (startDate + payoutFreq) used to return null outright —
-// meaning a certificate's interest was never computed OR logged anywhere,
-// even though the table showed a (misleading) non-zero projection for it.
-// Now the interest is always computed and logged on the real payout day;
-// only whether it folds back into `qty` depends on `compounding`.
+// The interest is always computed and logged on the real growth boundary;
+// only whether it folds back into `qty` depends on compoundingFrequency.
 function dailyGrowthDelta(qty, apyPercent, cfg, todayStr) {
   const rate = apyPercent || 0;
   if (!rate || !qty) return null;
   const today = parseDateStr(todayStr);
   const config = cfg || {};
+  const reinvest = !!(config.compoundingFrequency && config.compoundingFrequency !== "none");
 
-  // Tiered certificates aren't auto-posted day to day by the cron either way
-  // (unchanged legacy behaviour — anniversaries are wide apart, best
-  // reviewed by hand rather than silently posted).
+  // Tiered certificates aren't auto-posted day to day by the cron
+  // (anniversaries are wide apart, best reviewed by hand rather than
+  // silently posted).
   if (config.startDate && Array.isArray(config.tierRates) && config.tierRates.length) return null;
 
-  const monthsStep = monthsStepForFreq(config.payoutFreq);
-  if (config.startDate && monthsStep && (config.compounding === true || config.compounding === false)) {
+  const monthsStep = monthsStepForFreq(config.growthFrequency);
+  if (config.growthSource !== "nav" && config.startDate && monthsStep) {
     const periodStart = periodBoundaryAt(config.startDate, monthsStep, today);
-    if (!periodStart) return null; // not a payout day yet — balance stays flat
+    if (!periodStart) return null; // not a growth boundary yet — balance stays flat
     const days = daysBetweenDates(periodStart, today);
     const periodsPerYear = 12 / monthsStep;
     const nominalRate = config.rateBasis === "effective" ? effectiveToNominal(rate, periodsPerYear) : rate;
     const amount = segmentInterest(config, qty, nominalRate, days);
-    return { amount, reinvest: config.compounding === true };
+    return { amount, reinvest };
   }
 
-  if (config.growthFormula) {
+  if (config.growthSource === "manual" && config.growthFormula) {
     // No period structure configured, but a custom formula exists — the
     // cron runs once a day, so this posts one day's worth of interest.
-    return { amount: segmentInterest(config, qty, rate, 1), reinvest: config.compounding !== false };
+    return { amount: segmentInterest(config, qty, rate, 1), reinvest };
   }
 
-  if (config.compounding === false) {
-    // No period structure to anchor a real payout date to — nothing safe to
-    // auto-post daily. The item's own projection (projectValueAt above)
-    // still shows the informational "if left running" estimate in the UI;
-    // this just means the stored balance/history isn't auto-updated for it.
+  if (config.growthSource !== "nav" && !reinvest) {
+    // No period structure to anchor a real growth boundary to — nothing
+    // safe to auto-post daily. The item's own projection (projectValueAt
+    // above) still shows the informational "if left running" estimate in
+    // the UI; this just means the stored balance/history isn't
+    // auto-updated for it.
     return null;
   }
 
-  // Fallback: continuous daily compounding for items with no return
-  // category configured, or a genuinely daily payout/compounding.
+  // Fallback: continuous daily compounding — growthSource:"nav" (money
+  // market / fixed-income funds whose NAV moves every day), or a
+  // fixedRate/daily product with no schedule that still compounds daily.
   const effectiveRate = config.rateBasis === "nominal" ? nominalToEffective(rate, 365) : rate;
   const dailyRate = Math.pow(1 + effectiveRate / 100, 1 / 365) - 1;
   return { amount: qty * dailyRate, reinvest: true };
@@ -649,8 +612,7 @@ const GrowthPipeline = {
   tieredValueAt,
   projectValueAt,
   dailyGrowthDelta,
-  deriveProductModel,
-  validateProductModel,
+  validateDomainModel,
 };
 
 // Node (backend / cron): export as a module.

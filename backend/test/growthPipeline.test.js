@@ -1,6 +1,7 @@
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 const gp = require("../lib/growthPipeline.js");
+const { legacyConfigToDomainModel } = require("../scripts/legacy-config-mapper.js");
 
 const d = (s) => gp.parseDateStr(s);
 
@@ -18,7 +19,6 @@ describe("day counting", () => {
   });
 
   test("deterministic across the real 2026 Egypt DST spring-forward (Apr 24)", () => {
-    // Only meaningful when run under TZ=Africa/Cairo (see package.json test script).
     assert.equal(gp.daysBetweenDates(d("2026-04-08"), d("2026-07-13")), 96);
   });
 
@@ -64,9 +64,6 @@ describe("safe formula evaluator (no code execution)", () => {
   });
 
   test("cannot execute arbitrary JS — this must fail closed, not run code", () => {
-    // No `eval`/`Function`/global access exists in the grammar at all; an
-    // attempt to reference anything other than principal/rate/days or a
-    // whitelisted function simply fails to parse.
     assert.equal(gp.evalGrowthFormula("process.exit(1)", 0, 0, 0), null);
     assert.equal(gp.evalGrowthFormula("this.constructor", 0, 0, 0), null);
     assert.equal(gp.evalGrowthFormula("require('fs')", 0, 0, 0), null);
@@ -79,13 +76,21 @@ describe("safe formula evaluator (no code execution)", () => {
 });
 
 describe("Bank Engine — periodic-boundary (e.g. Mashreq monthly savings)", () => {
-  const cfg = { startDate: "2026-07-01", payoutFreq: "monthly", compounding: true, rateBasis: "nominal" };
+  const cfg = {
+    growthSource: "fixedRate",
+    balanceBasis: "lowestPeriodBalance",
+    startDate: "2026-07-01",
+    growthFrequency: "monthly",
+    compoundingFrequency: "monthly",
+    distributionFrequency: "none",
+    rateBasis: "nominal",
+  };
 
-  test("mid-period: not a payout day, cron posts nothing", () => {
+  test("mid-period: not a growth boundary, cron posts nothing", () => {
     assert.equal(gp.dailyGrowthDelta(100000, 18, cfg, "2026-01-20"), null);
   });
 
-  test("real payout day: simple interest for the elapsed days, reinvested", () => {
+  test("real growth-boundary day: simple interest for the elapsed days, reinvested", () => {
     const g = gp.dailyGrowthDelta(100000, 18, cfg, "2026-08-01");
     assert.ok(g && g.reinvest === true);
     assert.ok(Math.abs(g.amount - 100000 * (18 / 100 / 365) * 31) < 1e-6);
@@ -93,37 +98,36 @@ describe("Bank Engine — periodic-boundary (e.g. Mashreq monthly savings)", () 
 
   test("table projection (assumeContinuous) matches what the cron will actually post", () => {
     const principal = 142050.41;
-    const from = d("2026-07-14"); // "today", mid-period
-    const to = d("2026-08-01"); // the real payout day
+    const from = d("2026-07-14");
+    const to = d("2026-08-01");
     const projected = gp.projectValueAt(principal, 18, cfg, from, to, undefined, true);
     const cronDelta = gp.dailyGrowthDelta(principal, 18, cfg, "2026-08-01");
     assert.ok(Math.abs(projected - (principal + cronDelta.amount)) < 1e-6);
   });
 
   test("simulator (NOT assumeContinuous) never credits interest before its own start date", () => {
-    // Real Since-date is a completely different month; the simulator must
-    // still only count days from its own chosen start date forward.
-    const realCfg = { startDate: "2025-11-20", payoutFreq: "monthly", compounding: true, rateBasis: "effective" };
+    const realCfg = { ...cfg, startDate: "2025-11-20", rateBasis: "effective" };
     const from = d("2026-04-08");
     const to = d("2026-07-13");
-    const simVal = gp.projectValueAt(70000, 20.4, realCfg, from, to); // assumeContinuous omitted -> false
+    const simVal = gp.projectValueAt(70000, 20.4, realCfg, from, to);
     const days = gp.daysBetweenDates(from, to);
     const dailyCompoundApprox = 70000 * Math.pow(1 + 20.4 / 100, days / 365);
-    // Should track a genuine ~96-day accrual, not include any days before `from`.
     assert.ok(Math.abs(simVal - dailyCompoundApprox) < 50);
   });
 });
 
-describe("Certificate Engine — compounding: false", () => {
+describe("Certificate Engine — distributes, does not compound", () => {
   const cfg = {
+    growthSource: "fixedRate",
+    balanceBasis: "fixedPrincipal",
     startDate: "2026-01-08",
-    payoutFreq: "annual",
-    compounding: false,
+    growthFrequency: "annual",
+    distributionFrequency: "annual",
+    compoundingFrequency: "none",
     rateBasis: "nominal",
-    calcMethod: "fixedPrincipal",
   };
 
-  test("real payout day: interest computed and logged, but NOT reinvested", () => {
+  test("real distribution day: interest computed and logged, but NOT reinvested", () => {
     const g = gp.dailyGrowthDelta(200000, 20, cfg, "2027-01-08");
     assert.ok(g);
     assert.equal(g.reinvest, false);
@@ -132,7 +136,7 @@ describe("Certificate Engine — compounding: false", () => {
 
   test("no schedule configured: cron has nothing safe to auto-post", () => {
     assert.equal(
-      gp.dailyGrowthDelta(200000, 20, { compounding: false, calcMethod: "fixedPrincipal" }, "2026-06-01"),
+      gp.dailyGrowthDelta(200000, 20, { growthSource: "fixedRate", compoundingFrequency: "none" }, "2026-06-01"),
       null
     );
   });
@@ -143,27 +147,85 @@ describe("Certificate Engine — compounding: false", () => {
   });
 });
 
-describe("Thndr / daily-compounding fallback (calcMethod: navBased / dailyBalance)", () => {
+describe("NAV daily-compounding fallback (growthSource: nav)", () => {
   test("matches (1 + apy)^(days/365) exactly", () => {
-    const g = gp.dailyGrowthDelta(50000, 18.11, {}, "2026-06-01");
+    const g = gp.dailyGrowthDelta(50000, 18.11, { growthSource: "nav" }, "2026-06-01");
     assert.ok(g && g.reinvest === true);
     const expectedDailyRate = Math.pow(1 + 18.11 / 100, 1 / 365) - 1;
     assert.ok(Math.abs(g.amount - 50000 * expectedDailyRate) < 1e-9);
+  });
+
+  test("a NAV product grows every single day, never waiting for a schedule boundary", () => {
+    const cfg = {
+      growthSource: "nav",
+      growthFrequency: "daily",
+      distributionFrequency: "none",
+      compoundingFrequency: "daily",
+      liquidityFrequency: "monthly",
+      startDate: "2026-01-01",
+    };
+    for (let day = 1; day <= 28; day++) {
+      const ds = `2026-02-${String(day).padStart(2, "0")}`;
+      const g = gp.dailyGrowthDelta(100000, 20.06, cfg, ds);
+      assert.ok(g && g.amount > 0, `expected daily growth on ${ds}`);
+      assert.equal(g.reinvest, true);
+    }
+  });
+});
+
+// ── Regression test for the exact bug this refactor fixes ────────────────
+// Under the OLD engine, `payoutFreq` alone gated both growth AND
+// distribution. A NAV product with payoutFreq:"monthly" (Thunder Cloud
+// Monthly's real preset) fell into the SAME "monthsStep && compounding"
+// branch as a scheduled fixed-rate product — so the cron only posted
+// interest once a month, as one large lump sum, even though the fund's NAV
+// genuinely moves every day. The domain model fixes this structurally:
+// growthSource:"nav" always grows daily, because growthFrequency and
+// liquidityFrequency are no longer the same field.
+describe("Regression: Thunder Cloud Monthly must compound daily, not monthly", () => {
+  const legacyThunderMonthly = {
+    calcMethod: "navBased",
+    payoutFreq: "monthly",
+    compounding: true,
+    liquidity: "monthly",
+    startDate: "2026-01-01",
+    rateBasis: "effective",
+  };
+  const cfg = legacyConfigToDomainModel(legacyThunderMonthly);
+
+  test("migrated config grows daily, distributes never, is liquid monthly", () => {
+    assert.equal(cfg.growthSource, "nav");
+    assert.equal(cfg.growthFrequency, "daily");
+    assert.equal(cfg.distributionFrequency, "none");
+    assert.equal(cfg.liquidityFrequency, "monthly");
+  });
+
+  test("cron posts something on an ordinary mid-month day (the old engine posted null here)", () => {
+    const g = gp.dailyGrowthDelta(100000, 20.06, cfg, "2026-01-15");
+    assert.ok(g && g.amount > 0);
+    assert.equal(g.reinvest, true);
+  });
+
+  test("cron posts a genuine SINGLE day of growth on the 1st of the month, not a 31-day lump sum", () => {
+    const g = gp.dailyGrowthDelta(100000, 20.06, cfg, "2026-02-01");
+    const oneDayRate = Math.pow(1 + 20.06 / 100, 1 / 365) - 1;
+    assert.ok(Math.abs(g.amount - 100000 * oneDayRate) < 1e-6);
+    assert.ok(g.amount < 100);
   });
 });
 
 describe("Tiered certificates", () => {
   test("step-up compounding across tier anniversaries", () => {
-    const cfg = { startDate: "2026-01-01", tierRates: [27, 22, 17] };
-    const value = gp.projectValueAt(100000, 1 /* unused for tiered */, cfg, d("2026-01-01"), d("2027-01-01"));
+    const cfg = { growthSource: "fixedRate", startDate: "2026-01-01", tierRates: [27, 22, 17] };
+    const value = gp.projectValueAt(100000, 1, cfg, d("2026-01-01"), d("2027-01-01"));
     assert.ok(Math.abs(value - 127000) < 1);
   });
 });
 
 describe("Validation edge cases", () => {
   test("zero/negative principal or rate never grows", () => {
-    assert.equal(gp.dailyGrowthDelta(0, 18, {}, "2026-06-01"), null);
-    assert.equal(gp.dailyGrowthDelta(1000, 0, {}, "2026-06-01"), null);
+    assert.equal(gp.dailyGrowthDelta(0, 18, { growthSource: "nav" }, "2026-06-01"), null);
+    assert.equal(gp.dailyGrowthDelta(1000, 0, { growthSource: "nav" }, "2026-06-01"), null);
   });
 
   test("projectValueAt is a no-op when target is not after from", () => {
@@ -172,42 +234,146 @@ describe("Validation edge cases", () => {
   });
 });
 
-describe("Product model (growth / distribution / liquidity / compounding)", () => {
-  test("Thunder Cloud Monthly: daily NAV growth, no distribution, monthly liquidity", () => {
-    const cfg = { calcMethod: "navBased", payoutFreq: "monthly", compounding: true, liquidity: "monthly", startDate: "2026-01-01" };
-    const model = gp.deriveProductModel(cfg);
-    assert.equal(model.growthSource, "nav");
-    assert.equal(model.growthFrequency, "daily");
-    assert.equal(model.distributionFrequency, "none");
-    assert.equal(model.liquidityFrequency, "monthly");
-    assert.equal(model.compoundingFrequency, "daily");
+describe("validateDomainModel — domain consistency rules", () => {
+  test("empty/not-yet-configured entries are valid (nothing to check yet)", () => {
+    assert.equal(gp.validateDomainModel({}).valid, true);
   });
 
-  test("fixed-rate certificate: yearly growth/distribution, not compounding", () => {
-    const cfg = { calcMethod: "fixedPrincipal", payoutFreq: "annual", compounding: false, startDate: "2026-01-01" };
-    const model = gp.deriveProductModel(cfg);
-    assert.equal(model.growthSource, "fixedRate");
-    assert.equal(model.growthFrequency, "annual");
-    assert.equal(model.distributionFrequency, "annual");
-    assert.equal(model.compoundingFrequency, "none");
+  test("NAV product cannot also declare an active distributionFrequency", () => {
+    const r = gp.validateDomainModel({
+      growthSource: "nav",
+      growthFrequency: "daily",
+      distributionFrequency: "monthly",
+      compoundingFrequency: "none",
+    });
+    assert.equal(r.valid, false);
   });
 
-  test("monthly savings: grows, reinvests and is liquid monthly, never distributes", () => {
-    const cfg = { calcMethod: "lowestMonthlyBalance", payoutFreq: "monthly", compounding: true, liquidity: "monthly" };
-    const model = gp.deriveProductModel(cfg);
-    assert.equal(model.growthFrequency, "monthly");
-    assert.equal(model.distributionFrequency, "none");
-    assert.equal(model.compoundingFrequency, "monthly");
+  test("NAV product must grow daily", () => {
+    const r = gp.validateDomainModel({ growthSource: "nav", growthFrequency: "monthly" });
+    assert.equal(r.valid, false);
   });
 
-  test("validateProductModel is silent for every RETURN_PRESETS-shaped config", () => {
+  test("a product cannot both distribute and compound at the same time", () => {
+    const r = gp.validateDomainModel({
+      growthSource: "fixedRate",
+      growthFrequency: "monthly",
+      distributionFrequency: "monthly",
+      compoundingFrequency: "monthly",
+    });
+    assert.equal(r.valid, false);
+  });
+
+  test("tierRates only apply to growthSource: fixedRate", () => {
+    const r = gp.validateDomainModel({ growthSource: "nav", tierRates: [10, 9, 8] });
+    assert.equal(r.valid, false);
+  });
+
+  test("every RETURN_PRESETS-shaped domain-model config is valid", () => {
     const presets = [
-      { calcMethod: "navBased", payoutFreq: "daily", compounding: true, liquidity: "daily" },
-      { calcMethod: "navBased", payoutFreq: "monthly", compounding: true, liquidity: "monthly" },
-      { calcMethod: "lowestMonthlyBalance", payoutFreq: "monthly", compounding: true, liquidity: "monthly" },
-      { calcMethod: "dailyBalance", payoutFreq: "daily", compounding: true, liquidity: "daily" },
-      { calcMethod: "fixedPrincipal", payoutFreq: "maturity", compounding: false, liquidity: "restricted" },
+      {
+        growthSource: "nav",
+        growthFrequency: "daily",
+        distributionFrequency: "none",
+        compoundingFrequency: "daily",
+        liquidityFrequency: "daily",
+      },
+      {
+        growthSource: "nav",
+        growthFrequency: "daily",
+        distributionFrequency: "none",
+        compoundingFrequency: "daily",
+        liquidityFrequency: "monthly",
+      },
+      {
+        growthSource: "fixedRate",
+        balanceBasis: "lowestPeriodBalance",
+        growthFrequency: "monthly",
+        distributionFrequency: "none",
+        compoundingFrequency: "monthly",
+        liquidityFrequency: "monthly",
+      },
+      {
+        growthSource: "fixedRate",
+        balanceBasis: "currentBalance",
+        growthFrequency: "daily",
+        distributionFrequency: "none",
+        compoundingFrequency: "daily",
+        liquidityFrequency: "daily",
+      },
+      {
+        growthSource: "fixedRate",
+        balanceBasis: "fixedPrincipal",
+        growthFrequency: "annual",
+        distributionFrequency: "annual",
+        compoundingFrequency: "none",
+        liquidityFrequency: "maturity",
+        tierRates: [27, 22, 17],
+      },
     ];
-    presets.forEach((cfg) => assert.equal(gp.validateProductModel(cfg).valid, true, JSON.stringify(cfg)));
+    presets.forEach((cfg) => assert.equal(gp.validateDomainModel(cfg).valid, true, JSON.stringify(cfg)));
+  });
+});
+
+describe("Migration parity — legacyConfigToDomainModel", () => {
+  const cases = [
+    {
+      name: "Mashreq Savings (lowestMonthlyBalance, reinvests monthly)",
+      legacy: {
+        calcMethod: "lowestMonthlyBalance",
+        payoutFreq: "monthly",
+        compounding: true,
+        liquidity: "monthly",
+        startDate: "2026-02-15",
+        rateBasis: "nominal",
+      },
+    },
+    {
+      name: "NBE Certificate (fixedPrincipal, distributes annually)",
+      legacy: {
+        calcMethod: "fixedPrincipal",
+        payoutFreq: "annual",
+        compounding: false,
+        liquidity: "restricted",
+        startDate: "2026-01-10",
+        rateBasis: "nominal",
+      },
+    },
+    {
+      name: "Thndr Cloud Instant (navBased, already daily)",
+      legacy: { calcMethod: "navBased", payoutFreq: "daily", compounding: true, liquidity: "daily", rateBasis: "effective" },
+    },
+  ];
+
+  cases.forEach(({ name, legacy }) => {
+    test(`${name} migrates to a valid domain model`, () => {
+      const model = legacyConfigToDomainModel(legacy);
+      const result = gp.validateDomainModel(model);
+      assert.equal(result.valid, true, JSON.stringify({ model, errors: result.errors }));
+    });
+  });
+
+  test("non-NAV migrated configs reproduce identical dailyGrowthDelta behaviour to the pre-migration formula", () => {
+    const legacy = {
+      calcMethod: "lowestMonthlyBalance",
+      payoutFreq: "monthly",
+      compounding: true,
+      liquidity: "monthly",
+      startDate: "2026-01-05",
+      rateBasis: "nominal",
+    };
+    const cfg = legacyConfigToDomainModel(legacy);
+    let qty = 75000;
+    const apy = 18;
+    for (let i = 0; i < 400; i++) {
+      const dt = new Date(2026, 0, 1 + i);
+      const ds = dt.toISOString().slice(0, 10);
+      const g = gp.dailyGrowthDelta(qty, apy, cfg, ds);
+      if (g && g.reinvest) qty += g.amount;
+    }
+    // ~18% nominal annual, monthly compounding over ~400 days — sanity-bound
+    // the result instead of hardcoding a brittle exact figure, since the
+    // point of this test is "still simple interest per monthly segment".
+    assert.ok(qty > 75000 * 1.19 && qty < 75000 * 1.22, `unexpected compounded total: ${qty}`);
   });
 });

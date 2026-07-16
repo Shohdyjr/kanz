@@ -83,29 +83,27 @@ const isValidApyMap = (v) =>
   isSafePlainObject(v) &&
   Object.values(v).every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100);
 
-// Descriptive metadata only (see docs/js/return-config.js) — validated against
-// the same enum options the UI offers, so this stays display-only data and
-// can never grow into an arbitrary-object storage hole.
+// Descriptive/authoritative product-model fields — see backend/lib/growthPipeline.js
+// for the full domain-model doc. Validated against the same enum options the
+// UI offers, and cross-checked for internal consistency by
+// growthPipeline.validateDomainModel (e.g. a NAV product can't also declare
+// a cash distributionFrequency).
 const RETURN_CONFIG_ENUMS = {
   productType: ["savings", "fixedDeposit", "certificate", "moneyMarketFund", "fixedIncomeFund", "investmentFund"],
   rateType: ["fixed", "variable"],
-  calcMethod: ["dailyBalance", "lowestMonthlyBalance", "fixedPrincipal", "navBased"],
-  payoutFreq: ["daily", "monthly", "quarterly", "semiAnnual", "annual", "maturity"],
-  liquidity: ["daily", "monthly", "quarterly", "maturity", "restricted"],
+  growthSource: ["fixedRate", "nav", "manual"],
+  growthFrequency: ["daily", "monthly", "quarterly", "semiAnnual", "annual", "maturity"],
+  distributionFrequency: ["none", "daily", "monthly", "quarterly", "annual", "maturity"],
+  compoundingFrequency: ["none", "daily", "monthly", "quarterly", "semiAnnual", "annual", "maturity"],
+  liquidityFrequency: ["daily", "weekly", "monthly", "quarterly", "maturity", "restricted"],
+  balanceBasis: ["currentBalance", "fixedPrincipal"],
   // Whether the % rate stored in `apy` is the bank's quoted Nominal APR
   // (simple annual rate, the convention most Egyptian banks quote) or an
   // already-compounded Effective APY/EAR (common for money-market/fixed
-  // income funds like Thndr). Missing/null keeps the pre-existing implicit
-  // assumption for whichever calc path applies (see growthEngine.js).
+  // income funds like Thndr).
   rateBasis: ["nominal", "effective"],
 };
-const RETURN_CONFIG_KEYS = [
-  ...Object.keys(RETURN_CONFIG_ENUMS),
-  "compounding",
-  "startDate",
-  "tierRates",
-  "growthFormula",
-];
+const RETURN_CONFIG_KEYS = [...Object.keys(RETURN_CONFIG_ENUMS), "startDate", "tierRates", "growthFormula"];
 const RETURN_CONFIG_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Regex only checks the shape (YYYY-MM-DD) — this also rejects dates that
 // don't exist on the calendar (e.g. 2026-02-30), which the regex alone would
@@ -144,10 +142,10 @@ const isValidReturnConfigEntry = (v) =>
   isSafePlainObject(v) &&
   Object.keys(v).every((k) => RETURN_CONFIG_KEYS.includes(k)) &&
   Object.entries(RETURN_CONFIG_ENUMS).every(([field, allowed]) => v[field] == null || allowed.includes(v[field])) &&
-  (v.compounding == null || typeof v.compounding === "boolean") &&
   (v.startDate == null || isRealCalendarDate(v.startDate)) &&
   isValidGrowthFormula(v.growthFormula) &&
-  isValidTierRates(v.tierRates);
+  isValidTierRates(v.tierRates) &&
+  growthPipeline.validateDomainModel(v).valid;
 
 const isValidReturnConfigMap = (v) => isSafePlainObject(v) && Object.values(v).every(isValidReturnConfigEntry);
 
