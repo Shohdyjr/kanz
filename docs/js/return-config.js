@@ -292,7 +292,7 @@ function applyProductTypeDefaults(productType) {
     if (el && !el.value) el.value = String(value);
   };
   PRODUCT_CONFIG_FIELDS.forEach((f) => defaults[f] != null && setIfEmpty("rc-" + f, defaults[f]));
-  refreshProductConfigPreview();
+  onGrowthSourceChange(); // syncs tierRates/growthFormula visibility, then refreshes preview
 }
 
 // Fills the form fields from a preset with one click — the user can still
@@ -311,7 +311,7 @@ function applyReturnPreset(presetId) {
   set("rc-apy", p.suggestedApy);
   set("rc-tierRates", p.tierRates ? p.tierRates.join(",") : "");
   set("rc-growthFormula", "");
-  refreshProductConfigPreview();
+  onGrowthSourceChange(); // syncs tierRates/growthFormula visibility for the preset's growthSource, then refreshes preview
   previewGrowthFormula();
 }
 
@@ -335,8 +335,13 @@ function readProductConfigForm(id) {
     .split(",")
     .map((s) => parseFloat(s.trim()))
     .filter((n) => Number.isFinite(n));
-  cfg.tierRates = tierRates.length ? tierRates : null;
-  cfg.growthFormula = val("rc-growthFormula").trim() || null;
+  // Safety net: these two fields are hidden in the UI once growthSource
+  // doesn't match, but a value can still be sitting in the DOM from before
+  // the user switched (e.g. picked fixedRate, typed tierRates, then
+  // switched to nav). Strip anything that no longer applies so a hidden
+  // field can never be silently saved and silently ignored by the engine.
+  cfg.tierRates = cfg.growthSource === "fixedRate" && tierRates.length ? tierRates : null;
+  cfg.growthFormula = cfg.growthSource === "manual" ? val("rc-growthFormula").trim() || null : null;
   return cfg;
 }
 
@@ -359,6 +364,8 @@ function refreshProductConfigPreview() {
       ? ""
       : `<b>${t("validationTitle")}</b><ul>${result.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`;
   }
+  const durationEl = document.getElementById("rc-tierRates-duration");
+  if (durationEl) durationEl.textContent = tierRatesDurationText(cfg);
   return cfg;
 }
 
@@ -479,6 +486,37 @@ function domainSelect(field, cfg, onchange) {
   return `<select id="rc-${field}" onchange="${onchange || "refreshProductConfigPreview()"}">${optionsHtml(t(field + "Options"), cfg[field])}</select>`;
 }
 
+// Derived-only: never stored, always recomputed from tierRates.length +
+// startDate so it can't drift out of sync with what's actually saved.
+// Shows the user in plain language what "3 rates" actually commits them to.
+function tierRatesDurationText(cfg) {
+  const n = Array.isArray(cfg.tierRates) ? cfg.tierRates.length : 0;
+  if (!n) return "";
+  if (!cfg.startDate) return t("tierRatesDurationLabel")(n);
+  const start = parseDateStr(cfg.startDate);
+  const dates = [];
+  for (let i = 1; i <= n; i++) {
+    const d = new Date(start.getFullYear() + i, start.getMonth(), start.getDate());
+    dates.push(i === n ? t("tierRatesMaturityLabel") : String(d.getFullYear()));
+  }
+  return t("tierRatesDurationWithDates")(n, dates.join(" → "));
+}
+
+// Only tierRates/growthFormula/rc-tierRates-duration blocks are conditional
+// on growthSource — everything else stays visible regardless.
+function onGrowthSourceChange() {
+  const source = document.getElementById("rc-growthSource").value;
+  const tierBlock = document.getElementById("rc-tierRates-block");
+  const tierHint = document.getElementById("rc-tierRates-hint");
+  const tierDuration = document.getElementById("rc-tierRates-duration");
+  const formulaBlock = document.getElementById("rc-growthFormula-block");
+  if (tierBlock) tierBlock.style.display = source === "fixedRate" ? "" : "none";
+  if (tierHint) tierHint.style.display = source === "fixedRate" ? "" : "none";
+  if (tierDuration) tierDuration.style.display = source === "fixedRate" ? "" : "none";
+  if (formulaBlock) formulaBlock.style.display = source === "manual" ? "" : "none";
+  refreshProductConfigPreview();
+}
+
 function renderReturnPanel() {
   const id = returnPanelAssetId;
   const a = ASSETS.find((x) => x.id === id);
@@ -549,7 +587,7 @@ function renderReturnPanel() {
         <div class="wt-field-row-3">
           <div class="wt-field">
             ${fieldLabel("rc-growthSource", "growthSourceLabel", "growthSource")}
-            ${domainSelect("growthSource", cfg)}
+            ${domainSelect("growthSource", cfg, "onGrowthSourceChange()")}
           </div>
           <div class="wt-field">
             ${fieldLabel("rc-growthFrequency", "growthFrequencyLabel", "growthFrequency")}
@@ -588,7 +626,10 @@ function renderReturnPanel() {
 
         <!-- ── Dates & Liquidity / Advanced ─────────────────────────── -->
         <h4 class="wt-rc-section-title">${t("sectionDatesLiquidity")}</h4>
-        <div class="wt-field-row-3">
+        <!-- tierRates only means anything for growthSource:"fixedRate" (see
+             validateDomainModel) — hidden otherwise so it can't be filled in
+             and silently ignored. Toggled live by onGrowthSourceChange(). -->
+        <div class="wt-field-row-3" id="rc-tierRates-block" ${cfg.growthSource === "fixedRate" ? "" : 'style="display:none"'}>
           <div class="wt-field">
             <label for="rc-tierRates">${t("tierRatesLabel")}</label>
             <input type="text" id="rc-tierRates" placeholder="27,22,17" dir="ltr"
@@ -596,14 +637,17 @@ function renderReturnPanel() {
               value="${Array.isArray(cfg.tierRates) ? cfg.tierRates.join(",") : ""}">
           </div>
         </div>
-        <p style="font-size:11px;color:var(--wt-text-dim);margin:8px 0 4px">${t("tierRatesHint")}</p>
+        <p id="rc-tierRates-hint" style="font-size:11px;color:var(--wt-text-dim);margin:8px 0 4px;${cfg.growthSource === "fixedRate" ? "" : "display:none"}">${t("tierRatesHint")}</p>
+        <p id="rc-tierRates-duration" class="wt-return-summary-category" style="margin:4px 0 8px;${cfg.growthSource === "fixedRate" ? "" : "display:none"}">${tierRatesDurationText(cfg)}</p>
 
         <!-- Custom growth formula — overrides the built-in interest math for
              THIS item only, everywhere it's used (simulator, table columns,
              and the real daily cron), without needing a code change. Leave
              blank to keep using the built-in default for whatever
-             growth model is picked above. -->
-        <div class="wt-field">
+             growth model is picked above. Only meaningful for
+             growthSource:"manual" — hidden otherwise, same reasoning as
+             tierRates above. -->
+        <div class="wt-field" id="rc-growthFormula-block" ${cfg.growthSource === "manual" ? "" : 'style="display:none"'}>
           <label for="rc-growthFormula">${t("growthFormulaLabel")}</label>
           <textarea id="rc-growthFormula" dir="ltr" rows="2" spellcheck="false"
             placeholder="principal * (rate/100/365) * days"

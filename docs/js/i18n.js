@@ -87,7 +87,10 @@ const I18N = {
     startDateLabel: "تاريخ البداية",
     tierRatesLabel: "معدلات متدرجة لكل سنة",
     tierRatesHint:
-      "اختياري — للشهادات متعددة السنين بمعدل مختلف كل سنة (زي 27,22,17). لو اتملت، البروجيكشن في الجدول هيستخدمها بدل النسبة السنوية العادية.",
+      "اختياري — للشهادات متعددة السنين بمعدل مختلف كل سنة (زي 27,22,17). لو اتملت، البروجيكشن في الجدول هيستخدمها بدل النسبة السنوية العادية. بيظهر بس لما نوع النمو يكون \"معدل ثابت\".",
+    tierRatesDurationLabel: (n) => `مدة العقد: ${n} ${n === 1 ? "سنة" : "سنين"}`,
+    tierRatesDurationWithDates: (n, dates) => `مدة العقد: ${n} ${n === 1 ? "سنة" : "سنين"} (${dates})`,
+    tierRatesMaturityLabel: "استحقاق",
     growthFormulaLabel: "معادلة حساب مخصصة (اختياري)",
     growthFormulaHint:
       "لو الحساب الجاهز مش مطابق للبنك بتاعك، اكتب معادلتك بنفسك هنا وهتتطبق على طول في كل حتة في الموقع (الحاسبة، الجدول، والحساب الفعلي اليومي) من غير ما تحتاج تعديل كود. المتاح: principal (المبلغ)، rate (النسبة % زي ما هي، يعني 18 مش 0.18)، days (عدد الأيام). المعادلة لازم ترجّع قيمة الفايدة (مش الإجمالي). سيبها فاضية عشان تستخدم الحساب الافتراضي.",
@@ -513,7 +516,10 @@ const I18N = {
     startDateLabel: "Start date",
     tierRatesLabel: "Step-up rates per year",
     tierRatesHint:
-      "Optional — for multi-year certificates with a different rate each year (e.g. 27,22,17). If filled in, the table's projection uses this instead of the plain annual rate.",
+      "Optional — for multi-year certificates with a different rate each year (e.g. 27,22,17). If filled in, the table's projection uses this instead of the plain annual rate. Only shown when growth source is \"Fixed rate\".",
+    tierRatesDurationLabel: (n) => `Contract length: ${n} ${n === 1 ? "year" : "years"}`,
+    tierRatesDurationWithDates: (n, dates) => `Contract length: ${n} ${n === 1 ? "year" : "years"} (${dates})`,
+    tierRatesMaturityLabel: "maturity",
     growthFormulaLabel: "Custom growth formula (optional)",
     growthFormulaHint:
       "If the built-in math doesn't match your bank, write your own formula here — it applies everywhere in the app (the simulator, the table, and the real daily cron) with no code change needed. Available: principal (the amount), rate (the % as-is, e.g. 18 not 0.18), days. The formula must return the interest amount (not the total). Leave blank to use the default calculation.",
