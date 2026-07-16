@@ -103,7 +103,7 @@ const RETURN_CONFIG_ENUMS = {
   // income funds like Thndr).
   rateBasis: ["nominal", "effective"],
 };
-const RETURN_CONFIG_KEYS = [...Object.keys(RETURN_CONFIG_ENUMS), "startDate", "tierRates", "growthFormula"];
+const RETURN_CONFIG_KEYS = [...Object.keys(RETURN_CONFIG_ENUMS), "startDate", "tierRates", "growthFormula", "noReturn"];
 const RETURN_CONFIG_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Regex only checks the shape (YYYY-MM-DD) — this also rejects dates that
 // don't exist on the calendar (e.g. 2026-02-30), which the regex alone would
@@ -143,6 +143,7 @@ const isValidReturnConfigEntry = (v) =>
   Object.keys(v).every((k) => RETURN_CONFIG_KEYS.includes(k)) &&
   Object.entries(RETURN_CONFIG_ENUMS).every(([field, allowed]) => v[field] == null || allowed.includes(v[field])) &&
   (v.startDate == null || isRealCalendarDate(v.startDate)) &&
+  (v.noReturn == null || typeof v.noReturn === "boolean") &&
   isValidGrowthFormula(v.growthFormula) &&
   isValidTierRates(v.tierRates) &&
   growthPipeline.validateDomainModel(v).valid;

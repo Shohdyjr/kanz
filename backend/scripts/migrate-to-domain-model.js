@@ -38,8 +38,9 @@ async function migrateAllUsers({ apply }) {
     const nextReturnConfig = {};
 
     for (const [itemId, entry] of Object.entries(returnConfig)) {
-      if (entry && entry.growthSource) {
-        // Already migrated (re-run safety).
+      if (entry && (entry.growthSource || entry.noReturn === true)) {
+        // Already migrated, or a noReturn marker (added after this script was
+        // written — not a legacy-shaped entry, nothing to convert).
         nextReturnConfig[itemId] = entry;
         report.itemsAlreadyMigrated++;
         continue;

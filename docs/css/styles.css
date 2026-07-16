@@ -502,6 +502,20 @@ body {
 .wt-category-badge.is-asset:hover {
   opacity: 0.75;
 }
+.wt-category-badge.is-yield-yes {
+  color: var(--wt-green);
+  border-color: var(--wt-green);
+}
+.wt-category-badge.is-yield-yes:hover {
+  opacity: 0.75;
+}
+.wt-category-badge.is-yield-no {
+  color: var(--wt-text-dim);
+}
+.wt-category-badge.is-yield-no:hover {
+  border-color: var(--wt-green);
+  color: var(--wt-green);
+}
 .wt-asset-icon {
   width: 30px;
   height: 30px;

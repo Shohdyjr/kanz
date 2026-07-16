@@ -191,10 +191,47 @@ function deriveReturnCategory(calcMethod, payoutFreq, compounding) {
   return KNOWN[key] || calcMethod.toUpperCase() + "_" + payoutFreq.toUpperCase();
 }
 
+// An asset "generates a return" unless explicitly marked otherwise via the
+// yield badge (toggleGeneratesReturn below). This is the single source of
+// truth both the table badge and the Return Settings asset dropdown read —
+// an asset marked noReturn:true is fully excluded from return configuration
+// (can't be opened in the panel, never appears in its dropdown, and has no
+// returnConfig/apy of its own).
+function assetGeneratesReturn(id) {
+  const cfg = returnConfig[id];
+  return !(cfg && cfg.noReturn === true);
+}
+
+function yieldEligibleAssets() {
+  return ASSETS.filter((a) => assetGeneratesReturn(a.id));
+}
+
 function openReturnPanel(assetId) {
+  const eligible = yieldEligibleAssets();
   returnPanelOpen = true;
-  returnPanelAssetId = assetId && ASSETS.some((a) => a.id === assetId) ? assetId : ASSETS.length ? ASSETS[0].id : null;
+  returnPanelAssetId =
+    assetId && eligible.some((a) => a.id === assetId) ? assetId : eligible.length ? eligible[0].id : null;
   render();
+}
+
+// Toggled from the small badge next to the Cash/Asset category badge in the
+// table. Turning yield OFF clears any returnConfig/apy this item already
+// had (per the user's own request: an asset that doesn't yield shouldn't
+// carry around leftover return configuration) and closes/redirects the
+// Return Settings panel if it was open on this exact item.
+function toggleGeneratesReturn(id) {
+  const currentlyYields = assetGeneratesReturn(id);
+  if (currentlyYields) {
+    const hasConfig = (returnConfig[id] && Object.keys(returnConfig[id]).length) || apy[id];
+    if (hasConfig && !confirm(t("yieldToggleOffConfirm"))) return;
+    returnConfig[id] = { noReturn: true };
+    delete apy[id];
+    if (returnPanelAssetId === id) closeReturnPanel();
+  } else {
+    delete returnConfig[id];
+  }
+  render();
+  scheduleSave();
 }
 
 function closeReturnPanel() {
@@ -206,7 +243,7 @@ function closeReturnPanel() {
 // Re-renders just the panel body (not a full page render) so switching the
 // asset dropdown doesn't disturb anything else on the page.
 function onReturnPanelAssetChange(id) {
-  returnPanelAssetId = id || null;
+  returnPanelAssetId = id && assetGeneratesReturn(id) ? id : null;
   const root = document.getElementById("wt-return-panel-root");
   if (root) root.outerHTML = renderReturnPanel();
 }
@@ -399,7 +436,7 @@ function renderReturnPanel() {
       <div class="wt-field">
         <label for="rc-asset">${t("selectAssetLabel")}</label>
         <select id="rc-asset" onchange="onReturnPanelAssetChange(this.value)">
-          ${ASSETS.map((x) => `<option value="${x.id}" ${x.id === id ? "selected" : ""}>${esc(x.icon)} ${esc(assetName(x))}</option>`).join("")}
+          ${yieldEligibleAssets().map((x) => `<option value="${x.id}" ${x.id === id ? "selected" : ""}>${esc(x.icon)} ${esc(assetName(x))}</option>`).join("")}
         </select>
       </div>
 
