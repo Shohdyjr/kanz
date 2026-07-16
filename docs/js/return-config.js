@@ -506,14 +506,18 @@ function tierRatesDurationText(cfg) {
 // on growthSource — everything else stays visible regardless.
 function onGrowthSourceChange() {
   const source = document.getElementById("rc-growthSource").value;
+  const isFixed = source === "fixedRate";
+  const isManual = source === "manual";
+  const advancedSection = document.getElementById("rc-advanced-section");
   const tierBlock = document.getElementById("rc-tierRates-block");
   const tierHint = document.getElementById("rc-tierRates-hint");
   const tierDuration = document.getElementById("rc-tierRates-duration");
   const formulaBlock = document.getElementById("rc-growthFormula-block");
-  if (tierBlock) tierBlock.style.display = source === "fixedRate" ? "" : "none";
-  if (tierHint) tierHint.style.display = source === "fixedRate" ? "" : "none";
-  if (tierDuration) tierDuration.style.display = source === "fixedRate" ? "" : "none";
-  if (formulaBlock) formulaBlock.style.display = source === "manual" ? "" : "none";
+  if (advancedSection) advancedSection.style.display = isFixed || isManual ? "" : "none";
+  if (tierBlock) tierBlock.style.display = isFixed ? "" : "none";
+  if (tierHint) tierHint.style.display = isFixed ? "" : "none";
+  if (tierDuration) tierDuration.style.display = isFixed ? "" : "none";
+  if (formulaBlock) formulaBlock.style.display = isManual ? "" : "none";
   refreshProductConfigPreview();
 }
 
@@ -581,6 +585,13 @@ function renderReturnPanel() {
             </select>
           </div>
         </div>
+        <div class="wt-field-row-3" style="margin-top:12px">
+          <div class="wt-field">
+            <label for="rc-apy">${t("thApy")}</label>
+            <input type="number" id="rc-apy" min="0" max="100" step="any" value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
+            <p class="wt-return-summary-category">${t("apyEditableHint")}</p>
+          </div>
+        </div>
 
         <!-- ── Financial Model ─────────────────────────────────────── -->
         <h4 class="wt-rc-section-title">${t("sectionFinancialModel")}</h4>
@@ -624,44 +635,42 @@ function renderReturnPanel() {
           ${validation.valid ? "" : `<b>${t("validationTitle")}</b><ul>${validation.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`}
         </div>
 
-        <!-- ── Dates & Liquidity / Advanced ─────────────────────────── -->
-        <h4 class="wt-rc-section-title">${t("sectionDatesLiquidity")}</h4>
-        <!-- tierRates only means anything for growthSource:"fixedRate" (see
-             validateDomainModel) — hidden otherwise so it can't be filled in
-             and silently ignored. Toggled live by onGrowthSourceChange(). -->
-        <div class="wt-field-row-3" id="rc-tierRates-block" ${cfg.growthSource === "fixedRate" ? "" : 'style="display:none"'}>
-          <div class="wt-field">
-            <label for="rc-tierRates">${t("tierRatesLabel")}</label>
-            <input type="text" id="rc-tierRates" placeholder="27,22,17" dir="ltr"
-              oninput="refreshProductConfigPreview()"
-              value="${Array.isArray(cfg.tierRates) ? cfg.tierRates.join(",") : ""}">
+        <!-- ── Advanced overrides ──────────────────────────────────── -->
+        <!-- Only ever relevant for growthSource:"fixedRate" (tierRates) or
+             "manual" (growthFormula) — the whole section, header included,
+             stays hidden for every other growthSource so it never shows up
+             empty. Toggled live by onGrowthSourceChange(). -->
+        <div id="rc-advanced-section" ${cfg.growthSource === "fixedRate" || cfg.growthSource === "manual" ? "" : 'style="display:none"'}>
+          <h4 class="wt-rc-section-title">${t("sectionDatesLiquidity")}</h4>
+          <!-- tierRates only means anything for growthSource:"fixedRate" (see
+               validateDomainModel) — hidden otherwise so it can't be filled in
+               and silently ignored. -->
+          <div class="wt-field-row-3" id="rc-tierRates-block" ${cfg.growthSource === "fixedRate" ? "" : 'style="display:none"'}>
+            <div class="wt-field">
+              <label for="rc-tierRates">${t("tierRatesLabel")}</label>
+              <input type="text" id="rc-tierRates" placeholder="27,22,17" dir="ltr"
+                oninput="refreshProductConfigPreview()"
+                value="${Array.isArray(cfg.tierRates) ? cfg.tierRates.join(",") : ""}">
+            </div>
           </div>
-        </div>
-        <p id="rc-tierRates-hint" style="font-size:11px;color:var(--wt-text-dim);margin:8px 0 4px;${cfg.growthSource === "fixedRate" ? "" : "display:none"}">${t("tierRatesHint")}</p>
-        <p id="rc-tierRates-duration" class="wt-return-summary-category" style="margin:4px 0 8px;${cfg.growthSource === "fixedRate" ? "" : "display:none"}">${tierRatesDurationText(cfg)}</p>
+          <p id="rc-tierRates-hint" style="font-size:11px;color:var(--wt-text-dim);margin:8px 0 4px;${cfg.growthSource === "fixedRate" ? "" : "display:none"}">${t("tierRatesHint")}</p>
+          <p id="rc-tierRates-duration" class="wt-return-summary-category" style="margin:4px 0 8px;${cfg.growthSource === "fixedRate" ? "" : "display:none"}">${tierRatesDurationText(cfg)}</p>
 
-        <!-- Custom growth formula — overrides the built-in interest math for
-             THIS item only, everywhere it's used (simulator, table columns,
-             and the real daily cron), without needing a code change. Leave
-             blank to keep using the built-in default for whatever
-             growth model is picked above. Only meaningful for
-             growthSource:"manual" — hidden otherwise, same reasoning as
-             tierRates above. -->
-        <div class="wt-field" id="rc-growthFormula-block" ${cfg.growthSource === "manual" ? "" : 'style="display:none"'}>
-          <label for="rc-growthFormula">${t("growthFormulaLabel")}</label>
-          <textarea id="rc-growthFormula" dir="ltr" rows="2" spellcheck="false"
-            placeholder="principal * (rate/100/365) * days"
-            oninput="previewGrowthFormula(); refreshProductConfigPreview();">${esc(cfg.growthFormula || "")}</textarea>
-          <p style="font-size:11px;color:var(--wt-text-dim);margin:4px 0 0">${t("growthFormulaHint")}</p>
-          <p id="rc-formula-preview" class="wt-return-summary-category" style="margin-top:6px">${t("growthFormulaDefaultNote")}</p>
-        </div>
-
-        <!-- ── Returns ──────────────────────────────────────────────── -->
-        <h4 class="wt-rc-section-title">${t("sectionReturns")}</h4>
-        <div class="wt-return-summary">
-          <label for="rc-apy">${t("thApy")}</label>
-          <input type="number" id="rc-apy" min="0" max="100" step="any" value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
-          <p class="wt-return-summary-category">${t("apyEditableHint")}</p>
+          <!-- Custom growth formula — overrides the built-in interest math for
+               THIS item only, everywhere it's used (simulator, table columns,
+               and the real daily cron), without needing a code change. Leave
+               blank to keep using the built-in default for whatever
+               growth model is picked above. Only meaningful for
+               growthSource:"manual" — hidden otherwise, same reasoning as
+               tierRates above. -->
+          <div class="wt-field" id="rc-growthFormula-block" ${cfg.growthSource === "manual" ? "" : 'style="display:none"'}>
+            <label for="rc-growthFormula">${t("growthFormulaLabel")}</label>
+            <textarea id="rc-growthFormula" dir="ltr" rows="2" spellcheck="false"
+              placeholder="principal * (rate/100/365) * days"
+              oninput="previewGrowthFormula(); refreshProductConfigPreview();">${esc(cfg.growthFormula || "")}</textarea>
+            <p style="font-size:11px;color:var(--wt-text-dim);margin:4px 0 0">${t("growthFormulaHint")}</p>
+            <p id="rc-formula-preview" class="wt-return-summary-category" style="margin-top:6px">${t("growthFormulaDefaultNote")}</p>
+          </div>
         </div>
 
         <div class="wt-modal-actions">
