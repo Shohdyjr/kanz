@@ -172,6 +172,14 @@ function openReturnPanel(assetId) {
   returnPanelOpen = true;
   returnPanelAssetId =
     assetId && eligible.some((a) => a.id === assetId) ? assetId : eligible.length ? eligible[0].id : null;
+  // Product Configuration is a full-screen view, not a modal — give it a
+  // real URL so the browser's own back button, refresh, and bookmarks all
+  // work. syncPanelFromHash() (called at the top of every render()) is what
+  // actually reads this back; setting it here just pushes the history entry.
+  if (returnPanelAssetId) {
+    const target = "#product-config/" + returnPanelAssetId;
+    if (location.hash !== target) history.pushState(null, "", target);
+  }
   render();
 }
 
@@ -198,13 +206,50 @@ function toggleGeneratesReturn(id) {
 function closeReturnPanel() {
   returnPanelOpen = false;
   returnPanelAssetId = null;
+  if (location.hash.startsWith("#product-config")) {
+    history.pushState(null, "", location.pathname + location.search);
+  }
   render();
+}
+
+// Keeps returnPanelOpen/returnPanelAssetId in sync with location.hash.
+// Called at the very top of render() (see render.js) on every render pass —
+// idempotent and cheap, so it's safe to call unconditionally: it only ever
+// reads the hash and updates local state, never touches the hash itself
+// (openReturnPanel/closeReturnPanel own that) and never calls render() again.
+// This is what makes the browser's back/forward buttons, a page refresh, and
+// a bookmarked/shared link all correctly open (or close) the right product's
+// configuration page.
+function syncPanelFromHash() {
+  const match = /^#product-config\/(.+)$/.exec(location.hash);
+  if (!match) {
+    if (returnPanelOpen) {
+      returnPanelOpen = false;
+      returnPanelAssetId = null;
+    }
+    return;
+  }
+  const id = decodeURIComponent(match[1]);
+  const eligible = yieldEligibleAssets();
+  if (eligible.some((a) => a.id === id)) {
+    returnPanelOpen = true;
+    returnPanelAssetId = id;
+  } else {
+    // Stale/invalid link (asset deleted, or marked no-return since) —
+    // silently drop back to a closed state rather than showing a broken page.
+    returnPanelOpen = false;
+    returnPanelAssetId = null;
+  }
 }
 
 // Re-renders just the panel body (not a full page render) so switching the
 // asset dropdown doesn't disturb anything else on the page.
 function onReturnPanelAssetChange(id) {
   returnPanelAssetId = id && assetGeneratesReturn(id) ? id : null;
+  if (returnPanelAssetId) {
+    const target = "#product-config/" + returnPanelAssetId;
+    if (location.hash !== target) history.pushState(null, "", target);
+  }
   const root = document.getElementById("wt-return-panel-root");
   if (root) root.outerHTML = renderReturnPanel();
 }
@@ -443,8 +488,9 @@ function renderReturnPanel() {
   const validation = a ? (typeof validateDomainModel === "function" ? validateDomainModel(cfg) : { valid: true, errors: [] }) : { valid: true, errors: [] };
 
   return `
-  <div class="wt-modal-overlay" id="wt-return-panel-root" onclick="if(event.target===this)closeReturnPanel()">
-    <div class="wt-modal wt-modal-wide">
+  <div class="wt-fullpage" id="wt-return-panel-root">
+    <div class="wt-fullpage-inner">
+      <button type="button" class="wt-fullpage-back" onclick="closeReturnPanel()">← ${t("cancel")}</button>
       <h3>${t("productConfigTitle")}</h3>
       <p style="font-size:12px;color:var(--wt-text-dim);margin:-6px 0 14px">${t("productConfigHint")}</p>
 
@@ -576,7 +622,6 @@ function renderReturnPanel() {
 
         <div class="wt-modal-actions">
           <button type="button" class="wt-btn-ghost" onclick="clearReturnConfig()">${t("clearConfigBtn")}</button>
-          <button type="button" class="wt-btn-ghost" onclick="closeReturnPanel()">${t("cancel")}</button>
           <button type="submit" class="wt-btn">${t("saveChanges")}</button>
         </div>
       </form>

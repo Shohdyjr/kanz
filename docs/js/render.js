@@ -6,6 +6,11 @@ function render() {
     return;
   }
 
+  // Keep the Product Configuration full-screen view in sync with the URL
+  // (back/forward buttons, refresh, bookmarked/shared links) before
+  // building anything below — see syncPanelFromHash() in return-config.js.
+  syncPanelFromHash();
+
   const isFetching = status === "loading";
   const isError = status === "err";
   const statusText = isFetching ? t("statusLoading") : isError ? t("statusErr") : t("statusLive");

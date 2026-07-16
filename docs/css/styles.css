@@ -1493,6 +1493,48 @@ body {
   z-index: 1000;
   padding: 16px;
 }
+/* Product Configuration — a full-screen routed view (see return-config.js:
+   openReturnPanel/closeReturnPanel/syncPanelFromHash), not a modal. The
+   form grew too large for a centered overlay to stay comfortable, so it
+   now takes the whole viewport like a dedicated page, with its own
+   back-button header instead of a backdrop-click-to-close. */
+.wt-fullpage {
+  position: fixed;
+  inset: 0;
+  background: var(--wt-bg, var(--wt-panel));
+  z-index: 1000;
+  overflow-y: auto;
+  padding: 24px 16px 60px;
+}
+.wt-fullpage-inner {
+  max-width: 900px;
+  margin: 0 auto;
+  background: var(--wt-panel);
+  border: 1px solid var(--wt-line);
+  border-radius: var(--wt-radius);
+  padding: 24px 28px 28px;
+}
+.wt-fullpage-back {
+  border: none;
+  background: none;
+  color: var(--wt-text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+  margin-bottom: 14px;
+  display: inline-block;
+}
+.wt-fullpage-back:hover {
+  color: var(--wt-green);
+}
+@media (max-width: 640px) {
+  .wt-fullpage {
+    padding: 12px 8px 40px;
+  }
+  .wt-fullpage-inner {
+    padding: 16px 14px 20px;
+  }
+}
 /* Auth Screen */
 .wt-auth-screen {
   position: fixed;
