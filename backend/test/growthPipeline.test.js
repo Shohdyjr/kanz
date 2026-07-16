@@ -171,3 +171,43 @@ describe("Validation edge cases", () => {
     assert.equal(gp.projectValueAt(1000, 18, {}, d("2026-06-05"), d("2026-06-01")), 1000);
   });
 });
+
+describe("Product model (growth / distribution / liquidity / compounding)", () => {
+  test("Thunder Cloud Monthly: daily NAV growth, no distribution, monthly liquidity", () => {
+    const cfg = { calcMethod: "navBased", payoutFreq: "monthly", compounding: true, liquidity: "monthly", startDate: "2026-01-01" };
+    const model = gp.deriveProductModel(cfg);
+    assert.equal(model.growthSource, "nav");
+    assert.equal(model.growthFrequency, "daily");
+    assert.equal(model.distributionFrequency, "none");
+    assert.equal(model.liquidityFrequency, "monthly");
+    assert.equal(model.compoundingFrequency, "daily");
+  });
+
+  test("fixed-rate certificate: yearly growth/distribution, not compounding", () => {
+    const cfg = { calcMethod: "fixedPrincipal", payoutFreq: "annual", compounding: false, startDate: "2026-01-01" };
+    const model = gp.deriveProductModel(cfg);
+    assert.equal(model.growthSource, "fixedRate");
+    assert.equal(model.growthFrequency, "annual");
+    assert.equal(model.distributionFrequency, "annual");
+    assert.equal(model.compoundingFrequency, "none");
+  });
+
+  test("monthly savings: grows, reinvests and is liquid monthly, never distributes", () => {
+    const cfg = { calcMethod: "lowestMonthlyBalance", payoutFreq: "monthly", compounding: true, liquidity: "monthly" };
+    const model = gp.deriveProductModel(cfg);
+    assert.equal(model.growthFrequency, "monthly");
+    assert.equal(model.distributionFrequency, "none");
+    assert.equal(model.compoundingFrequency, "monthly");
+  });
+
+  test("validateProductModel is silent for every RETURN_PRESETS-shaped config", () => {
+    const presets = [
+      { calcMethod: "navBased", payoutFreq: "daily", compounding: true, liquidity: "daily" },
+      { calcMethod: "navBased", payoutFreq: "monthly", compounding: true, liquidity: "monthly" },
+      { calcMethod: "lowestMonthlyBalance", payoutFreq: "monthly", compounding: true, liquidity: "monthly" },
+      { calcMethod: "dailyBalance", payoutFreq: "daily", compounding: true, liquidity: "daily" },
+      { calcMethod: "fixedPrincipal", payoutFreq: "maturity", compounding: false, liquidity: "restricted" },
+    ];
+    presets.forEach((cfg) => assert.equal(gp.validateProductModel(cfg).valid, true, JSON.stringify(cfg)));
+  });
+});

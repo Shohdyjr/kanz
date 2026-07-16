@@ -50,6 +50,77 @@
 //                    starting from startDate
 // ══════════════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════════════
+//  Product model note (domain clarification, not a new calculation path)
+//  ──────────────────────────────────────────────────────────────────────
+//  `payoutFreq` is a single stored field but historically stands for THREE
+//  different financial concepts depending on the product shape:
+//    - how often the item's VALUE changes            (growth)
+//    - when profit is actually PAID to the investor   (distribution)
+//    - when the money becomes REDEEMABLE              (liquidity)
+//  For most products in this app all three happen to coincide (a monthly
+//  savings account grows, pays, and is liquid on the same monthly boundary),
+//  which is why one field has been enough so far. It stops being enough for
+//  a product like a NAV fund with monthly redemption windows: it GROWS daily
+//  (NAV moves every day), never DISTRIBUTES (nothing is paid out — it all
+//  compounds into NAV), and is only LIQUID monthly.
+//
+//  `deriveProductModel` below reads the existing calcMethod/payoutFreq/
+//  compounding/startDate fields (unchanged, still authoritative for every
+//  actual calculation above) and exposes that same configuration under the
+//  four disambiguated concepts, for display/validation/future use. It does
+//  not change balances, projections, milestones, or history.
+// ══════════════════════════════════════════════════════════════════════════
+function deriveProductModel(cfg) {
+  const config = cfg || {};
+  const isNavLike = config.calcMethod === "navBased" || config.calcMethod === "dailyBalance";
+  const scheduled = !!(config.startDate && monthsStepForFreq(config.payoutFreq));
+
+  // growthSource: HOW the value changes.
+  const growthSource = config.growthFormula ? "manual" : isNavLike ? "nav" : "fixedRate";
+
+  // growthFrequency: how often the value itself updates. NAV-like products
+  // (navBased/dailyBalance) always update daily — that's what NAV/daily-
+  // balance means — regardless of any payoutFreq set on them. Everything
+  // else grows on its payout boundary.
+  const growthFrequency = isNavLike ? "daily" : config.payoutFreq || "daily";
+
+  // distributionFrequency: when profit is actually paid OUT to the investor.
+  // NAV-like products never distribute cash — growth is entirely reflected
+  // in the price/NAV itself, there's no separate coupon. Otherwise, only
+  // meaningful when compounding is explicitly false (money leaves the item;
+  // compounding:true means growth is retained, so nothing is "distributed").
+  const distributionFrequency = isNavLike ? "none" : config.compounding === false ? config.payoutFreq || "maturity" : "none";
+
+  // liquidityFrequency: when funds become redeemable. `config.liquidity` is
+  // already a real, user-editable field (see return-config.js / rc-liquidity)
+  // — it's the authoritative source whenever set, since it's the one place
+  // redemption terms are actually captured independent of the payout
+  // schedule (e.g. Thunder Cloud Monthly: growth is effectively daily via
+  // NAV, but liquidity is monthly). Only falls back to inferring from the
+  // schedule for older configs saved before this field existed.
+  const liquidityFrequency = config.liquidity || (scheduled ? config.payoutFreq : "daily");
+
+  // compoundingFrequency: how often profit is reinvested into the balance.
+  const compoundingFrequency = config.compounding === false ? "none" : growthFrequency;
+
+  return { growthSource, growthFrequency, distributionFrequency, liquidityFrequency, compoundingFrequency };
+}
+
+// Flags internally-inconsistent combinations for the UI to warn about.
+// Non-blocking: existing saved configs must keep working even if flagged.
+function validateProductModel(cfg) {
+  const model = deriveProductModel(cfg);
+  const warnings = [];
+  if (model.growthSource === "nav" && model.distributionFrequency !== "none") {
+    warnings.push("NAV-based growth with a non-'none' distributionFrequency is unusual: NAV products normally reinvest everything into price, they don't also pay cash out.");
+  }
+  if (model.distributionFrequency !== "none" && (cfg || {}).compounding !== false) {
+    warnings.push("distributionFrequency is set but compounding isn't false — distributed cash should not also be marked as reinvested.");
+  }
+  return { valid: warnings.length === 0, warnings, model };
+}
+
 function parseDateStr(dateStr) {
   const [y, m, d] = dateStr.split("-").map(Number);
   return new Date(y, m - 1, d);
@@ -586,6 +657,8 @@ const GrowthPipeline = {
   tieredValueAt,
   projectValueAt,
   dailyGrowthDelta,
+  deriveProductModel,
+  validateProductModel,
 };
 
 // Node (backend / cron): export as a module.
