@@ -978,6 +978,85 @@ body {
 .wt-field-row-5 .wt-field {
   margin-bottom: 0;
 }
+.wt-field-row-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.wt-field-row-3 .wt-field {
+  margin-bottom: 0;
+}
+.wt-rc-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--wt-text-dim);
+  margin: 22px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--wt-line);
+}
+.wt-rc-section-title:first-of-type {
+  margin-top: 4px;
+}
+.wt-help-icon {
+  border: none;
+  background: none;
+  color: var(--wt-text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 0 0 4px;
+  vertical-align: middle;
+}
+.wt-help-icon:hover {
+  color: var(--wt-green);
+}
+.wt-field-help {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--wt-text-dim);
+  background: var(--wt-input-bg);
+  border: 1px solid var(--wt-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 4px 0 0;
+}
+.wt-product-summary {
+  margin: 16px 0;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--wt-green) 8%, var(--wt-input-bg));
+  border: 1px solid color-mix(in srgb, var(--wt-green) 30%, var(--wt-line));
+  border-radius: 10px;
+}
+.wt-product-summary-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--wt-green);
+  margin-bottom: 6px;
+}
+.wt-product-summary p {
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 0;
+}
+.wt-product-summary p.wt-summary-empty {
+  color: var(--wt-text-dim);
+  font-style: italic;
+}
+.wt-rc-validation {
+  font-size: 12px;
+  color: var(--wt-danger, #e05252);
+}
+.wt-rc-validation:empty {
+  display: none;
+}
+.wt-rc-validation ul {
+  margin: 4px 0 0;
+  padding-inline-start: 18px;
+}
+.wt-rc-validation li {
+  margin: 2px 0;
+}
 .wt-return-summary {
   margin: 16px 0;
   padding: 12px 14px;
@@ -1836,12 +1915,18 @@ body {
   .wt-field-row-5 {
     grid-template-columns: 1fr 1fr;
   }
+  .wt-field-row-3 {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 @media (max-width: 420px) {
   .wt-field-row-4 {
     grid-template-columns: 1fr;
   }
   .wt-field-row-5 {
+    grid-template-columns: 1fr;
+  }
+  .wt-field-row-3 {
     grid-template-columns: 1fr;
   }
 }

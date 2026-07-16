@@ -100,98 +100,59 @@ const RETURN_PRESETS = [
   },
 ];
 
-// ── Legacy-shaped view of the domain model ──────────────────────────────
-// The Return Settings FORM (below) still asks the questions the old
-// calcMethod/payoutFreq/compounding/liquidity fields asked — that UI is
-// unchanged by this refactor. What's genuinely new is that the SAVED data
-// (returnConfig[id]) is the real domain model, not those four fields.
-// `toDomainModel` converts a form submission into the domain model;
-// `toLegacyShape` converts a saved domain-model config back into the same
-// four-field shape so the milestone/category-label logic further down
-// (which is legitimately about "what does the UI call this", not "how is
-// it calculated") doesn't need to be rewritten twice.
-function toDomainModel(form) {
-  const isNav = form.calcMethod === "navBased";
-  const growthSource = form.growthFormula ? "manual" : isNav ? "nav" : "fixedRate";
-  const growthFrequency = isNav ? "daily" : form.payoutFreq || "daily";
-  const balanceBasis =
-    form.calcMethod === "fixedPrincipal"
-      ? "fixedPrincipal"
-      : form.calcMethod === "lowestMonthlyBalance"
-        ? "lowestPeriodBalance"
-        : "currentBalance";
-  const compoundingFrequency = form.compounding ? growthFrequency : "none";
-  const distributionFrequency = isNav ? "none" : !form.compounding ? form.payoutFreq || "maturity" : "none";
-  const liquidityFrequency = form.liquidity || (isNav ? "daily" : form.payoutFreq || "daily");
-  return {
-    productType: form.productType || null,
-    rateType: form.rateType || null,
-    rateBasis: form.rateBasis || null,
-    growthSource,
-    growthFrequency,
-    balanceBasis,
-    compoundingFrequency,
-    distributionFrequency,
-    liquidityFrequency,
-    startDate: form.startDate || null,
-    tierRates: form.tierRates && form.tierRates.length ? form.tierRates : null,
-    growthFormula: form.growthFormula || null,
-  };
+// ── Product Summary Engine ──────────────────────────────────────────────
+// Generates a human-readable, plain-language description of a product's
+// financial model, purely from the domain-model fields — never from a
+// hardcoded product name. This is what powers the live "Product Summary"
+// panel in the Product Configuration UI: as any field changes, this is
+// re-run and the sentence updates instantly.
+function generateProductSummary(cfg) {
+  if (!cfg || !cfg.growthSource) return null;
+
+  const sentences = [];
+  const opt = (mapKey, value) => (value ? t(mapKey)[value] || value : null);
+
+  // 1) What kind of thing is this, and why does its value move at all?
+  const growthSourceLabel = opt("growthSourceOptions", cfg.growthSource);
+  sentences.push(t("summaryGrowthSource")(growthSourceLabel));
+
+  // 2) How often does it actually change.
+  const growthFreqLabel = opt("growthFrequencyOptions", cfg.growthFrequency);
+  if (growthFreqLabel) sentences.push(t("summaryGrowthFrequency")(growthFreqLabel));
+
+  // 3) Where does the growth go: reinvested, paid out, or both nonsensical.
+  const compounds = cfg.compoundingFrequency && cfg.compoundingFrequency !== "none";
+  const distributes = cfg.distributionFrequency && cfg.distributionFrequency !== "none";
+  if (compounds) {
+    sentences.push(t("summaryCompounds")(opt("compoundingFrequencyOptions", cfg.compoundingFrequency)));
+  }
+  if (distributes) {
+    sentences.push(t("summaryDistributes")(opt("distributionFrequencyOptions", cfg.distributionFrequency)));
+  } else if (!compounds) {
+    sentences.push(t("summaryNoAutoGrowth"));
+  } else {
+    sentences.push(t("summaryNoDistribution"));
+  }
+
+  // 4) When can the money actually move.
+  if (cfg.liquidityFrequency) {
+    sentences.push(t("summaryLiquidity")(opt("liquidityFrequencyOptions", cfg.liquidityFrequency)));
+  }
+
+  // 5) What the growth is actually computed against.
+  if (cfg.growthSource === "fixedRate" && cfg.balanceBasis === "fixedPrincipal") {
+    sentences.push(t("summaryFixedPrincipal"));
+  } else if (Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
+    sentences.push(t("summaryTiered")(cfg.tierRates.join("% → ") + "%"));
+  }
+
+  // 6) How projections in the table/simulator should be read.
+  sentences.push(cfg.growthSource === "nav" ? t("summaryProjectionEstimated") : t("summaryProjectionGuaranteed"));
+
+  return sentences.filter(Boolean).join(" ");
 }
 
-function toLegacyShape(cfg) {
-  const c = cfg || {};
-  const isNav = c.growthSource === "nav";
-  return {
-    calcMethod: isNav
-      ? "navBased"
-      : c.balanceBasis === "fixedPrincipal"
-        ? "fixedPrincipal"
-        : c.balanceBasis === "lowestPeriodBalance"
-          ? "lowestMonthlyBalance"
-          : "dailyBalance",
-    // The milestone/category logic below cares about "what cadence does
-    // this product's schedule follow", which — for a NAV product — is its
-    // liquidity window (Thunder Cloud Monthly grows daily but its milestone
-    // is still "End of Month", because that's when redemption/the estimate
-    // actually matters), not its (daily) growth tick.
-    payoutFreq: isNav ? c.liquidityFrequency || "daily" : c.growthFrequency || "daily",
-    compounding: c.compoundingFrequency ? c.compoundingFrequency !== "none" : true,
-    liquidity: c.liquidityFrequency || null,
-    startDate: c.startDate,
-    tierRates: c.tierRates,
-    growthFormula: c.growthFormula,
-    rateBasis: c.rateBasis,
-  };
-}
-
-// Derives the "Category" code (e.g. DAILY_MONTHLY, FUND_DAILY) from the
-// calculation method + payout frequency + compounding combo, matching the
-// categories table in the design doc. Combos not explicitly listed there
-// still get a readable generated code instead of nothing.
-function deriveReturnCategory(calcMethod, payoutFreq, compounding) {
-  if (!calcMethod || !payoutFreq) return null;
-
-  const KNOWN = {
-    "dailyBalance|daily|true": "DAILY_DAILY",
-    "dailyBalance|monthly|true": "DAILY_MONTHLY",
-    "dailyBalance|quarterly|true": "DAILY_QUARTERLY",
-    "dailyBalance|annual|true": "DAILY_ANNUAL",
-    "lowestMonthlyBalance|monthly|true": "MIN_BAL_MONTHLY",
-    "fixedPrincipal|monthly|false": "FIXED_MONTHLY",
-    "fixedPrincipal|quarterly|false": "FIXED_QUARTERLY",
-    "fixedPrincipal|semiAnnual|false": "FIXED_SEMI_ANNUAL",
-    "fixedPrincipal|annual|false": "FIXED_ANNUAL",
-    "fixedPrincipal|maturity|true": "FIXED_MATURITY",
-    "fixedPrincipal|monthly|true": "VARIABLE_MONTHLY",
-    "navBased|daily|true": "FUND_DAILY",
-    "navBased|monthly|true": "FUND_MONTHLY",
-  };
-  const key = calcMethod + "|" + payoutFreq + "|" + !!compounding;
-  return KNOWN[key] || calcMethod.toUpperCase() + "_" + payoutFreq.toUpperCase();
-}
-
-// An asset "generates a return" unless explicitly marked otherwise via the
+// An asset "generates a return" unless explicitly marked otherwise via the// An asset "generates a return" unless explicitly marked otherwise via the
 // yield badge (toggleGeneratesReturn below). This is the single source of
 // truth both the table badge and the Return Settings asset dropdown read —
 // an asset marked noReturn:true is fully excluded from return configuration
@@ -254,14 +215,29 @@ function onReturnPanelAssetChange(id) {
 // rateBasis. The user can still override any of them afterwards. Only fields
 // left empty/unset by the user are touched — this never overwrites a value
 // they already typed in.
+// productType is a TEMPLATE only — it never drives the calculation itself
+// (see growth-pipeline.js header comment). Picking it here just pre-fills
+// sensible defaults for the Financial Model fields the user can then
+// customize freely. Only fields left empty/unset by the user are touched —
+// this never overwrites a value they already picked.
 const PRODUCT_TYPE_DEFAULTS = {
-  savings: { calcMethod: "lowestMonthlyBalance", compounding: true, rateBasis: "nominal" },
-  fixedDeposit: { calcMethod: "lowestMonthlyBalance", compounding: true, rateBasis: "nominal" },
-  certificate: { calcMethod: "fixedPrincipal", compounding: false, rateBasis: "nominal" },
-  moneyMarketFund: { calcMethod: "navBased", compounding: true, rateBasis: "effective" },
-  fixedIncomeFund: { calcMethod: "navBased", compounding: true, rateBasis: "effective" },
-  investmentFund: { calcMethod: "navBased", compounding: true, rateBasis: "effective" },
+  savings: { growthSource: "fixedRate", balanceBasis: "lowestPeriodBalance", compoundingFrequency: "monthly", distributionFrequency: "none", rateBasis: "nominal" },
+  fixedDeposit: { growthSource: "fixedRate", balanceBasis: "lowestPeriodBalance", compoundingFrequency: "monthly", distributionFrequency: "none", rateBasis: "nominal" },
+  certificate: { growthSource: "fixedRate", balanceBasis: "fixedPrincipal", compoundingFrequency: "none", distributionFrequency: "annual", rateBasis: "nominal" },
+  moneyMarketFund: { growthSource: "nav", growthFrequency: "daily", compoundingFrequency: "daily", distributionFrequency: "none", rateBasis: "effective" },
+  fixedIncomeFund: { growthSource: "nav", growthFrequency: "daily", compoundingFrequency: "daily", distributionFrequency: "none", rateBasis: "effective" },
+  investmentFund: { growthSource: "nav", growthFrequency: "daily", compoundingFrequency: "daily", distributionFrequency: "none", rateBasis: "effective" },
 };
+
+const PRODUCT_CONFIG_FIELDS = [
+  "growthSource",
+  "growthFrequency",
+  "distributionFrequency",
+  "compoundingFrequency",
+  "liquidityFrequency",
+  "balanceBasis",
+  "rateBasis",
+];
 
 function applyProductTypeDefaults(productType) {
   const defaults = PRODUCT_TYPE_DEFAULTS[productType];
@@ -270,10 +246,8 @@ function applyProductTypeDefaults(productType) {
     const el = document.getElementById(fieldId);
     if (el && !el.value) el.value = String(value);
   };
-  setIfEmpty("rc-calcMethod", defaults.calcMethod);
-  setIfEmpty("rc-compounding", defaults.compounding);
-  setIfEmpty("rc-rateBasis", defaults.rateBasis);
-  previewReturnCategory();
+  PRODUCT_CONFIG_FIELDS.forEach((f) => defaults[f] != null && setIfEmpty("rc-" + f, defaults[f]));
+  refreshProductConfigPreview();
 }
 
 // Fills the form fields from a preset with one click — the user can still
@@ -285,19 +259,62 @@ function applyReturnPreset(presetId) {
     const el = document.getElementById(fieldId);
     if (el) el.value = value == null ? "" : String(value);
   };
-  const legacy = toLegacyShape(p);
   set("rc-productType", p.productType);
   set("rc-rateType", p.rateType);
   set("rc-rateBasis", p.rateBasis || "");
-  set("rc-calcMethod", legacy.calcMethod);
-  set("rc-payoutFreq", legacy.payoutFreq);
-  set("rc-compounding", legacy.compounding);
-  set("rc-liquidity", p.liquidityFrequency);
+  PRODUCT_CONFIG_FIELDS.forEach((f) => set("rc-" + f, p[f]));
   set("rc-apy", p.suggestedApy);
   set("rc-tierRates", p.tierRates ? p.tierRates.join(",") : "");
   set("rc-growthFormula", "");
-  previewReturnCategory();
+  refreshProductConfigPreview();
   previewGrowthFormula();
+}
+
+// Reads every field currently in the form into a plain domain-model object
+// — the single function both the live summary/validation preview AND the
+// actual save use, so what you see before saving is exactly what gets
+// saved.
+function readProductConfigForm(id) {
+  const val = (fieldId) => {
+    const el = document.getElementById(fieldId);
+    return el ? el.value : "";
+  };
+  const cfg = { productType: val("rc-productType") || null, rateType: val("rc-rateType") || null };
+  PRODUCT_CONFIG_FIELDS.forEach((f) => (cfg[f] = val("rc-" + f) || null));
+  // startDate is no longer edited from this panel — it's the exact same
+  // returnConfig[id].startDate field the per-row "Since" button
+  // (since-date.js) manages, kept here only so saving this form doesn't
+  // wipe out whatever that button already set.
+  cfg.startDate = (id && returnConfig[id] && returnConfig[id].startDate) || null;
+  const tierRates = val("rc-tierRates")
+    .split(",")
+    .map((s) => parseFloat(s.trim()))
+    .filter((n) => Number.isFinite(n));
+  cfg.tierRates = tierRates.length ? tierRates : null;
+  cfg.growthFormula = val("rc-growthFormula").trim() || null;
+  return cfg;
+}
+
+// Re-renders the live Product Summary + validation messages under the
+// Financial Model section as the user changes any field — this is the
+// "instant feedback" the Product Configuration page is built around.
+function refreshProductConfigPreview() {
+  const id = returnPanelAssetId;
+  const cfg = readProductConfigForm(id);
+  const summaryEl = document.getElementById("rc-product-summary");
+  if (summaryEl) {
+    const summary = generateProductSummary(cfg);
+    summaryEl.textContent = summary || t("productSummaryEmpty");
+    summaryEl.classList.toggle("wt-summary-empty", !summary);
+  }
+  const validationEl = document.getElementById("rc-validation");
+  if (validationEl) {
+    const result = typeof validateDomainModel === "function" ? validateDomainModel(cfg) : { valid: true, errors: [] };
+    validationEl.innerHTML = result.valid
+      ? ""
+      : `<b>${t("validationTitle")}</b><ul>${result.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`;
+  }
+  return cfg;
 }
 
 function submitReturnConfig(ev) {
@@ -305,43 +322,18 @@ function submitReturnConfig(ev) {
   const id = returnPanelAssetId;
   if (!id) return;
 
-  const val = (fieldId) => document.getElementById(fieldId).value;
-  const productType = val("rc-productType");
-  const rateType = val("rc-rateType");
-  const rateBasis = val("rc-rateBasis");
-  if (!rateBasis) {
-    const el = document.getElementById("rc-rateBasis");
-    if (el) el.reportValidity ? el.reportValidity() : alert(t("rateBasisRequiredAlert"));
+  const rateBasisEl = document.getElementById("rc-rateBasis");
+  if (rateBasisEl && !rateBasisEl.value) {
+    rateBasisEl.reportValidity ? rateBasisEl.reportValidity() : alert(t("rateBasisRequiredAlert"));
     return;
   }
-  const calcMethod = val("rc-calcMethod");
-  const payoutFreq = val("rc-payoutFreq");
-  const compounding = val("rc-compounding") === "true";
-  const liquidity = val("rc-liquidity");
-  const apyVal = parseFloat(val("rc-apy"));
-  // startDate is no longer edited from this panel — it's the exact same
-  // returnConfig[id].startDate field the per-row "Since" button
-  // (since-date.js) manages, kept here only so saving this form doesn't
-  // wipe out whatever that button already set.
-  const startDate = (returnConfig[id] && returnConfig[id].startDate) || null;
-  const tierRates = val("rc-tierRates")
-    .split(",")
-    .map((s) => parseFloat(s.trim()))
-    .filter((n) => Number.isFinite(n));
-  const growthFormula = val("rc-growthFormula").trim();
 
-  returnConfig[id] = toDomainModel({
-    productType,
-    rateType,
-    rateBasis,
-    calcMethod,
-    payoutFreq,
-    compounding,
-    liquidity,
-    startDate,
-    tierRates,
-    growthFormula,
-  });
+  const cfg = refreshProductConfigPreview();
+  const result = typeof validateDomainModel === "function" ? validateDomainModel(cfg) : { valid: true, errors: [] };
+  if (!result.valid) return; // errors already shown live under the Financial Model section
+
+  const apyVal = parseFloat(document.getElementById("rc-apy").value);
+  returnConfig[id] = cfg;
   if (Number.isFinite(apyVal) && apyVal > 0) apy[id] = Math.min(apyVal, 100);
 
   render();
@@ -355,6 +347,12 @@ function clearReturnConfig() {
   const root = document.getElementById("wt-return-panel-root");
   if (root) root.outerHTML = renderReturnPanel();
   scheduleSave();
+}
+
+// Toggles the ⓘ help text under any Financial Model field.
+function toggleFieldHelp(key) {
+  const el = document.getElementById("rc-help-" + key);
+  if (el) el.style.display = el.style.display === "none" ? "block" : "none";
 }
 
 // evalGrowthFormula / segmentInterest now live in growth-pipeline.js (shared
@@ -419,19 +417,36 @@ function renderMilestonesSection(a) {
       </div>`;
 }
 
+// A small ⓘ button + collapsible help paragraph, reused for every Financial
+// Model field. Keeps the form itself uncluttered while the explanation is
+// always one click away.
+function fieldLabel(fieldId, labelKey, helpKey) {
+  return `
+    <label for="${fieldId}">
+      ${t(labelKey)}
+      ${helpKey ? `<button type="button" class="wt-help-icon" title="${t("helpIconTitle")}" onclick="toggleFieldHelp('${helpKey}')">ⓘ</button>` : ""}
+    </label>
+    ${helpKey ? `<p id="rc-help-${helpKey}" class="wt-field-help" style="display:none">${t(helpKey + "Help")}</p>` : ""}
+  `;
+}
+
+function domainSelect(field, cfg, onchange) {
+  return `<select id="rc-${field}" onchange="${onchange || "refreshProductConfigPreview()"}">${optionsHtml(t(field + "Options"), cfg[field])}</select>`;
+}
+
 function renderReturnPanel() {
   const id = returnPanelAssetId;
   const a = ASSETS.find((x) => x.id === id);
   const cfg = (a && returnConfig[id]) || {};
-  const legacyCfg = toLegacyShape(cfg);
-  const category = a ? deriveReturnCategory(legacyCfg.calcMethod, legacyCfg.payoutFreq, legacyCfg.compounding) : null;
   const lang_ = lang; // presets are only ever labeled in ar/en, no i18n() needed
+  const summary = a ? generateProductSummary(cfg) : null;
+  const validation = a ? (typeof validateDomainModel === "function" ? validateDomainModel(cfg) : { valid: true, errors: [] }) : { valid: true, errors: [] };
 
   return `
   <div class="wt-modal-overlay" id="wt-return-panel-root" onclick="if(event.target===this)closeReturnPanel()">
     <div class="wt-modal wt-modal-wide">
-      <h3>${t("returnConfigBtnTitle")}</h3>
-      <p style="font-size:12px;color:var(--wt-text-dim);margin:-6px 0 14px">${t("returnConfigHint")}</p>
+      <h3>${t("productConfigTitle")}</h3>
+      <p style="font-size:12px;color:var(--wt-text-dim);margin:-6px 0 14px">${t("productConfigHint")}</p>
 
       <div class="wt-field">
         <label for="rc-asset">${t("selectAssetLabel")}</label>
@@ -457,7 +472,10 @@ function renderReturnPanel() {
       ${renderMilestonesSection(a)}
 
       <form onsubmit="submitReturnConfig(event)">
-        <div class="wt-field-row-5">
+
+        <!-- ── General ─────────────────────────────────────────────── -->
+        <h4 class="wt-rc-section-title">${t("sectionGeneral")}</h4>
+        <div class="wt-field-row-3">
           <div class="wt-field">
             <label for="rc-productType">${t("productTypeLabel")}</label>
             <select id="rc-productType" onchange="applyProductTypeDefaults(this.value)">${optionsHtml(t("productTypeOptions"), cfg.productType)}</select>
@@ -468,7 +486,7 @@ function renderReturnPanel() {
           </div>
           <div class="wt-field">
             <label for="rc-rateBasis">${t("rateBasisLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
-            <select id="rc-rateBasis" required title="${t("rateBasisHint")}">
+            <select id="rc-rateBasis" required title="${t("rateBasisHint")}" onchange="refreshProductConfigPreview()">
               <option value="" disabled ${!cfg.rateBasis ? "selected" : ""}>${t("rateBasisChoosePrompt")}</option>
               ${Object.keys(t("rateBasisOptions"))
                 .map(
@@ -478,31 +496,57 @@ function renderReturnPanel() {
                 .join("")}
             </select>
           </div>
+        </div>
+
+        <!-- ── Financial Model ─────────────────────────────────────── -->
+        <h4 class="wt-rc-section-title">${t("sectionFinancialModel")}</h4>
+        <div class="wt-field-row-3">
           <div class="wt-field">
-            <label for="rc-calcMethod">${t("calcMethodLabel")}</label>
-            <select id="rc-calcMethod" onchange="previewReturnCategory()">${optionsHtml(t("calcMethodOptions"), legacyCfg.calcMethod)}</select>
+            ${fieldLabel("rc-growthSource", "growthSourceLabel", "growthSource")}
+            ${domainSelect("growthSource", cfg)}
           </div>
           <div class="wt-field">
-            <label for="rc-payoutFreq">${t("payoutFreqLabel")}</label>
-            <select id="rc-payoutFreq" onchange="previewReturnCategory()">${optionsHtml(t("payoutFreqOptions"), legacyCfg.payoutFreq)}</select>
+            ${fieldLabel("rc-growthFrequency", "growthFrequencyLabel", "growthFrequency")}
+            ${domainSelect("growthFrequency", cfg)}
+          </div>
+          <div class="wt-field">
+            ${fieldLabel("rc-balanceBasis", "balanceBasisLabel", "balanceBasis")}
+            ${domainSelect("balanceBasis", cfg)}
           </div>
         </div>
-        <div class="wt-field-row-4" style="margin-top:12px">
+        <div class="wt-field-row-3" style="margin-top:12px">
           <div class="wt-field">
-            <label for="rc-compounding">${t("compoundingLabel")}</label>
-            <select id="rc-compounding" onchange="previewReturnCategory()">
-              <option value="">${t("noneOption")}</option>
-              <option value="true" ${legacyCfg.compounding === true ? "selected" : ""}>${t("compoundingYes")}</option>
-              <option value="false" ${legacyCfg.compounding === false ? "selected" : ""}>${t("compoundingNo")}</option>
-            </select>
+            ${fieldLabel("rc-distributionFrequency", "distributionFrequencyLabel", "distributionFrequency")}
+            ${domainSelect("distributionFrequency", cfg)}
           </div>
           <div class="wt-field">
-            <label for="rc-liquidity">${t("liquidityLabel")}</label>
-            <select id="rc-liquidity">${optionsHtml(t("liquidityOptions"), legacyCfg.liquidity)}</select>
+            ${fieldLabel("rc-compoundingFrequency", "compoundingFrequencyLabel", "compoundingFrequency")}
+            ${domainSelect("compoundingFrequency", cfg)}
           </div>
+          <div class="wt-field">
+            ${fieldLabel("rc-liquidityFrequency", "liquidityFrequencyLabel", "liquidityFrequency")}
+            ${domainSelect("liquidityFrequency", cfg)}
+          </div>
+        </div>
+
+        <!-- Live, plain-English explanation of exactly what's configured above,
+             plus any inline validation issues — both regenerated on every
+             change via refreshProductConfigPreview(), never hardcoded. -->
+        <div class="wt-product-summary">
+          <div class="wt-product-summary-title">💡 ${t("productSummaryTitle")}</div>
+          <p id="rc-product-summary" class="${summary ? "" : "wt-summary-empty"}">${summary ? esc(summary) : t("productSummaryEmpty")}</p>
+        </div>
+        <div id="rc-validation" class="wt-rc-validation">
+          ${validation.valid ? "" : `<b>${t("validationTitle")}</b><ul>${validation.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`}
+        </div>
+
+        <!-- ── Dates & Liquidity / Advanced ─────────────────────────── -->
+        <h4 class="wt-rc-section-title">${t("sectionDatesLiquidity")}</h4>
+        <div class="wt-field-row-3">
           <div class="wt-field">
             <label for="rc-tierRates">${t("tierRatesLabel")}</label>
             <input type="text" id="rc-tierRates" placeholder="27,22,17" dir="ltr"
+              oninput="refreshProductConfigPreview()"
               value="${Array.isArray(cfg.tierRates) ? cfg.tierRates.join(",") : ""}">
           </div>
         </div>
@@ -512,25 +556,22 @@ function renderReturnPanel() {
              THIS item only, everywhere it's used (simulator, table columns,
              and the real daily cron), without needing a code change. Leave
              blank to keep using the built-in default for whatever
-             calculation/payout settings are picked above. -->
+             growth model is picked above. -->
         <div class="wt-field">
           <label for="rc-growthFormula">${t("growthFormulaLabel")}</label>
           <textarea id="rc-growthFormula" dir="ltr" rows="2" spellcheck="false"
             placeholder="principal * (rate/100/365) * days"
-            oninput="previewGrowthFormula()">${esc(cfg.growthFormula || "")}</textarea>
+            oninput="previewGrowthFormula(); refreshProductConfigPreview();">${esc(cfg.growthFormula || "")}</textarea>
           <p style="font-size:11px;color:var(--wt-text-dim);margin:4px 0 0">${t("growthFormulaHint")}</p>
           <p id="rc-formula-preview" class="wt-return-summary-category" style="margin-top:6px">${t("growthFormulaDefaultNote")}</p>
         </div>
 
-        <!-- The actual number the cron applies every day — shown last, on its
-             own, since everything above is just describing why it's what it is. -->
+        <!-- ── Returns ──────────────────────────────────────────────── -->
+        <h4 class="wt-rc-section-title">${t("sectionReturns")}</h4>
         <div class="wt-return-summary">
           <label for="rc-apy">${t("thApy")}</label>
           <input type="number" id="rc-apy" min="0" max="100" step="any" value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
           <p class="wt-return-summary-category">${t("apyEditableHint")}</p>
-          <p id="rc-category-preview" class="wt-return-summary-category">
-            ${t("categoryPreviewLabel")}: <b>${category || "—"}</b>
-          </p>
         </div>
 
         <div class="wt-modal-actions">
@@ -545,27 +586,6 @@ function renderReturnPanel() {
   </div>`;
 }
 
-// ══════════════════════════════════════════════════════
-//  Projections — surfaced as milestones (see generateMilestones below),
-//  not fixed table columns. Purely a forward-looking display estimate;
-//  never written back anywhere, never touches qty/apy/history.
-//  projectAssetValue computes three underlying dates/values:
-//    - "next": the item's next natural payout point (tomorrow for daily
-//      items, next month for monthly, next year for annual/maturity —
-//      anchored to the item's real Since-date when one is set)
-//    - "endOfCycle": the current payout cycle's real calendar boundary
-//      (e.g. the last day of this month) — distinct from "next" when
-//      there's no Since-date to anchor "next" to a real cycle
-//    - "endOfYear": a genuine rolling one-year-from-today projection (not
-//      calendar Dec 31 — that could be just days away in December)
-// ══════════════════════════════════════════════════════
-
-// parseDateStr / daysBetweenDates / addYearsToDate now live in
-// growth-pipeline.js (loaded before this file — see index.html).
-
-// Short human-readable date for the small "as of" label shown under each
-// projection amount in the table (e.g. "12 Jul 2026" / "١٢ يوليو ٢٠٢٦").
-// Reuses the month-name lists already defined in contributions.js.
 function fmtDateShort(d) {
   const monthName = lang === "ar" ? MONTH_NAMES_AR[d.getMonth()] : MONTH_NAMES_EN[d.getMonth()];
   return `${d.getDate()} ${monthName} ${d.getFullYear()}`;
@@ -611,7 +631,6 @@ function projectAssetValue(a) {
   if (!principal) return null;
 
   const cfg = returnConfig[a.id] || {};
-  const legacyCfg = toLegacyShape(cfg);
   const today = new Date();
   const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   // A true rolling "one year from today" (not calendar Dec 31 — that could
@@ -620,19 +639,20 @@ function projectAssetValue(a) {
   const oneYearOut = addYearsToDate(todayMid, 1);
   const endOfCycle = endOfCycleDate(cfg, todayMid);
 
-  const monthsStep = monthsStepForFreq(legacyCfg.payoutFreq);
+  const freq = cycleFrequency(cfg);
+  const monthsStep = monthsStepForFreq(freq);
   let nextDate;
-  if (legacyCfg.startDate && monthsStep) {
-    nextDate = anniversaryAfter(legacyCfg.startDate, monthsStep, todayMid);
-  } else if (legacyCfg.payoutFreq === "monthly" || legacyCfg.payoutFreq === "quarterly" || legacyCfg.payoutFreq === "semiAnnual") {
+  if (cfg.startDate && monthsStep) {
+    nextDate = anniversaryAfter(cfg.startDate, monthsStep, todayMid);
+  } else if (freq === "monthly" || freq === "quarterly" || freq === "semiAnnual") {
     nextDate = new Date(todayMid.getFullYear(), todayMid.getMonth() + 1, todayMid.getDate());
-  } else if (legacyCfg.payoutFreq === "annual" || legacyCfg.payoutFreq === "maturity") {
+  } else if (freq === "annual" || freq === "maturity") {
     nextDate = addYearsToDate(todayMid, 1);
   } else {
     nextDate = new Date(todayMid.getFullYear(), todayMid.getMonth(), todayMid.getDate() + 1);
   }
 
-  if (legacyCfg.startDate && Array.isArray(legacyCfg.tierRates) && legacyCfg.tierRates.length) {
+  if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
     return {
       next: computeGrowthValueAt(a.id, principal, todayMid, nextDate),
       nextDate,
@@ -664,18 +684,28 @@ function projectAssetValue(a) {
 //  - monthly/quarterly/semi-annual/annual/maturity with no start date: end
 //    of the current calendar month
 //  - daily (or unset): end of today
-function endOfCycleDate(rawCfg, todayMid) {
-  const cfg = toLegacyShape(rawCfg);
+// The cadence that actually determines "when does this product's current
+// cycle end" for milestone purposes. For a NAV product that's its
+// liquidityFrequency (Thunder Cloud Monthly grows every day, but the
+// milestone that matters to the user is "End of Month" — when redemption
+// actually happens); for everything else it's simply growthFrequency, since
+// growth and the payout/milestone cadence are the same boundary there.
+function cycleFrequency(cfg) {
+  return cfg.growthSource === "nav" ? cfg.liquidityFrequency : cfg.growthFrequency;
+}
+
+function endOfCycleDate(cfg, todayMid) {
   if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
     let cursor = parseDateStr(cfg.startDate);
     while (cursor <= todayMid) cursor = addYearsToDate(cursor, 1);
     return cursor;
   }
-  const monthsStep = monthsStepForFreq(cfg.payoutFreq);
+  const freq = cycleFrequency(cfg);
+  const monthsStep = monthsStepForFreq(freq);
   if (cfg.startDate && monthsStep) {
     return anniversaryAfter(cfg.startDate, monthsStep, todayMid);
   }
-  if (!cfg.payoutFreq || cfg.payoutFreq === "daily") return todayMid;
+  if (!freq || freq === "daily") return todayMid;
   return new Date(todayMid.getFullYear(), todayMid.getMonth() + 1, 0); // last day of this month
 }
 
@@ -716,23 +746,23 @@ const MILESTONE_LABELS = {
   },
 };
 
-function nextMilestoneLabelKey(rawCfg) {
-  const cfg = toLegacyShape(rawCfg);
-  const freq = cfg.payoutFreq;
+function nextMilestoneLabelKey(cfg) {
+  const freq = cycleFrequency(cfg);
   if (!freq || freq === "daily") {
-    return cfg.calcMethod === "navBased" ? MILESTONE_LABELS.next.navBasedDaily : MILESTONE_LABELS.next.tomorrow;
+    return cfg.growthSource === "nav" ? MILESTONE_LABELS.next.navBasedDaily : MILESTONE_LABELS.next.tomorrow;
   }
   // A real Since-date anchors "next" to an actual calendar boundary (e.g.
   // "the 8th of next month") — without one it's just "roughly a month from
   // today" and needs the softer "unanchored" wording (see comment above).
   const anchored = !!cfg.startDate;
+  const distributes = cfg.distributionFrequency && cfg.distributionFrequency !== "none";
   if (freq === "monthly") return anchored ? MILESTONE_LABELS.next.monthly : MILESTONE_LABELS.next.unanchoredMonthly;
   if (freq === "quarterly")
     return anchored ? MILESTONE_LABELS.next.quarterly : MILESTONE_LABELS.next.unanchoredQuarterly;
   if (freq === "semiAnnual")
     return anchored ? MILESTONE_LABELS.next.semiAnnual : MILESTONE_LABELS.next.unanchoredSemiAnnual;
   if (freq === "annual")
-    return cfg.compounding === false
+    return distributes
       ? MILESTONE_LABELS.next.nextInterest
       : anchored
         ? MILESTONE_LABELS.next.annualPayout
@@ -741,10 +771,9 @@ function nextMilestoneLabelKey(rawCfg) {
   return MILESTONE_LABELS.next.tomorrow;
 }
 
-function cycleMilestoneLabelKey(rawCfg) {
-  const cfg = toLegacyShape(rawCfg);
-  if (cfg.calcMethod === "navBased") return MILESTONE_LABELS.cycle.navBased;
-  return MILESTONE_LABELS.cycle[cfg.payoutFreq] || MILESTONE_LABELS.cycle.default;
+function cycleMilestoneLabelKey(cfg) {
+  if (cfg.growthSource === "nav") return MILESTONE_LABELS.cycle.navBased;
+  return MILESTONE_LABELS.cycle[cycleFrequency(cfg)] || MILESTONE_LABELS.cycle.default;
 }
 
 // ── kind / status / priority metadata ───────────────────────────────────
@@ -753,10 +782,9 @@ function cycleMilestoneLabelKey(rawCfg) {
 // logic — sorting, filtering, future analytics/UI — must key off `kind`,
 // never off `titleKey`/`title`, so that adding a translation or rewording a
 // label can never silently change behaviour.
-function nextMilestoneKind(rawCfg) {
-  const cfg = toLegacyShape(rawCfg);
-  const freq = cfg.payoutFreq;
-  if (!freq || freq === "daily") return cfg.calcMethod === "navBased" ? "nav-update" : "interest-payment";
+function nextMilestoneKind(cfg) {
+  const freq = cycleFrequency(cfg);
+  if (!freq || freq === "daily") return cfg.growthSource === "nav" ? "nav-update" : "interest-payment";
   if (freq === "monthly") return "month-end";
   if (freq === "quarterly") return "quarter-end";
   if (freq === "semiAnnual") return "interest-payment";
@@ -765,12 +793,12 @@ function nextMilestoneKind(rawCfg) {
   return "interest-payment";
 }
 
-function cycleMilestoneKind(rawCfg) {
-  const cfg = toLegacyShape(rawCfg);
-  if (cfg.calcMethod === "navBased") return "nav-update";
-  if (cfg.payoutFreq === "monthly") return "month-end";
-  if (cfg.payoutFreq === "quarterly") return "quarter-end";
-  if (cfg.payoutFreq === "semiAnnual" || cfg.payoutFreq === "annual") return "year-end";
+function cycleMilestoneKind(cfg) {
+  if (cfg.growthSource === "nav") return "nav-update";
+  const freq = cycleFrequency(cfg);
+  if (freq === "monthly") return "month-end";
+  if (freq === "quarterly") return "quarter-end";
+  if (freq === "semiAnnual" || freq === "annual") return "year-end";
   return "month-end";
 }
 
@@ -874,14 +902,4 @@ function generateMilestones(a) {
 function primaryMilestone(a) {
   const milestones = generateMilestones(a);
   return milestones.length ? milestones[0] : null;
-}
-
-function previewReturnCategory() {
-  const calcMethod = document.getElementById("rc-calcMethod").value;
-  const payoutFreq = document.getElementById("rc-payoutFreq").value;
-  const compoundingVal = document.getElementById("rc-compounding").value;
-  const compounding = compoundingVal === "true" ? true : compoundingVal === "false" ? false : undefined;
-  const category = deriveReturnCategory(calcMethod, payoutFreq, compounding);
-  const el = document.getElementById("rc-category-preview");
-  if (el) el.innerHTML = `${t("categoryPreviewLabel")}: <b>${category || "—"}</b>`;
 }
