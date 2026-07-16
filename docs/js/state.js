@@ -162,12 +162,6 @@ let simStartDate = null; // last start date typed into the simulator (YYYY-MM-DD
 // cfg.rateBasis whenever the simulator opens or the selected asset changes.
 let simRateBasis = null;
 let groupFilter = null; // "savings" | "investments" | "assets" | null (null = show all rows)
-// Toggles the hero growth chips between "Return" (raw) and "Real growth"
-// (excl. contributions) as the PRIMARY number shown. Session-only, like the
-// other UI toggles here — not persisted server-side. Only affects MTD/YTD/
-// All Time, the windows that actually support the excl.-contributions split
-// (see chip() in render.js); 7d/30d always show raw regardless.
-let growthExclContrib = false;
 let order = [];
 let itemHistoryModalId = null; // asset id whose history timeline is open, or null
 let itemHistoryEntries = []; // entries loaded for itemHistoryModalId
@@ -289,9 +283,16 @@ function applyTheme() {
   else el.classList.remove("theme-light");
 }
 
-function toggleGrowthExclContrib() {
-  growthExclContrib = !growthExclContrib;
-  render();
+// Toggles "Change breakdown for this period" between including and
+// excluding logged contributions. Session-only (not persisted server-side),
+// same pattern as other UI-only toggles here. Only meaningful for
+// month-aligned chart periods (MTD/YTD/All Time) — see renderChangeAnalysis
+// in history-chart.js for why 7d/30d never get this split.
+let changeAnalysisExclContrib = false;
+
+function toggleChangeAnalysisExclContrib() {
+  changeAnalysisExclContrib = !changeAnalysisExclContrib;
+  renderHistory();
 }
 
 function toggleTheme() {

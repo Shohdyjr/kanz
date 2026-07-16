@@ -1308,6 +1308,14 @@ body {
   direction: ltr;
 }
 /* Change analysis rows (period breakdown: how much each category moved) */
+.wt-change-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
 .wt-change-row {
   display: flex;
   align-items: center;

@@ -101,10 +101,20 @@ function getGrowthCandidate(days) {
 // contributions.js), and MTD's window start is exactly that same "1st of
 // the month" date. A strict `>` used to silently exclude the current
 // month's own contribution from its own MTD comparison.
-function sumContributionsBetween(sinceDateInclusive, untilDateInclusive) {
+// `currencies`, if given, restricts the sum to contributions logged in one of
+// those currencies (see CONTRIB_CURRENCIES in contributions.js) — used to
+// attribute a contribution to the EGP vs. hard-currency change-breakdown
+// category it actually landed in, since a contribution already carries the
+// currency the user typed it in.
+function sumContributionsBetween(sinceDateInclusive, untilDateInclusive, currencies) {
   if (!contributionsData || contributionsData.length === 0) return 0;
   return contributionsData
-    .filter((c) => (!sinceDateInclusive || c.date >= sinceDateInclusive) && c.date <= untilDateInclusive)
+    .filter(
+      (c) =>
+        (!sinceDateInclusive || c.date >= sinceDateInclusive) &&
+        c.date <= untilDateInclusive &&
+        (!currencies || currencies.includes(c.currency))
+    )
     .reduce((sum, c) => sum + (parseFloat(c.amountUsd) || 0), 0);
 }
 

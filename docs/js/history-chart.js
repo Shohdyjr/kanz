@@ -232,18 +232,44 @@ function renderChangeAnalysis(filteredHistory) {
   const start = filteredHistory[0];
   const end = filteredHistory[filteredHistory.length - 1];
 
+  // Contributions carry the currency the user actually logged them in (see
+  // CONTRIB_CURRENCIES in contributions.js: EGP or a hard currency), so they
+  // map cleanly onto the egpUsd/hardUsd change-breakdown categories — but
+  // never onto gold or assets, which aren't offered as a contribution
+  // currency, so those two categories are always identical between modes.
+  //
+  // Same granularity rule as the hero "Real growth" chips (see render.js):
+  // contributions are logged with monthly granularity (always the 1st of
+  // the month), so a rolling 7d/30d window can't reliably attribute one to
+  // "this window" vs. "just outside it" — only whole-month/year-aligned
+  // periods (MTD/YTD/All time) get the split.
+  const periodSupportsExclContrib = ["mtd", "ytd", "all"].includes(historyChartPeriod);
+  const exclMode = periodSupportsExclContrib && changeAnalysisExclContrib;
+  const egpContributed = exclMode ? sumContributionsBetween(start.date, end.date, ["EGP"]) : 0;
+  const hardContributed = exclMode ? sumContributionsBetween(start.date, end.date, ["USD", "EUR", "SAR"]) : 0;
+  const CONTRIBUTED_BY_KEY = { egpUsd: egpContributed, hardUsd: hardContributed, goldUsd: 0, assetsUsd: 0 };
+
   const rows = [
     { key: "egpUsd", name: t("bkEgp"), color: BK_COLORS.EGP },
     { key: "hardUsd", name: t("bkHard"), color: "#4a8fdb" },
     { key: "goldUsd", name: t("bkGold"), color: BK_COLORS.GOLD },
     { key: "assetsUsd", name: t("bkAssets"), color: BK_COLORS.ASSETS },
-  ].map((r) => ({ ...r, delta: (end[r.key] || 0) - (start[r.key] || 0) }));
+  ].map((r) => ({ ...r, delta: (end[r.key] || 0) - (start[r.key] || 0) - CONTRIBUTED_BY_KEY[r.key] }));
 
   const maxAbs = Math.max(...rows.map((r) => Math.abs(r.delta)), 0.01);
   rows.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
+  const toggleBtn = periodSupportsExclContrib
+    ? `<button type="button" class="wt-growth-toggle-btn" onclick="toggleChangeAnalysisExclContrib()">${
+        changeAnalysisExclContrib ? t("growthToggleShowIncl") : t("growthToggleShowExcl")
+      }</button>`
+    : "";
+
   root.innerHTML = `
-  <p class="wt-bk-leg-title" style="margin-bottom:10px">${t("changeAnalysisTitle")}</p>
+  <div class="wt-change-header">
+    <p class="wt-bk-leg-title" style="margin:0">${t("changeAnalysisTitle")}</p>
+    ${toggleBtn}
+  </div>
   ${rows
     .map((r) => {
       const up = r.delta >= 0;
