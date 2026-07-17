@@ -407,6 +407,12 @@ function toggleFieldHelp(key) {
   if (el) el.style.display = el.style.display === "none" ? "block" : "none";
 }
 
+// Toggles the plain-English product summary popover under the panel title.
+function toggleProductSummary() {
+  const el = document.getElementById("rc-product-summary-box");
+  if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+}
+
 // evalGrowthFormula / segmentInterest now live in growth-pipeline.js (shared
 // with the backend and the simulator — see that file's header comment).
 
@@ -533,8 +539,19 @@ function renderReturnPanel() {
   <div class="wt-fullpage" id="wt-return-panel-root">
     <div class="wt-fullpage-inner">
       <button type="button" class="wt-fullpage-back" onclick="closeReturnPanel()">← ${t("cancel")}</button>
-      <h3>${t("productConfigTitle")}</h3>
+      <h3>
+        ${t("productConfigTitle")}
+        ${a ? `<button type="button" class="wt-help-icon" title="${t("productSummaryTitle")}" onclick="toggleProductSummary()">ⓘ</button>` : ""}
+      </h3>
       <p style="font-size:12px;color:var(--wt-text-dim);margin:-6px 0 14px">${t("productConfigHint")}</p>
+      ${
+        a
+          ? `<div class="wt-product-summary" id="rc-product-summary-box" style="display:none">
+               <div class="wt-product-summary-title">💡 ${t("productSummaryTitle")}</div>
+               <p id="rc-product-summary" class="${summary ? "" : "wt-summary-empty"}">${summary ? esc(summary) : t("productSummaryEmpty")}</p>
+             </div>`
+          : ""
+      }
 
       <div class="wt-field">
         <label for="rc-asset">${t("selectAssetLabel")}</label>
@@ -561,15 +578,10 @@ function renderReturnPanel() {
 
           ${renderMilestonesSection(a)}
 
-          <!-- Live, plain-English explanation of exactly what's configured,
-               plus any inline validation issues — both regenerated on every
-               change via refreshProductConfigPreview(), never hardcoded.
-               Lives beside the form so it updates as you fill it in, instead
-               of scrolling past it. -->
-          <div class="wt-product-summary">
-            <div class="wt-product-summary-title">💡 ${t("productSummaryTitle")}</div>
-            <p id="rc-product-summary" class="${summary ? "" : "wt-summary-empty"}">${summary ? esc(summary) : t("productSummaryEmpty")}</p>
-          </div>
+          <!-- Inline validation issues, regenerated on every change via
+               refreshProductConfigPreview(). The plain-English product
+               summary now lives behind the ⓘ button next to the page
+               title instead of always taking up sidebar space. -->
           <div id="rc-validation" class="wt-rc-validation">
             ${validation.valid ? "" : `<b>${t("validationTitle")}</b><ul>${validation.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`}
           </div>
@@ -635,17 +647,6 @@ function renderReturnPanel() {
             ${fieldLabel("rc-liquidityFrequency", "liquidityFrequencyLabel", "liquidityFrequency")}
             ${domainSelect("liquidityFrequency", cfg)}
           </div>
-        </div>
-
-        <!-- Live, plain-English explanation of exactly what's configured above,
-             plus any inline validation issues — both regenerated on every
-             change via refreshProductConfigPreview(), never hardcoded. -->
-        <div class="wt-product-summary">
-          <div class="wt-product-summary-title">💡 ${t("productSummaryTitle")}</div>
-          <p id="rc-product-summary" class="${summary ? "" : "wt-summary-empty"}">${summary ? esc(summary) : t("productSummaryEmpty")}</p>
-        </div>
-        <div id="rc-validation" class="wt-rc-validation">
-          ${validation.valid ? "" : `<b>${t("validationTitle")}</b><ul>${validation.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`}
         </div>
 
         <!-- ── Advanced overrides ──────────────────────────────────── -->
