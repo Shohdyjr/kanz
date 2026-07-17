@@ -547,23 +547,40 @@ function renderReturnPanel() {
         !a
           ? `<p style="font-size:13px;color:var(--wt-text-dim)">${t("noAssetsHint")}</p>`
           : `
-      <div class="wt-field">
-        <label>${t("presetsLabel")}</label>
-        <div class="wt-preset-list">
-          ${RETURN_PRESETS.map(
-            (p) =>
-              `<button type="button" class="wt-btn-ghost wt-preset-btn" onclick="applyReturnPreset('${p.id}')">${esc(lang_ === "en" ? p.name_en : p.name_ar)}</button>`
-          ).join("")}
+      <div class="wt-rc-layout">
+        <div class="wt-rc-col-side">
+          <div class="wt-field">
+            <label>${t("presetsLabel")}</label>
+            <div class="wt-preset-list">
+              ${RETURN_PRESETS.map(
+                (p) =>
+                  `<button type="button" class="wt-btn-ghost wt-preset-btn" onclick="applyReturnPreset('${p.id}')">${esc(lang_ === "en" ? p.name_en : p.name_ar)}</button>`
+              ).join("")}
+            </div>
+          </div>
+
+          ${renderMilestonesSection(a)}
+
+          <!-- Live, plain-English explanation of exactly what's configured,
+               plus any inline validation issues — both regenerated on every
+               change via refreshProductConfigPreview(), never hardcoded.
+               Lives beside the form so it updates as you fill it in, instead
+               of scrolling past it. -->
+          <div class="wt-product-summary">
+            <div class="wt-product-summary-title">💡 ${t("productSummaryTitle")}</div>
+            <p id="rc-product-summary" class="${summary ? "" : "wt-summary-empty"}">${summary ? esc(summary) : t("productSummaryEmpty")}</p>
+          </div>
+          <div id="rc-validation" class="wt-rc-validation">
+            ${validation.valid ? "" : `<b>${t("validationTitle")}</b><ul>${validation.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`}
+          </div>
         </div>
-      </div>
 
-      ${renderMilestonesSection(a)}
-
+        <div class="wt-rc-col-main">
       <form onsubmit="submitReturnConfig(event)">
 
         <!-- ── General ─────────────────────────────────────────────── -->
         <h4 class="wt-rc-section-title">${t("sectionGeneral")}</h4>
-        <div class="wt-field-row-3">
+        <div class="wt-field-row-4">
           <div class="wt-field">
             <label for="rc-productType">${t("productTypeLabel")}</label>
             <select id="rc-productType" onchange="applyProductTypeDefaults(this.value)">${optionsHtml(t("productTypeOptions"), cfg.productType)}</select>
@@ -584,14 +601,12 @@ function renderReturnPanel() {
                 .join("")}
             </select>
           </div>
-        </div>
-        <div class="wt-field-row-3" style="margin-top:12px">
           <div class="wt-field">
             <label for="rc-apy">${t("thApy")}</label>
             <input type="number" id="rc-apy" min="0" max="100" step="any" value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
-            <p class="wt-return-summary-category">${t("apyEditableHint")}</p>
           </div>
         </div>
+        <p class="wt-return-summary-category" style="margin-top:-4px">${t("apyEditableHint")}</p>
 
         <!-- ── Financial Model ─────────────────────────────────────── -->
         <h4 class="wt-rc-section-title">${t("sectionFinancialModel")}</h4>
@@ -608,8 +623,6 @@ function renderReturnPanel() {
             ${fieldLabel("rc-balanceBasis", "balanceBasisLabel", "balanceBasis")}
             ${domainSelect("balanceBasis", cfg)}
           </div>
-        </div>
-        <div class="wt-field-row-3" style="margin-top:12px">
           <div class="wt-field">
             ${fieldLabel("rc-distributionFrequency", "distributionFrequencyLabel", "distributionFrequency")}
             ${domainSelect("distributionFrequency", cfg)}
@@ -678,6 +691,8 @@ function renderReturnPanel() {
           <button type="submit" class="wt-btn">${t("saveChanges")}</button>
         </div>
       </form>
+        </div>
+      </div>
       `
       }
     </div>

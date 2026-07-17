@@ -992,12 +992,12 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--wt-text-dim);
-  margin: 22px 0 10px;
+  margin: 16px 0 8px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--wt-line);
 }
 .wt-rc-section-title:first-of-type {
-  margin-top: 4px;
+  margin-top: 0;
 }
 .wt-help-icon {
   border: none;
@@ -1022,8 +1022,8 @@ body {
   margin: 4px 0 0;
 }
 .wt-product-summary {
-  margin: 16px 0;
-  padding: 12px 14px;
+  margin: 10px 0;
+  padding: 10px 14px;
   background: color-mix(in srgb, var(--wt-green) 8%, var(--wt-input-bg));
   border: 1px solid color-mix(in srgb, var(--wt-green) 30%, var(--wt-line));
   border-radius: 10px;
@@ -1513,6 +1513,27 @@ body {
   border: 1px solid var(--wt-line);
   border-radius: var(--wt-radius);
   padding: 24px 28px 28px;
+}
+/* Product Configuration page: side column (asset picker context — presets,
+   milestones, live summary/validation) next to the main form, so the page
+   fills the viewport width instead of stacking everything in one long
+   column that forces a scroll. */
+#wt-return-panel-root .wt-fullpage-inner {
+  max-width: 1180px;
+}
+.wt-rc-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 28px;
+  align-items: start;
+}
+.wt-rc-col-side .wt-field {
+  margin-bottom: 14px;
+}
+@media (max-width: 900px) {
+  .wt-rc-layout {
+    grid-template-columns: 1fr;
+  }
 }
 .wt-fullpage-back {
   border: none;
