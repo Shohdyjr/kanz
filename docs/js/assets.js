@@ -118,6 +118,26 @@ function pickIcon(icon) {
   }, 0);
 }
 
+// Applies an edit to an existing asset's basic info (name/icon/currency/
+// category). This is the SINGLE place that writes to baseOverrides/
+// customAssets for an edit — both the Edit dialog (submitAddAsset below)
+// and the Product Configuration page's Product Information section
+// (return-config.js) call this, so the two can never produce different
+// results or duplicate the underlying data.
+function applyAssetBasicEdit(id, { nameAr, nameEn, icon, currency, group }) {
+  const isBase = BASE_ASSETS.some((b) => b.id === id);
+  if (isBase) {
+    baseOverrides[id] = { name_ar: nameAr, name_en: nameEn, icon, group };
+    // Note: the original currency of built-in assets never changes, to keep old calculations accurate
+  } else {
+    const idx = customAssets.findIndex((c) => c.id === id);
+    if (idx !== -1) {
+      customAssets[idx] = { ...customAssets[idx], name_ar: nameAr, name_en: nameEn, icon, currency, group };
+    }
+  }
+  rebuildAssets();
+}
+
 function submitAddAsset(ev) {
   ev.preventDefault();
   const nameArEl = document.getElementById("new-asset-name-ar");
@@ -151,24 +171,7 @@ function submitAddAsset(ev) {
 
   if (editingId) {
     // ── Edit mode ──────────────────────────────────────
-    const isBase = BASE_ASSETS.some((b) => b.id === editingId);
-    if (isBase) {
-      baseOverrides[editingId] = { name_ar: nameAr, name_en: nameEn, icon: selectedIcon, group };
-      // Note: the original currency of built-in assets never changes, to keep old calculations accurate
-    } else {
-      const idx = customAssets.findIndex((c) => c.id === editingId);
-      if (idx !== -1) {
-        customAssets[idx] = {
-          ...customAssets[idx],
-          name_ar: nameAr,
-          name_en: nameEn,
-          icon: selectedIcon,
-          currency,
-          group,
-        };
-      }
-    }
-    rebuildAssets();
+    applyAssetBasicEdit(editingId, { nameAr, nameEn, icon: selectedIcon, currency, group });
     modalOpen = false;
     editingId = null;
     render();

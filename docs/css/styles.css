@@ -986,18 +986,68 @@ body {
 .wt-field-row-3 .wt-field {
   margin-bottom: 0;
 }
+.wt-rc-section {
+  margin-bottom: 4px;
+}
+.wt-rc-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  margin: 16px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--wt-line);
+}
+.wt-rc-section:first-of-type .wt-rc-section-header {
+  margin-top: 0;
+}
 .wt-rc-section-title {
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--wt-text-dim);
-  margin: 16px 0 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--wt-line);
+  margin: 0;
+  padding: 0;
+  border: none;
 }
-.wt-rc-section-title:first-of-type {
-  margin-top: 0;
+.wt-rc-toggle {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--wt-text-dim);
+  cursor: pointer;
+  padding: 2px;
+}
+.wt-rc-toggle:hover {
+  color: var(--wt-green);
+}
+.wt-rc-toggle svg {
+  transition: transform 0.15s ease;
+}
+.wt-rc-section.wt-rc-collapsed .wt-rc-toggle svg {
+  transform: rotate(-90deg);
+}
+.wt-rc-section-subtitle {
+  font-size: 11px;
+  color: var(--wt-text-dim);
+  margin: -2px 0 10px;
+}
+.wt-rc-section-body {
+  max-height: 3000px;
+  opacity: 1;
+  overflow: hidden;
+  transition:
+    max-height 0.18s ease,
+    opacity 0.15s ease;
+}
+.wt-rc-section.wt-rc-collapsed .wt-rc-section-body {
+  max-height: 0;
+  opacity: 0;
 }
 .wt-help-icon {
   border: none;
@@ -1219,16 +1269,31 @@ body {
   align-items: center;
   justify-content: center;
 }
-.wt-preset-list {
+.wt-preset-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
-  margin-bottom: 4px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
 }
 .wt-preset-btn {
+  flex: 0 0 auto;
   font-size: 12px;
   padding: 6px 10px;
   white-space: nowrap;
+}
+.wt-preset-btn.selected {
+  background: var(--wt-green);
+  border-color: var(--wt-green);
+  color: #08130d;
+  font-weight: 700;
+}
+@media (max-width: 480px) {
+  .wt-preset-row {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
 }
 .wt-icon-grid {
   display: grid;

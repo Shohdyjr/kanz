@@ -62,9 +62,7 @@ const I18N = {
     returnConfigBtnTitle: "إعدادات المنتج",
     returnConfigHint:
       "دي معلومة وصفية بس — بتتحفظ عشان توضح شكل المنتج في الواجهة، ومش بتغيّر طريقة حساب النمو (اللي لسه بتعتمد على النسبة السنوية اللي فوق).",
-    clearConfigBtn: "مسح الإعدادات",
     selectAssetLabel: "اختار الأصل",
-    presetsLabel: "منتجات جاهزة (اضغط عشان تعبّي الحقول تلقائي)",
     noAssetsHint: "ضيف أصل الأول من جدول الأصول تحت.",
     setApyLink: "+ حدد",
     apyEditableHint:
@@ -204,6 +202,10 @@ const I18N = {
     sectionGeneral: "عام",
     sectionFinancialModel: "النموذج المالي",
     sectionDatesLiquidity: "تخصيصات متقدمة",
+    sectionProductInfo: "معلومات المنتج",
+    sectionPresets: "منتجات جاهزة",
+    presetsSubtitle: "اختار منتج جاهز عشان يعبّي النموذج المالي تلقائيًا — تقدر تعدّل أي حقل بعد كده.",
+    toggleSectionTitle: "طي/عرض القسم",
     helpIconTitle: "اضغط للشرح",
     growthSourceLabel: "مصدر النمو",
     growthSourceHelp: "ليه القيمة بتتغير أصلاً؟ 'نسبة ثابتة' يعني في نسبة سنوية متفق عليها (زي حساب توفير أو شهادة). 'NAV' يعني القيمة بتتبع صافي قيمة أصول صندوق بيتغير كل يوم (زي صناديق Thndr). 'يدوي' يعني إنت بتحسب النمو بمعادلة مخصصة بنفسك.",
@@ -489,9 +491,7 @@ const I18N = {
     returnConfigBtnTitle: "Product Configuration",
     returnConfigHint:
       "This is descriptive metadata only — it explains how the product works in the UI and does not change the growth calculation (which still uses the annual rate above).",
-    clearConfigBtn: "Clear settings",
     selectAssetLabel: "Select asset",
-    presetsLabel: "Known products (click to auto-fill the fields)",
     noAssetsHint: "Add an asset first from the table below.",
     setApyLink: "+ Set",
     apyEditableHint:
@@ -634,6 +634,10 @@ const I18N = {
     sectionGeneral: "General",
     sectionFinancialModel: "Financial Model",
     sectionDatesLiquidity: "Advanced overrides",
+    sectionProductInfo: "Product Information",
+    sectionPresets: "Product Presets",
+    presetsSubtitle: "Select a preset to automatically populate the financial configuration. You can customize any field afterwards.",
+    toggleSectionTitle: "Collapse/expand section",
     helpIconTitle: "Click for an explanation",
     growthSourceLabel: "Growth Source",
     growthSourceHelp: "Why does the value change at all? 'Fixed Rate' means an agreed annual rate (a savings account or certificate). 'NAV' means the value tracks a fund's net asset value, which moves every day (e.g. Thndr funds). 'Manual' means you compute growth with your own custom formula.",

@@ -146,6 +146,8 @@ let apy = {};
 let returnConfig = {};
 let returnPanelOpen = false; // standalone "return category presets" panel, opened from its own button
 let returnPanelAssetId = null; // which of the user's assets the panel is currently editing
+let rcCollapsed = {}; // Product Configuration page: { [sectionKey]: true } for collapsed sections — default (absent) = expanded
+let rcSelectedPresetId = null; // Product Configuration page: id of the preset button to highlight as "currently selected", reset whenever the asset changes
 // Which asset's quick "since when has this money been here" popover is open
 // (see docs/js/since-date.js) — null when none is open. A lightweight,
 // per-row shortcut into returnConfig[id].startDate, so setting/correcting

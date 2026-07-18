@@ -172,6 +172,9 @@ function openReturnPanel(assetId) {
   returnPanelOpen = true;
   returnPanelAssetId =
     assetId && eligible.some((a) => a.id === assetId) ? assetId : eligible.length ? eligible[0].id : null;
+  const a0 = returnPanelAssetId ? ASSETS.find((x) => x.id === returnPanelAssetId) : null;
+  selectedIcon = a0 ? a0.icon : ICON_PALETTE[0]; // Product Information section's icon picker
+  rcSelectedPresetId = null;
   // Product Configuration is a full-screen view, not a modal — give it a
   // real URL so the browser's own back button, refresh, and bookmarks all
   // work. syncPanelFromHash() (called at the top of every render()) is what
@@ -250,6 +253,9 @@ function onReturnPanelAssetChange(id) {
     const target = "#product-config/" + returnPanelAssetId;
     if (location.hash !== target) history.pushState(null, "", target);
   }
+  const a = returnPanelAssetId ? ASSETS.find((x) => x.id === returnPanelAssetId) : null;
+  selectedIcon = a ? a.icon : ICON_PALETTE[0];
+  rcSelectedPresetId = null;
   const root = document.getElementById("wt-return-panel-root");
   if (root) root.outerHTML = renderReturnPanel();
 }
@@ -311,6 +317,10 @@ function applyReturnPreset(presetId) {
   set("rc-apy", p.suggestedApy);
   set("rc-tierRates", p.tierRates ? p.tierRates.join(",") : "");
   set("rc-growthFormula", "");
+  rcSelectedPresetId = presetId;
+  document.querySelectorAll(".wt-preset-btn").forEach((btn) => {
+    btn.classList.toggle("selected", btn.dataset.presetId === presetId);
+  });
   onGrowthSourceChange(); // syncs tierRates/growthFormula visibility for the preset's growthSource, then refreshes preview
   previewGrowthFormula();
 }
@@ -374,6 +384,46 @@ function submitReturnConfig(ev) {
   const id = returnPanelAssetId;
   if (!id) return;
 
+  // Product Information — same underlying object as the Edit dialog (see
+  // applyAssetBasicEdit in assets.js). Saved by this same button so the
+  // page only ever has one "Save Changes" action.
+  const nameArEl = document.getElementById("rc-info-name-ar");
+  const nameEnEl = document.getElementById("rc-info-name-en");
+  const infoErrEl = document.getElementById("rc-info-error");
+  if (nameArEl && nameEnEl) {
+    const nameAr = (nameArEl.value || "").trim();
+    const nameEn = (nameEnEl.value || "").trim();
+    if (!nameAr) {
+      infoErrEl.textContent = t("errNameAr");
+      infoErrEl.style.display = "block";
+      nameArEl.focus();
+      return;
+    }
+    if (!nameEn) {
+      infoErrEl.textContent = t("errNameEn");
+      infoErrEl.style.display = "block";
+      nameEnEl.focus();
+      return;
+    }
+    if (!/^[A-Za-z0-9 \-_&().]+$/.test(nameEn)) {
+      infoErrEl.textContent = t("errNameEnFormat");
+      infoErrEl.style.display = "block";
+      nameEnEl.focus();
+      return;
+    }
+    infoErrEl.style.display = "none";
+    const currencyEl = document.getElementById("rc-info-currency");
+    const groupEl = document.getElementById("rc-info-group");
+    const current = ASSETS.find((x) => x.id === id);
+    applyAssetBasicEdit(id, {
+      nameAr,
+      nameEn,
+      icon: selectedIcon,
+      currency: currencyEl ? currencyEl.value : current && current.currency,
+      group: groupEl ? groupEl.value : (current && current.group) || "savings",
+    });
+  }
+
   const rateBasisEl = document.getElementById("rc-rateBasis");
   if (rateBasisEl && !rateBasisEl.value) {
     rateBasisEl.reportValidity ? rateBasisEl.reportValidity() : alert(t("rateBasisRequiredAlert"));
@@ -392,13 +442,98 @@ function submitReturnConfig(ev) {
   scheduleSave();
 }
 
-function clearReturnConfig() {
-  const id = returnPanelAssetId;
-  if (!id) return;
-  delete returnConfig[id];
-  const root = document.getElementById("wt-return-panel-root");
-  if (root) root.outerHTML = renderReturnPanel();
-  scheduleSave();
+// ── Collapsible sections ────────────────────────────────────────────────
+// Generic wrapper used by every section of the Product Configuration page
+// (Product Information, Product Presets, General, Financial Model, Advanced
+// Overrides). Collapse state is kept in the plain `rcCollapsed` map (see
+// state.js) rather than in the DOM only, so it survives the targeted
+// re-renders elsewhere on the page (asset switch, preset pick, etc.).
+function toggleRcSection(key) {
+  rcCollapsed[key] = !rcCollapsed[key];
+  const el = document.getElementById("rc-sec-" + key);
+  if (el) el.classList.toggle("wt-rc-collapsed", !!rcCollapsed[key]);
+}
+
+function rcSectionHtml(key, titleText, bodyHtml, subtitleHtml) {
+  const collapsed = !!rcCollapsed[key];
+  return `
+    <div class="wt-rc-section${collapsed ? " wt-rc-collapsed" : ""}" id="rc-sec-${key}">
+      <div class="wt-rc-section-header" onclick="toggleRcSection('${key}')">
+        <h4 class="wt-rc-section-title">${titleText}</h4>
+        <button type="button" class="wt-rc-toggle" title="${t("toggleSectionTitle")}" onclick="event.stopPropagation();toggleRcSection('${key}')">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
+      </div>
+      ${subtitleHtml || ""}
+      <div class="wt-rc-section-body">${bodyHtml}</div>
+    </div>`;
+}
+
+// ── Product Information section ─────────────────────────────────────────
+// Edits the exact same underlying asset object as the Edit dialog (see
+// applyAssetBasicEdit in assets.js) — there is no separate copy of this
+// data. Saved together with the Financial Model fields by the single
+// "Save Changes" button (submitReturnConfig), not its own button.
+function pickInfoIcon(icon) {
+  selectedIcon = icon;
+  document.querySelectorAll("#rc-sec-productInfo .wt-icon-opt").forEach((btn) => {
+    btn.classList.toggle("selected", btn.textContent.trim() === icon);
+  });
+}
+
+function renderProductInfoSection(a) {
+  const isBase = BASE_ASSETS.some((b) => b.id === a.id);
+  const body = `
+    <div class="wt-field">
+      <label>${t("iconLabel")}</label>
+      <div class="wt-icon-grid">
+        ${ICON_PALETTE.map((ic) => `<button type="button" class="wt-icon-opt ${ic === selectedIcon ? "selected" : ""}" onclick="pickInfoIcon('${ic}')">${ic}</button>`).join("")}
+      </div>
+    </div>
+    <div class="wt-field-row-4">
+      <div class="wt-field">
+        <label for="rc-info-name-ar">${t("nameArLabel")}</label>
+        <input type="text" id="rc-info-name-ar" value="${esc(a.name_ar)}" autocomplete="off">
+      </div>
+      <div class="wt-field">
+        <label for="rc-info-name-en">${t("nameEnLabel")}</label>
+        <input type="text" id="rc-info-name-en" value="${esc(a.name_en)}" autocomplete="off" dir="ltr">
+      </div>
+      <div class="wt-field">
+        <label for="rc-info-currency">${t("currencyLabel")}</label>
+        <select id="rc-info-currency" ${isBase ? "disabled" : ""}>
+          ${Object.keys(CURRENCY_LABEL)
+            .map((c) => `<option value="${c}" ${c === a.currency ? "selected" : ""}>${t("currencyNames")[c]}</option>`)
+            .join("")}
+        </select>
+        ${isBase ? `<p style="font-size:11px;color:var(--wt-text-dim);margin:6px 0 0">${t("currencyLockedNote")}</p>` : ""}
+      </div>
+      <div class="wt-field">
+        <label for="rc-info-group">${t("groupLabel")}</label>
+        <select id="rc-info-group">
+          ${["savings", "investments", "assets"]
+            .map((g) => `<option value="${g}" ${g === a.group ? "selected" : ""}>${t("groupOptions")[g]}</option>`)
+            .join("")}
+        </select>
+      </div>
+    </div>
+    <p id="rc-info-error" style="display:none;color:var(--wt-red);font-size:12px;margin:-6px 0 0"></p>`;
+  return rcSectionHtml("productInfo", t("sectionProductInfo"), body);
+}
+
+// ── Product Presets section ─────────────────────────────────────────────
+// Single horizontal scrollable row (wraps only on very small screens — see
+// CSS). Highlights whichever preset was last clicked for this asset.
+function renderPresetsSection() {
+  const body = `
+    <div class="wt-preset-row">
+      ${RETURN_PRESETS.map(
+        (p) =>
+          `<button type="button" class="wt-btn-ghost wt-preset-btn${p.id === rcSelectedPresetId ? " selected" : ""}" data-preset-id="${p.id}" onclick="applyReturnPreset('${p.id}')">${esc(lang === "en" ? p.name_en : p.name_ar)}</button>`
+      ).join("")}
+    </div>`;
+  const subtitle = `<p class="wt-rc-section-subtitle">${t("presetsSubtitle")}</p>`;
+  return rcSectionHtml("presets", t("sectionPresets"), body, subtitle);
 }
 
 // Toggles the ⓘ help text under any Financial Model field.
@@ -514,7 +649,7 @@ function onGrowthSourceChange() {
   const source = document.getElementById("rc-growthSource").value;
   const isFixed = source === "fixedRate";
   const isManual = source === "manual";
-  const advancedSection = document.getElementById("rc-advanced-section");
+  const advancedSection = document.getElementById("rc-sec-advancedOverrides");
   const tierBlock = document.getElementById("rc-tierRates-block");
   const tierHint = document.getElementById("rc-tierRates-hint");
   const tierDuration = document.getElementById("rc-tierRates-duration");
@@ -531,67 +666,9 @@ function renderReturnPanel() {
   const id = returnPanelAssetId;
   const a = ASSETS.find((x) => x.id === id);
   const cfg = (a && returnConfig[id]) || {};
-  const lang_ = lang; // presets are only ever labeled in ar/en, no i18n() needed
-  const summary = a ? generateProductSummary(cfg) : null;
   const validation = a ? (typeof validateDomainModel === "function" ? validateDomainModel(cfg) : { valid: true, errors: [] }) : { valid: true, errors: [] };
 
-  return `
-  <div class="wt-fullpage" id="wt-return-panel-root">
-    <div class="wt-fullpage-inner">
-      <button type="button" class="wt-fullpage-back" onclick="closeReturnPanel()">← ${t("cancel")}</button>
-      <h3>
-        ${t("productConfigTitle")}
-        ${a ? `<button type="button" class="wt-help-icon" title="${t("productSummaryTitle")}" onclick="toggleProductSummary()">ⓘ</button>` : ""}
-      </h3>
-      <p style="font-size:12px;color:var(--wt-text-dim);margin:-6px 0 14px">${t("productConfigHint")}</p>
-      ${
-        a
-          ? `<div class="wt-product-summary" id="rc-product-summary-box" style="display:none">
-               <div class="wt-product-summary-title">💡 ${t("productSummaryTitle")}</div>
-               <p id="rc-product-summary" class="${summary ? "" : "wt-summary-empty"}">${summary ? esc(summary) : t("productSummaryEmpty")}</p>
-             </div>`
-          : ""
-      }
-
-      <div class="wt-field">
-        <label for="rc-asset">${t("selectAssetLabel")}</label>
-        <select id="rc-asset" onchange="onReturnPanelAssetChange(this.value)">
-          ${yieldEligibleAssets().map((x) => `<option value="${x.id}" ${x.id === id ? "selected" : ""}>${esc(x.icon)} ${esc(assetName(x))}</option>`).join("")}
-        </select>
-      </div>
-
-      ${
-        !a
-          ? `<p style="font-size:13px;color:var(--wt-text-dim)">${t("noAssetsHint")}</p>`
-          : `
-      <div class="wt-rc-layout">
-        <div class="wt-rc-col-side">
-          <div class="wt-field">
-            <label>${t("presetsLabel")}</label>
-            <div class="wt-preset-list">
-              ${RETURN_PRESETS.map(
-                (p) =>
-                  `<button type="button" class="wt-btn-ghost wt-preset-btn" onclick="applyReturnPreset('${p.id}')">${esc(lang_ === "en" ? p.name_en : p.name_ar)}</button>`
-              ).join("")}
-            </div>
-          </div>
-
-          ${renderMilestonesSection(a)}
-
-          <!-- Inline validation issues, regenerated on every change via
-               refreshProductConfigPreview(). The plain-English product
-               summary now lives behind the ⓘ button next to the page
-               title instead of always taking up sidebar space. -->
-          <div id="rc-validation" class="wt-rc-validation">
-            ${validation.valid ? "" : `<b>${t("validationTitle")}</b><ul>${validation.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`}
-          </div>
-        </div>
-
-        <div class="wt-rc-col-main">
-      <form onsubmit="submitReturnConfig(event)">
-
-        <!-- ── General ─────────────────────────────────────────────── -->
-        <h4 class="wt-rc-section-title">${t("sectionGeneral")}</h4>
+  const generalBody = `
         <div class="wt-field-row-4">
           <div class="wt-field">
             <label for="rc-productType">${t("productTypeLabel")}</label>
@@ -618,10 +695,14 @@ function renderReturnPanel() {
             <input type="number" id="rc-apy" min="0" max="100" step="any" value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
           </div>
         </div>
-        <p class="wt-return-summary-category" style="margin-top:-4px">${t("apyEditableHint")}</p>
+        <p class="wt-return-summary-category" style="margin-top:-4px">${t("apyEditableHint")}</p>`;
 
-        <!-- ── Financial Model ─────────────────────────────────────── -->
-        <h4 class="wt-rc-section-title">${t("sectionFinancialModel")}</h4>
+  // Financial Model fields — ordered to match the Financial Engine's actual
+  // execution order (see growth-pipeline.js): growth source/frequency first
+  // (how and how often the value moves), then what it's computed against,
+  // then what happens to the growth (paid out vs reinvested), then when
+  // funds are liquid.
+  const financialModelBody = `
         <div class="wt-field-row-3">
           <div class="wt-field">
             ${fieldLabel("rc-growthSource", "growthSourceLabel", "growthSource")}
@@ -647,18 +728,14 @@ function renderReturnPanel() {
             ${fieldLabel("rc-liquidityFrequency", "liquidityFrequencyLabel", "liquidityFrequency")}
             ${domainSelect("liquidityFrequency", cfg)}
           </div>
-        </div>
+        </div>`;
 
-        <!-- ── Advanced overrides ──────────────────────────────────── -->
-        <!-- Only ever relevant for growthSource:"fixedRate" (tierRates) or
-             "manual" (growthFormula) — the whole section, header included,
-             stays hidden for every other growthSource so it never shows up
-             empty. Toggled live by onGrowthSourceChange(). -->
-        <div id="rc-advanced-section" ${cfg.growthSource === "fixedRate" || cfg.growthSource === "manual" ? "" : 'style="display:none"'}>
-          <h4 class="wt-rc-section-title">${t("sectionDatesLiquidity")}</h4>
-          <!-- tierRates only means anything for growthSource:"fixedRate" (see
-               validateDomainModel) — hidden otherwise so it can't be filled in
-               and silently ignored. -->
+  // Only ever relevant for growthSource:"fixedRate" (tierRates) or "manual"
+  // (growthFormula) — the whole section is hidden (display:none, set/kept in
+  // sync by onGrowthSourceChange) for every other growthSource so it never
+  // shows up empty, independent of its own collapse state.
+  const advancedApplies = cfg.growthSource === "fixedRate" || cfg.growthSource === "manual";
+  const advancedBody = `
           <div class="wt-field-row-3" id="rc-tierRates-block" ${cfg.growthSource === "fixedRate" ? "" : 'style="display:none"'}>
             <div class="wt-field">
               <label for="rc-tierRates">${t("tierRatesLabel")}</label>
@@ -684,16 +761,77 @@ function renderReturnPanel() {
               oninput="previewGrowthFormula(); refreshProductConfigPreview();">${esc(cfg.growthFormula || "")}</textarea>
             <p style="font-size:11px;color:var(--wt-text-dim);margin:4px 0 0">${t("growthFormulaHint")}</p>
             <p id="rc-formula-preview" class="wt-return-summary-category" style="margin-top:6px">${t("growthFormulaDefaultNote")}</p>
+          </div>`;
+
+  return `
+  <div class="wt-fullpage" id="wt-return-panel-root">
+    <div class="wt-fullpage-inner">
+      <button type="button" class="wt-fullpage-back" onclick="closeReturnPanel()">← ${t("cancel")}</button>
+      <h3>
+        ${t("productConfigTitle")}
+        ${a ? `<button type="button" class="wt-help-icon" title="${t("productSummaryTitle")}" onclick="toggleProductSummary()">ⓘ</button>` : ""}
+      </h3>
+      <p style="font-size:12px;color:var(--wt-text-dim);margin:-6px 0 14px">${t("productConfigHint")}</p>
+      ${
+        a
+          ? (function () {
+              const summary = generateProductSummary(cfg);
+              return `<div class="wt-product-summary" id="rc-product-summary-box" style="display:none">
+               <div class="wt-product-summary-title">💡 ${t("productSummaryTitle")}</div>
+               <p id="rc-product-summary" class="${summary ? "" : "wt-summary-empty"}">${summary ? esc(summary) : t("productSummaryEmpty")}</p>
+             </div>`;
+            })()
+          : ""
+      }
+
+      <div class="wt-field">
+        <label for="rc-asset">${t("selectAssetLabel")}</label>
+        <select id="rc-asset" onchange="onReturnPanelAssetChange(this.value)">
+          ${yieldEligibleAssets().map((x) => `<option value="${x.id}" ${x.id === id ? "selected" : ""}>${esc(x.icon)} ${esc(assetName(x))}</option>`).join("")}
+        </select>
+      </div>
+
+      ${
+        !a
+          ? `<p style="font-size:13px;color:var(--wt-text-dim)">${t("noAssetsHint")}</p>`
+          : `
+      <form onsubmit="submitReturnConfig(event)">
+
+        ${renderProductInfoSection(a)}
+        ${renderPresetsSection()}
+
+        <div class="wt-rc-layout">
+          <div class="wt-rc-col-side">
+            ${renderMilestonesSection(a)}
+
+            <!-- Inline validation issues, regenerated on every change via
+                 refreshProductConfigPreview(). The plain-English product
+                 summary lives behind the ⓘ button next to the page title
+                 instead of always taking up sidebar space. -->
+            <div id="rc-validation" class="wt-rc-validation">
+              ${validation.valid ? "" : `<b>${t("validationTitle")}</b><ul>${validation.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`}
+            </div>
+          </div>
+
+          <div class="wt-rc-col-main">
+            ${rcSectionHtml("general", t("sectionGeneral"), generalBody)}
+            ${rcSectionHtml("financialModel", t("sectionFinancialModel"), financialModelBody)}
+            <div id="rc-sec-advancedOverrides" class="wt-rc-section${rcCollapsed.advancedOverrides ? " wt-rc-collapsed" : ""}" ${advancedApplies ? "" : 'style="display:none"'}>
+              <div class="wt-rc-section-header" onclick="toggleRcSection('advancedOverrides')">
+                <h4 class="wt-rc-section-title">${t("sectionDatesLiquidity")}</h4>
+                <button type="button" class="wt-rc-toggle" title="${t("toggleSectionTitle")}" onclick="event.stopPropagation();toggleRcSection('advancedOverrides')">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+              </div>
+              <div class="wt-rc-section-body">${advancedBody}</div>
+            </div>
           </div>
         </div>
 
         <div class="wt-modal-actions">
-          <button type="button" class="wt-btn-ghost" onclick="clearReturnConfig()">${t("clearConfigBtn")}</button>
           <button type="submit" class="wt-btn">${t("saveChanges")}</button>
         </div>
       </form>
-        </div>
-      </div>
       `
       }
     </div>
