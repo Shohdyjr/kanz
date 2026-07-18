@@ -258,10 +258,10 @@ function updateTotals() {
   let totalUsd = 0;
   ASSETS.forEach((a) => {
     const p = priceFor(a);
-    const t = qty[a.id] * p;
-    totalUsd += t;
+    const usdValue = qty[a.id] * p;
+    totalUsd += usdValue;
     const el = document.getElementById("total-" + a.id);
-    if (el) el.textContent = fmtUsd(t);
+    if (el) el.textContent = fmtUsd(usdValue);
     const m = primaryMilestone(a);
     const projEl = document.getElementById("projection-" + a.id);
     if (projEl) {

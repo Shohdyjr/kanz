@@ -81,6 +81,19 @@ function postActivity(fields, onDone) {
 function submitActivity(ev) {
   ev.preventDefault();
   activityError = null;
+  try {
+    submitActivityInner();
+  } catch (e) {
+    // Whatever goes wrong here, the person should see SOMETHING rather than
+    // a frozen modal with no feedback — that silent-failure mode is exactly
+    // the bug this try/catch exists to prevent.
+    console.error("submitActivity:", e);
+    activityError = "genericError";
+    render();
+  }
+}
+
+function submitActivityInner() {
 
   const date = document.getElementById("activity-date").value || todayLocalStr();
   const note = document.getElementById("activity-note").value || "";
@@ -240,8 +253,18 @@ function finishActivitySubmit(err) {
     // always a safe, honest degradation (see architecture principles: an
     // Activity is never required for Portfolio state to be correct).
     console.error("postActivity:", err);
+    activityError = err;
+    render();
+    return;
   }
-  closeActivityModal();
+  // Brief visible confirmation — without this, a successful save and a
+  // silently-failed one look identical to the person using the app.
+  activitySavedFlash = true;
+  render();
+  setTimeout(() => {
+    activitySavedFlash = false;
+    closeActivityModal();
+  }, 700);
 }
 
 // ── Rendering ────────────────────────────────────────────────────────
@@ -256,6 +279,9 @@ function renderActivityModal() {
   const allItems = activityAllItems();
   const today = todayLocalStr();
   const errMsg = activityError ? `<p style="color:var(--wt-red);font-size:12px;margin:-6px 0 12px">${t(activityError)}</p>` : "";
+  const savedMsg = activitySavedFlash
+    ? `<p style="color:var(--wt-green);font-size:12px;margin:-6px 0 12px">✓ ${t("activitySaved")}</p>`
+    : "";
 
   const tabs = ACTIVITY_KINDS.map(
     (k) =>
@@ -326,6 +352,7 @@ function renderActivityModal() {
           <input type="text" id="activity-note" maxlength="200">
         </div>
         ${errMsg}
+        ${savedMsg}
         <div class="wt-modal-actions">
           <button type="button" class="wt-btn-ghost" onclick="closeActivityModal()">${t("cancel")}</button>
           <button type="submit" class="wt-btn">${t("saveChanges")}</button>

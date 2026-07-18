@@ -223,6 +223,7 @@ let emailModalOpen = false; // recovery-email settings modal, opened from the to
 let activityModalOpen = false;
 let activityType = null; // "salary" | "deposit" | "withdrawal" | "buy" | "sell" | "transfer" | "correction"
 let activityError = null;
+let activitySavedFlash = false; // true for a brief moment after a successful save, before the modal closes
 
 // Which optional table columns are hidden — a pure per-device display
 // preference (not synced to the server, unlike everything else in this
