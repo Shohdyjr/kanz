@@ -155,6 +155,8 @@ const I18N = {
     },
     rateBasisShort: { nominal: "نسبة اسمية", effective: "نسبة فعلية" },
     rateBasisChoosePrompt: "لازم تختار: اسمية (APR) ولا فعلية (APY)؟",
+    choosePrompt: "-- اختار --",
+    fieldRequiredAlert: "الحقل ده مطلوب.",
     rateBasisRequiredAlert: "من فضلك اختار شكل النسبة (APR ولا APY) قبل الحفظ — المنتج لازم يكون واضح هو ايه.",
     simBasisToggleLabel: "احسب على أساس",
     simDaysUnit: "يوم",
@@ -163,7 +165,6 @@ const I18N = {
     compoundingLabel: "بيتراكم على الأصل؟",
     liquidityLabel: "السيولة",
     categoryPreviewLabel: "الفئة الناتجة",
-    noneOption: "غير محدد",
     compoundingYes: "نعم — بيتراكم",
     compoundingNo: "لأ — بيتصرف للعميل",
     productTypeOptions: {
@@ -586,6 +587,8 @@ const I18N = {
     },
     rateBasisShort: { nominal: "Nominal rate", effective: "Effective rate" },
     rateBasisChoosePrompt: "Choose one: Nominal (APR) or Effective (APY)?",
+    choosePrompt: "-- Choose --",
+    fieldRequiredAlert: "This field is required.",
     rateBasisRequiredAlert:
       "Please choose the rate basis (APR or APY) before saving — the product must be explicit about which one it is.",
     simBasisToggleLabel: "Compute as",
@@ -595,7 +598,6 @@ const I18N = {
     compoundingLabel: "Compounds?",
     liquidityLabel: "Liquidity",
     categoryPreviewLabel: "Resulting category",
-    noneOption: "Not set",
     compoundingYes: "Yes — compounds",
     compoundingNo: "No — paid out to customer",
     productTypeOptions: {

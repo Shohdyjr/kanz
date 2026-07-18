@@ -172,8 +172,6 @@ function openReturnPanel(assetId) {
   returnPanelOpen = true;
   returnPanelAssetId =
     assetId && eligible.some((a) => a.id === assetId) ? assetId : eligible.length ? eligible[0].id : null;
-  const a0 = returnPanelAssetId ? ASSETS.find((x) => x.id === returnPanelAssetId) : null;
-  selectedIcon = a0 ? a0.icon : ICON_PALETTE[0]; // Product Information section's icon picker
   rcSelectedPresetId = null;
   // Product Configuration is a full-screen view, not a modal — give it a
   // real URL so the browser's own back button, refresh, and bookmarks all
@@ -253,8 +251,6 @@ function onReturnPanelAssetChange(id) {
     const target = "#product-config/" + returnPanelAssetId;
     if (location.hash !== target) history.pushState(null, "", target);
   }
-  const a = returnPanelAssetId ? ASSETS.find((x) => x.id === returnPanelAssetId) : null;
-  selectedIcon = a ? a.icon : ICON_PALETTE[0];
   rcSelectedPresetId = null;
   const root = document.getElementById("wt-return-panel-root");
   if (root) root.outerHTML = renderReturnPanel();
@@ -412,13 +408,14 @@ function submitReturnConfig(ev) {
       return;
     }
     infoErrEl.style.display = "none";
+    const iconEl = document.getElementById("rc-info-icon");
     const currencyEl = document.getElementById("rc-info-currency");
     const groupEl = document.getElementById("rc-info-group");
     const current = ASSETS.find((x) => x.id === id);
     applyAssetBasicEdit(id, {
       nameAr,
       nameEn,
-      icon: selectedIcon,
+      icon: iconEl ? iconEl.value : current && current.icon,
       currency: currencyEl ? currencyEl.value : current && current.currency,
       group: groupEl ? groupEl.value : (current && current.group) || "savings",
     });
@@ -454,6 +451,18 @@ function toggleRcSection(key) {
   if (el) el.classList.toggle("wt-rc-collapsed", !!rcCollapsed[key]);
 }
 
+// Every field on this page is now required. A required field inside a
+// collapsed section is still enabled, so the browser's native validation
+// would try to focus it while it's visually squeezed to zero height. Expand
+// everything first (on the Save button's click, i.e. before that native
+// validation runs) so any invalid field is actually visible.
+function expandAllRcSections() {
+  document.querySelectorAll(".wt-rc-section.wt-rc-collapsed").forEach((el) => {
+    el.classList.remove("wt-rc-collapsed");
+    rcCollapsed[el.id.replace("rc-sec-", "")] = false;
+  });
+}
+
 function rcSectionHtml(key, titleText, bodyHtml, subtitleHtml) {
   const collapsed = !!rcCollapsed[key];
   return `
@@ -474,34 +483,27 @@ function rcSectionHtml(key, titleText, bodyHtml, subtitleHtml) {
 // applyAssetBasicEdit in assets.js) — there is no separate copy of this
 // data. Saved together with the Financial Model fields by the single
 // "Save Changes" button (submitReturnConfig), not its own button.
-function pickInfoIcon(icon) {
-  selectedIcon = icon;
-  document.querySelectorAll("#rc-sec-productInfo .wt-icon-opt").forEach((btn) => {
-    btn.classList.toggle("selected", btn.textContent.trim() === icon);
-  });
-}
-
 function renderProductInfoSection(a) {
   const isBase = BASE_ASSETS.some((b) => b.id === a.id);
   const body = `
-    <div class="wt-field">
-      <label>${t("iconLabel")}</label>
-      <div class="wt-icon-grid">
-        ${ICON_PALETTE.map((ic) => `<button type="button" class="wt-icon-opt ${ic === selectedIcon ? "selected" : ""}" onclick="pickInfoIcon('${ic}')">${ic}</button>`).join("")}
-      </div>
-    </div>
-    <div class="wt-field-row-4">
+    <div class="wt-field-row-5">
       <div class="wt-field">
-        <label for="rc-info-name-ar">${t("nameArLabel")}</label>
-        <input type="text" id="rc-info-name-ar" value="${esc(a.name_ar)}" autocomplete="off">
+        <label for="rc-info-icon">${t("iconLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+        <select id="rc-info-icon" required>
+          ${ICON_PALETTE.map((ic) => `<option value="${ic}" ${ic === a.icon ? "selected" : ""}>${ic}</option>`).join("")}
+        </select>
       </div>
       <div class="wt-field">
-        <label for="rc-info-name-en">${t("nameEnLabel")}</label>
-        <input type="text" id="rc-info-name-en" value="${esc(a.name_en)}" autocomplete="off" dir="ltr">
+        <label for="rc-info-name-ar">${t("nameArLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+        <input type="text" id="rc-info-name-ar" value="${esc(a.name_ar)}" autocomplete="off" required>
       </div>
       <div class="wt-field">
-        <label for="rc-info-currency">${t("currencyLabel")}</label>
-        <select id="rc-info-currency" ${isBase ? "disabled" : ""}>
+        <label for="rc-info-name-en">${t("nameEnLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+        <input type="text" id="rc-info-name-en" value="${esc(a.name_en)}" autocomplete="off" dir="ltr" required>
+      </div>
+      <div class="wt-field">
+        <label for="rc-info-currency">${t("currencyLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+        <select id="rc-info-currency" required ${isBase ? "disabled" : ""}>
           ${Object.keys(CURRENCY_LABEL)
             .map((c) => `<option value="${c}" ${c === a.currency ? "selected" : ""}>${t("currencyNames")[c]}</option>`)
             .join("")}
@@ -509,8 +511,8 @@ function renderProductInfoSection(a) {
         ${isBase ? `<p style="font-size:11px;color:var(--wt-text-dim);margin:6px 0 0">${t("currencyLockedNote")}</p>` : ""}
       </div>
       <div class="wt-field">
-        <label for="rc-info-group">${t("groupLabel")}</label>
-        <select id="rc-info-group">
+        <label for="rc-info-group">${t("groupLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+        <select id="rc-info-group" required>
           ${["savings", "investments", "assets"]
             .map((g) => `<option value="${g}" ${g === a.group ? "selected" : ""}>${t("groupOptions")[g]}</option>`)
             .join("")}
@@ -577,7 +579,7 @@ function previewGrowthFormula() {
 
 function optionsHtml(optionsMap, selected) {
   return (
-    `<option value="">${t("noneOption")}</option>` +
+    `<option value="" disabled ${selected ? "" : "selected"}>${t("choosePrompt")}</option>` +
     Object.keys(optionsMap)
       .map((k) => `<option value="${k}" ${k === selected ? "selected" : ""}>${optionsMap[k]}</option>`)
       .join("")
@@ -616,7 +618,7 @@ function renderMilestonesSection(a) {
 function fieldLabel(fieldId, labelKey, helpKey) {
   return `
     <label for="${fieldId}">
-      ${t(labelKey)}
+      ${t(labelKey)} <span style="color:var(--wt-danger,#e05252)">*</span>
       ${helpKey ? `<button type="button" class="wt-help-icon" title="${t("helpIconTitle")}" onclick="toggleFieldHelp('${helpKey}')">ⓘ</button>` : ""}
     </label>
     ${helpKey ? `<p id="rc-help-${helpKey}" class="wt-field-help" style="display:none">${t(helpKey + "Help")}</p>` : ""}
@@ -624,7 +626,7 @@ function fieldLabel(fieldId, labelKey, helpKey) {
 }
 
 function domainSelect(field, cfg, onchange) {
-  return `<select id="rc-${field}" onchange="${onchange || "refreshProductConfigPreview()"}">${optionsHtml(t(field + "Options"), cfg[field])}</select>`;
+  return `<select id="rc-${field}" required onchange="${onchange || "refreshProductConfigPreview()"}">${optionsHtml(t(field + "Options"), cfg[field])}</select>`;
 }
 
 // Derived-only: never stored, always recomputed from tierRates.length +
@@ -653,12 +655,16 @@ function onGrowthSourceChange() {
   const tierBlock = document.getElementById("rc-tierRates-block");
   const tierHint = document.getElementById("rc-tierRates-hint");
   const tierDuration = document.getElementById("rc-tierRates-duration");
+  const tierInput = document.getElementById("rc-tierRates");
   const formulaBlock = document.getElementById("rc-growthFormula-block");
+  const formulaInput = document.getElementById("rc-growthFormula");
   if (advancedSection) advancedSection.style.display = isFixed || isManual ? "" : "none";
   if (tierBlock) tierBlock.style.display = isFixed ? "" : "none";
   if (tierHint) tierHint.style.display = isFixed ? "" : "none";
   if (tierDuration) tierDuration.style.display = isFixed ? "" : "none";
+  if (tierInput) tierInput.disabled = !isFixed; // required only when it actually applies — disabled fields are skipped by form validation
   if (formulaBlock) formulaBlock.style.display = isManual ? "" : "none";
+  if (formulaInput) formulaInput.disabled = !isManual;
   refreshProductConfigPreview();
 }
 
@@ -671,12 +677,12 @@ function renderReturnPanel() {
   const generalBody = `
         <div class="wt-field-row-4">
           <div class="wt-field">
-            <label for="rc-productType">${t("productTypeLabel")}</label>
-            <select id="rc-productType" onchange="applyProductTypeDefaults(this.value)">${optionsHtml(t("productTypeOptions"), cfg.productType)}</select>
+            <label for="rc-productType">${t("productTypeLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+            <select id="rc-productType" required onchange="applyProductTypeDefaults(this.value)">${optionsHtml(t("productTypeOptions"), cfg.productType)}</select>
           </div>
           <div class="wt-field">
-            <label for="rc-rateType">${t("rateTypeLabel")}</label>
-            <select id="rc-rateType">${optionsHtml(t("rateTypeOptions"), cfg.rateType)}</select>
+            <label for="rc-rateType">${t("rateTypeLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+            <select id="rc-rateType" required>${optionsHtml(t("rateTypeOptions"), cfg.rateType)}</select>
           </div>
           <div class="wt-field">
             <label for="rc-rateBasis">${t("rateBasisLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
@@ -691,8 +697,8 @@ function renderReturnPanel() {
             </select>
           </div>
           <div class="wt-field">
-            <label for="rc-apy">${t("thApy")}</label>
-            <input type="number" id="rc-apy" min="0" max="100" step="any" value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
+            <label for="rc-apy">${t("thApy")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+            <input type="number" id="rc-apy" min="0" max="100" step="any" required value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
           </div>
         </div>
         <p class="wt-return-summary-category" style="margin-top:-4px">${t("apyEditableHint")}</p>`;
@@ -738,8 +744,9 @@ function renderReturnPanel() {
   const advancedBody = `
           <div class="wt-field-row-3" id="rc-tierRates-block" ${cfg.growthSource === "fixedRate" ? "" : 'style="display:none"'}>
             <div class="wt-field">
-              <label for="rc-tierRates">${t("tierRatesLabel")}</label>
-              <input type="text" id="rc-tierRates" placeholder="27,22,17" dir="ltr"
+              <label for="rc-tierRates">${t("tierRatesLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+              <input type="text" id="rc-tierRates" placeholder="27,22,17" dir="ltr" required
+                ${cfg.growthSource === "fixedRate" ? "" : "disabled"}
                 oninput="refreshProductConfigPreview()"
                 value="${Array.isArray(cfg.tierRates) ? cfg.tierRates.join(",") : ""}">
             </div>
@@ -755,8 +762,9 @@ function renderReturnPanel() {
                growthSource:"manual" — hidden otherwise, same reasoning as
                tierRates above. -->
           <div class="wt-field" id="rc-growthFormula-block" ${cfg.growthSource === "manual" ? "" : 'style="display:none"'}>
-            <label for="rc-growthFormula">${t("growthFormulaLabel")}</label>
-            <textarea id="rc-growthFormula" dir="ltr" rows="2" spellcheck="false"
+            <label for="rc-growthFormula">${t("growthFormulaLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+            <textarea id="rc-growthFormula" dir="ltr" rows="2" spellcheck="false" required
+              ${cfg.growthSource === "manual" ? "" : "disabled"}
               placeholder="principal * (rate/100/365) * days"
               oninput="previewGrowthFormula(); refreshProductConfigPreview();">${esc(cfg.growthFormula || "")}</textarea>
             <p style="font-size:11px;color:var(--wt-text-dim);margin:4px 0 0">${t("growthFormulaHint")}</p>
@@ -829,7 +837,7 @@ function renderReturnPanel() {
         </div>
 
         <div class="wt-modal-actions">
-          <button type="submit" class="wt-btn">${t("saveChanges")}</button>
+          <button type="submit" class="wt-btn" onclick="expandAllRcSections()">${t("saveChanges")}</button>
         </div>
       </form>
       `
