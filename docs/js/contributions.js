@@ -13,8 +13,29 @@
 // or negative) so old net entries still display; new UI writes two separate
 // signed entries instead.
 
+// ── Contributions — full-screen timeline ───────────────────────────────
+// A scrollable list of months, newest first, from the current month back
+// to whenever the earliest Activity was logged — no year boundary, so
+// browsing further back is just scrolling, not switching years. Each row
+// is collapsed to a one-line summary by default and expands in place to
+// show that month's full Activity log.
+//   + income (green)  — money that came IN this month (salary, bonus, etc.)
+//   - expenses (red)  — money that went OUT (spent, withdrawn)
+// The net (income − expenses) is what gets passed to helpers.js so growth
+// calculations can subtract it from raw wealth deltas.
+
+// ── State ──
+// Each contribution entry now has:
+//   { date, type: "income"|"expense", amountUsd, note }
+// The server/backend model stays the same (stores any amountUsd — positive
+// or negative) so old net entries still display; new UI writes two separate
+// signed entries instead.
+
 function openContribModal() {
   contribModalOpen = true;
+  // Current month starts expanded every time the screen opens — that's the
+  // one row someone almost always wants to see without an extra tap.
+  expandedContribMonths = new Set([todayLocalStr().slice(0, 7)]);
   render();
 }
 
@@ -73,19 +94,82 @@ function monthLabel(m0) {
   return lang === "ar" ? MONTH_NAMES_AR[m0] : MONTH_NAMES_EN[m0];
 }
 
+// "YYYY-MM" -> "Month YYYY" (or Arabic equivalent) for timeline rows, where
+// the year always needs to be visible since rows span multiple years.
+function monthYearLabel(yearMonth) {
+  const [y, m] = yearMonth.split("-");
+  return `${monthLabel(parseInt(m, 10) - 1)} ${y}`;
+}
+
+// Every "YYYY-MM" from the current month back to the earliest logged
+// Activity (or just the current month if there's no history yet), newest
+// first — the full continuous span the timeline scrolls through, with no
+// per-year cutoff.
+function buildTimelineMonths() {
+  const current = todayLocalStr().slice(0, 7);
+  const earliest = (contributionsData || []).reduce((min, c) => {
+    const ym = (c.date || "").slice(0, 7);
+    return ym && (!min || ym < min) ? ym : min;
+  }, current);
+
+  const months = [];
+  let [y, m] = current.split("-").map(Number);
+  const [ey, em] = earliest.split("-").map(Number);
+  while (y > ey || (y === ey && m >= em)) {
+    months.push(`${y}-${String(m).padStart(2, "0")}`);
+    m -= 1;
+    if (m === 0) {
+      m = 12;
+      y -= 1;
+    }
+  }
+  return months;
+}
+
+function toggleContribMonth(yearMonth) {
+  if (expandedContribMonths.has(yearMonth)) expandedContribMonths.delete(yearMonth);
+  else expandedContribMonths.add(yearMonth);
+  render();
+}
+
 // Returns {income, expense, net} for YYYY-MM
+// Returns { currencies: { EGP: {income, expense}, USD: {...}, ... } } — each
+// activity's cash-flow amount is kept in the currency it was actually
+// logged in (native amountOriginal), never merged into one USD figure.
+// amountUsd is only used as a fallback for legacy entries that predate the
+// currency field.
 function monthSummary(yearMonth) {
-  let income = 0,
-    expense = 0;
+  const currencies = {};
   (contributionsData || []).forEach((c) => {
     if (!c.date.startsWith(yearMonth)) return;
-    // Support both old-style net entries (amountUsd positive=income, negative=expense)
-    // and new-style entries with explicit type field.
-    const amt = parseFloat(c.amountUsd) || 0;
-    if (INCOME_ACTIVITY_TYPES.has(c.type) || (!c.type && amt > 0)) income += Math.abs(amt);
-    else if (EXPENSE_ACTIVITY_TYPES.has(c.type) || (!c.type && amt < 0)) expense += Math.abs(amt);
+    const amtUsd = parseFloat(c.amountUsd) || 0;
+    const isIncome = INCOME_ACTIVITY_TYPES.has(c.type) || (!c.type && amtUsd > 0);
+    const isExpense = EXPENSE_ACTIVITY_TYPES.has(c.type) || (!c.type && amtUsd < 0);
+    if (!isIncome && !isExpense) return;
+
+    const cur = c.currency || "USD";
+    const native = typeof c.amountOriginal === "number" ? c.amountOriginal : amtUsd;
+    const mag = Math.abs(native);
+    if (!currencies[cur]) currencies[cur] = { income: 0, expense: 0 };
+    if (isIncome) currencies[cur].income += mag;
+    else currencies[cur].expense += mag;
   });
-  return { income, expense, net: income - expense };
+  return { currencies };
+}
+
+// Merges several monthSummary()-shaped {currencies} objects into one — used
+// for the all-time header totals, which sum every month without ever
+// converting between currencies.
+function mergeCurrencySummaries(summaries) {
+  const merged = {};
+  summaries.forEach((s) => {
+    Object.entries(s.currencies).forEach(([cur, v]) => {
+      if (!merged[cur]) merged[cur] = { income: 0, expense: 0 };
+      merged[cur].income += v.income;
+      merged[cur].expense += v.expense;
+    });
+  });
+  return merged;
 }
 
 // Currencies the user can log a salary/expense entry in — kept in sync with
@@ -225,19 +309,32 @@ function deleteContrib(entry) {
     });
 }
 
-// ── Render a single month card ──
-// No inline per-cell editor anymore — adding always goes through
-// openActivityModal() (docs/js/activities.js), the single intent-driven
-// entry point. This card is purely a monthly summary + browsable log.
-function renderMonthCard(year, m0) {
-  const m1 = String(m0 + 1).padStart(2, "0");
-  const yearMonth = year + "-" + m1;
-  const { income, expense, net } = monthSummary(yearMonth);
+// Renders one small colored "+1,200 EGP" / "-50 USD" badge per currency
+// that had cash flow — never merges them into a single number. Multiple
+// badges wrap onto their own line if a month/total spans several currencies.
+function renderCurrencyBadges(currencies, fontSize) {
+  const entries = Object.entries(currencies).filter(([, v]) => v.income > 0 || v.expense > 0);
+  if (entries.length === 0) return "";
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end">
+    ${entries
+      .map(([cur, v]) => {
+        const net = v.income - v.expense;
+        const color = net >= 0 ? "var(--wt-green)" : "var(--wt-red)";
+        const sign = net >= 0 ? "+" : "";
+        return `<span style="font-family:'JetBrains Mono',monospace;font-size:${fontSize}px;font-weight:700;color:${color};white-space:nowrap">${sign}${fmtByCurrency(Math.abs(net), cur)}</span>`;
+      })
+      .join("")}
+  </div>`;
+}
 
-  const isCurrentMonth = new Date().getFullYear() === year && new Date().getMonth() === m0;
-  const netColor = net >= 0 ? "var(--wt-green)" : "var(--wt-red)";
-  const netSign = net >= 0 ? "+" : "";
-  const hasCashFlow = income > 0 || expense > 0;
+// ── Render a single timeline row ──
+// No inline per-cell editor anymore — adding always goes through
+// openActivityModal() (docs/js/activities.js). Collapsed by default; click
+// the row to expand/collapse its entry log in place.
+function renderMonthRow(yearMonth) {
+  const { currencies } = monthSummary(yearMonth);
+  const isCurrentMonth = yearMonth === todayLocalStr().slice(0, 7);
+  const isExpanded = expandedContribMonths.has(yearMonth);
 
   const borderStyle = isCurrentMonth ? "border:1.5px solid var(--wt-gold-dim)" : "border:1px solid var(--wt-line)";
 
@@ -266,8 +363,8 @@ function renderMonthCard(year, m0) {
           <span style="color:${disp.color};white-space:nowrap">
             ${disp.icon} ${t(disp.labelKey)} — ${amountLabel}
           </span>
-          <span style="opacity:0.7;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(itemBits || c.note || "")}</span>
-          <button onclick='deleteContrib(${JSON.stringify(c)})'
+          <span style="opacity:0.7;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(itemBits || c.note || "")}</span>
+          <button onclick='event.stopPropagation();deleteContrib(${JSON.stringify(c)})'
             style="background:none;border:none;cursor:pointer;color:var(--wt-red);
                    font-size:10px;padding:0 2px;line-height:1">×</button>
         </div>`;
@@ -277,31 +374,43 @@ function renderMonthCard(year, m0) {
       : `<p style="font-size:10px;color:var(--wt-text-dim);opacity:0.5;margin:4px 0 0">${t("activityNoneThisMonth")}</p>`;
 
   return `
-    <div style="border-radius:var(--wt-radius);${borderStyle};
-                background:rgba(255,255,255,0.02);padding:12px 12px 10px;
-                display:flex;flex-direction:column;gap:4px;position:relative;
-                min-height:100px;transition:border-color .2s">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-        <span style="font-size:12px;font-weight:600;color:${isCurrentMonth ? "var(--wt-gold)" : "var(--wt-text)"}">
-          ${monthLabel(m0)}
+    <div class="wt-contrib-row" style="border-radius:var(--wt-radius);${borderStyle};
+                background:rgba(255,255,255,0.02);padding:10px 12px;cursor:pointer"
+         onclick="toggleContribMonth('${yearMonth}')">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-size:9px;color:var(--wt-text-dim);width:12px;flex-shrink:0">${isExpanded ? "▾" : "▸"}</span>
+        <span style="font-size:13px;font-weight:600;color:${isCurrentMonth ? "var(--wt-gold)" : "var(--wt-text)"};flex:1">
+          ${monthYearLabel(yearMonth)}
         </span>
-        ${hasCashFlow ? `<span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:${netColor}">${netSign}${fmtUsd(Math.abs(net))}</span>` : ""}
+        ${renderCurrencyBadges(currencies, 11)}
       </div>
 
-      ${entryList}
+      ${isExpanded ? entryList : ""}
     </div>`;
 }
 
 // ── Full-screen overlay ──
 function renderContribModal() {
-  const year = new Date().getFullYear();
-  const months = Array.from({ length: 12 }, (_, i) => i);
+  const months = buildTimelineMonths(); // newest first, current month back to earliest Activity
 
-  // Year-level totals
-  const yearIncome = months.reduce((s, m) => s + monthSummary(year + "-" + String(m + 1).padStart(2, "0")).income, 0);
-  const yearExpense = months.reduce((s, m) => s + monthSummary(year + "-" + String(m + 1).padStart(2, "0")).expense, 0);
-  const yearNet = yearIncome - yearExpense;
-  const netColor = yearNet >= 0 ? "var(--wt-green)" : "var(--wt-red)";
+  // All-time totals — no year boundary AND no currency merging: each
+  // currency the user has ever logged cash flow in keeps its own
+  // income/expense/net, never collapsed into a single converted figure.
+  const allCurrencies = mergeCurrencySummaries(months.map((ym) => monthSummary(ym)));
+  const currencyTotalsHtml = Object.entries(allCurrencies)
+    .filter(([, v]) => v.income > 0 || v.expense > 0)
+    .map(([cur, v]) => {
+      const net = v.income - v.expense;
+      const netColor = net >= 0 ? "var(--wt-green)" : "var(--wt-red)";
+      return `
+        <div style="text-align:center">
+          <div style="font-size:10px;color:var(--wt-text-dim);margin-bottom:2px">${cur}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--wt-green)">▲ ${fmtByCurrency(v.income, cur)}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--wt-red)">▼ ${fmtByCurrency(v.expense, cur)}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:${netColor};margin-top:2px;padding-top:2px;border-top:1px solid var(--wt-line)">${net >= 0 ? "+" : ""}${fmtByCurrency(Math.abs(net), cur)}</div>
+        </div>`;
+    })
+    .join("");
 
   return `
   <div class="wt-contrib-fullscreen">
@@ -310,22 +419,11 @@ function renderContribModal() {
       <!-- header -->
       <div class="wt-contrib-fs-header">
         <div>
-          <h2 style="margin:0;font-size:18px;font-weight:700">${year} — ${t("contribScreenTitle")}</h2>
+          <h2 style="margin:0;font-size:18px;font-weight:700">${t("contribScreenTitle")}</h2>
           <p style="margin:4px 0 0;font-size:12px;color:var(--wt-text-dim)">${t("contribScreenHint")}</p>
         </div>
-        <div style="display:flex;gap:24px;align-items:flex-end">
-          <div style="text-align:center">
-            <div style="font-size:10px;color:var(--wt-text-dim);margin-bottom:2px">${t("contribTotalIncome")}</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--wt-green)">▲ ${fmtUsd(yearIncome)}</div>
-          </div>
-          <div style="text-align:center">
-            <div style="font-size:10px;color:var(--wt-text-dim);margin-bottom:2px">${t("contribTotalExpense")}</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--wt-red)">▼ ${fmtUsd(yearExpense)}</div>
-          </div>
-          <div style="text-align:center">
-            <div style="font-size:10px;color:var(--wt-text-dim);margin-bottom:2px">${t("contribTotalNet")}</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:${netColor}">${yearNet >= 0 ? "+" : ""}${fmtUsd(yearNet)}</div>
-          </div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-end">
+          ${currencyTotalsHtml}
           <button class="wt-btn-ghost" style="align-self:center" onclick="closeContribModal()">✕ ${t("close")}</button>
         </div>
       </div>
@@ -340,9 +438,9 @@ function renderContribModal() {
           .join("")}
       </div>
 
-      <!-- 4×3 grid -->
-      <div class="wt-contrib-grid">
-        ${months.map((m) => renderMonthCard(year, m)).join("")}
+      <!-- scrollable timeline, newest month first -->
+      <div class="wt-contrib-timeline">
+        ${months.map((ym) => renderMonthRow(ym)).join("")}
       </div>
 
       <p style="font-size:11px;color:var(--wt-text-dim);margin-top:12px;text-align:center">

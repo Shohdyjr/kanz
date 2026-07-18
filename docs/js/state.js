@@ -214,6 +214,10 @@ let goalModalOpen = false;
 // "money I added" vs "my assets actually grew in value" — see helpers.js.
 let contributionsData = [];
 let contribModalOpen = false;
+// Timeline view of contributionsData (docs/js/contributions.js): which
+// "YYYY-MM" month rows are expanded to show their entry log. Current month
+// starts expanded by default each time the modal opens.
+let expandedContribMonths = new Set();
 let emailModalOpen = false; // recovery-email settings modal, opened from the top bar
 
 // Intent-driven Activity logging (see docs/js/activities.js). `activityType`
