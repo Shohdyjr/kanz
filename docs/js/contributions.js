@@ -82,8 +82,8 @@ function monthSummary(yearMonth) {
     // Support both old-style net entries (amountUsd positive=income, negative=expense)
     // and new-style entries with explicit type field.
     const amt = parseFloat(c.amountUsd) || 0;
-    if (c.type === "income" || (!c.type && amt > 0)) income += Math.abs(amt);
-    else if (c.type === "expense" || (!c.type && amt < 0)) expense += Math.abs(amt);
+    if (INCOME_ACTIVITY_TYPES.has(c.type) || (!c.type && amt > 0)) income += Math.abs(amt);
+    else if (EXPENSE_ACTIVITY_TYPES.has(c.type) || (!c.type && amt < 0)) expense += Math.abs(amt);
   });
   return { income, expense, net: income - expense };
 }
@@ -163,6 +163,41 @@ function activityItemLabel(itemId) {
   return a ? assetName(a) : itemId;
 }
 
+// Undoes the qty change an Activity made to whichever item(s) it touched,
+// the mirror image of applyQtyDelta() in activities.js. Deleting a logged
+// Activity must never leave a balance it created behind — the log entry
+// and the qty it caused are two views of the same fact and have to be
+// deleted together.
+//
+// For salary/deposit/withdrawal/correction the original native delta is
+// stored verbatim as amountOriginal, so reversal is exact. For
+// transfer/buy/sell only one side's native delta is stored; the other
+// side is recomputed from amountUsd at today's price, which is exact if
+// prices haven't moved since and a close best-effort otherwise.
+function reverseActivityQty(entry) {
+  if (!entry || typeof entry !== "object") return; // legacy date-only delete: nothing to reverse
+  const amt = parseFloat(entry.amountOriginal);
+  if (entry.type === "transfer" && entry.fromItemId && entry.toItemId) {
+    if (!isNaN(amt)) applyQtyDelta(entry.fromItemId, amt); // undo the -rawAmt taken from fromItemId
+    const toAsset = ASSETS.find((a) => a.id === entry.toItemId);
+    const toPrice = toAsset && priceFor(toAsset);
+    const usdValue = parseFloat(entry.amountUsd) || 0;
+    if (toPrice) applyQtyDelta(entry.toItemId, -(usdValue / toPrice));
+  } else if ((entry.type === "buy" || entry.type === "sell") && entry.assetItemId && entry.fundingItemId) {
+    if (!isNaN(amt)) applyQtyDelta(entry.fundingItemId, -amt); // undo the funding-side delta
+    const assetItem = ASSETS.find((a) => a.id === entry.assetItemId);
+    const assetPrice = assetItem && priceFor(assetItem);
+    const usdValue = Math.abs(parseFloat(entry.amountUsd) || 0);
+    if (assetPrice) {
+      const assetNativeDelta = usdValue / assetPrice;
+      applyQtyDelta(entry.assetItemId, entry.type === "buy" ? -assetNativeDelta : assetNativeDelta);
+    }
+  } else if (entry.itemId && !isNaN(amt)) {
+    // salary / deposit / withdrawal / correction — single item, exact reversal
+    applyQtyDelta(entry.itemId, -amt);
+  }
+}
+
 function deleteContrib(entry) {
   // `entry` is either a legacy date string (old call sites) or a full
   // Activity object — pass its id when present so same-day typed Activities
@@ -170,6 +205,17 @@ function deleteContrib(entry) {
   const isObj = entry && typeof entry === "object";
   const date = isObj ? entry.date : entry;
   const id = isObj ? entry.id : undefined;
+
+  // Undo the balance change locally first (same pattern submitActivityInner
+  // uses: qty mutation + scheduleSave), THEN delete the log entry — so a
+  // failed/slow API call never leaves the log gone but the balance stuck.
+  if (isObj) {
+    reverseActivityQty(entry);
+    updateTotals();
+    scheduleSave();
+    renderBreakdown();
+  }
+
   callApi("deleteActivity", currentUser, id ? { date, id } : date, sessionToken)
     .then(function (j) {
       if (j && j.ok) loadContributions();

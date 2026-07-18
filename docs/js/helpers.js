@@ -114,6 +114,12 @@ function getGrowthCandidate(days) {
 // look like a deposit and a Sell like a withdrawal.
 const CASH_FLOW_ACTIVITY_TYPES = new Set(["salary", "deposit", "withdrawal", "income", "expense"]);
 
+// Which cash-flow types count as "income" vs "expense" for month totals
+// (used by monthSummary() in contributions.js). Kept here alongside
+// CASH_FLOW_ACTIVITY_TYPES so the two stay in sync as new types are added.
+const INCOME_ACTIVITY_TYPES = new Set(["salary", "deposit", "income"]);
+const EXPENSE_ACTIVITY_TYPES = new Set(["withdrawal", "expense"]);
+
 function sumContributionsBetween(sinceDateInclusive, untilDateInclusive, currencies) {
   if (!contributionsData || contributionsData.length === 0) return 0;
   return contributionsData
