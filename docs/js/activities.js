@@ -94,6 +94,14 @@ function submitActivity(ev) {
 }
 
 function submitActivityInner() {
+  if (!rates) {
+    // Every branch below prices at least one item via priceFor(), which
+    // returns 0 with no rates loaded — better to say so explicitly than to
+    // silently do nothing.
+    activityError = "errContribRate";
+    render();
+    return;
+  }
 
   const date = document.getElementById("activity-date").value || todayLocalStr();
   const note = document.getElementById("activity-note").value || "";
