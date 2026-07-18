@@ -216,6 +216,14 @@ let contributionsData = [];
 let contribModalOpen = false;
 let emailModalOpen = false; // recovery-email settings modal, opened from the top bar
 
+// Intent-driven Activity logging (see docs/js/activities.js). `activityType`
+// is chosen FIRST (Salary/Deposit/Withdrawal/Buy/Sell/Transfer/Correction),
+// which is what makes the resulting record a fact about a chosen action
+// rather than a guess reconstructed after the number was typed.
+let activityModalOpen = false;
+let activityType = null; // "salary" | "deposit" | "withdrawal" | "buy" | "sell" | "transfer" | "correction"
+let activityError = null;
+
 // Which optional table columns are hidden — a pure per-device display
 // preference (not synced to the server, unlike everything else in this
 // file), so it's read straight from localStorage once at load time.

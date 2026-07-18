@@ -4,6 +4,8 @@ const pool = require("../db/pool");
 const { requireAuth } = require("../lib/auth");
 const { validate } = require("../lib/validate");
 const growthPipeline = require("../lib/growthPipeline");
+const { computeAttribution } = require("../lib/attribution");
+const { BASE_ASSET_CURRENCY, priceForServerSide, fetchRatesServerSide } = require("../lib/rates");
 const router = express.Router();
 
 // All /api/data, /api/history, /api/contributions endpoints are auth-gated;
@@ -259,10 +261,19 @@ router.delete("/history", async (req, res) => {
   res.json({ ok: true, history });
 });
 
-// ── Contributions (net money manually added/withdrawn in a period) ─────
-// Kept as their own table column (not mixed into `history`) so the client can
-// subtract them from a wealth delta and isolate "real" growth — i.e. how much
-// existing assets moved in value, separate from money the user simply added.
+// ── Activities (facts about intentional user actions) ──────────────────
+// Generalized from the original `contributions` column/model. Kept in the
+// SAME `contributions` DB column deliberately — no migration needed, and
+// every existing row already fits the generalized shape unchanged (an old
+// entry with no `type` is treated as `income`/`expense` per its amount's
+// sign — see inferLegacyType in lib/attribution.js).
+//
+// An Activity is a fact about ONE atomic action. Per Kanz's architecture
+// principles it may carry fields intrinsic to that single action (a
+// Transfer's `fromItemId`/`toItemId`, a Buy's `assetItemId`/`fundingItemId`)
+// but must NEVER reference another Activity — there is deliberately no
+// `sourceActivityId`/`threadId`/parent field anywhere in this shape, and
+// none should ever be added (see docs-dev/architecture-principles.md).
 async function getContributionsRow(username) {
   const { rows } = await pool.query("SELECT contributions FROM kanz_users WHERE username = $1", [username]);
   return rows[0] || null;
@@ -275,10 +286,28 @@ router.get("/contributions", async (req, res) => {
   if (!user) return res.json({ ok: false, error: "userNotFound" });
   res.json({ ok: true, contributions: user.contributions || [] });
 });
+// Same data, generalized name — new clients should prefer this endpoint.
+// Both read the identical underlying column; kept as two paths only so
+// existing callers of loadContributionsForClient need no changes.
+router.get("/activities", async (req, res) => {
+  const user = await getContributionsRow(req.username);
+  if (!user) return res.json({ ok: false, error: "userNotFound" });
+  res.json({ ok: true, activities: user.contributions || [] });
+});
 
 // Currencies the client's own FX rates (docs/js/helpers.js priceFor) can
 // price — kept in sync with BASE_ASSET_CURRENCY's fiat entries in lib/rates.js.
 const CONTRIB_CURRENCIES = ["EGP", "USD", "EUR", "SAR"];
+
+// The closed set of intents an Activity may express. Deliberately flat and
+// small — see docs-dev/architecture-principles.md ("intent-driven actions").
+// "income"/"expense" are kept only as the legacy two the old UI wrote;
+// `salary`/`deposit`/`withdrawal` are their intent-driven replacements.
+const ACTIVITY_TYPES = ["income", "expense", "salary", "deposit", "withdrawal", "buy", "sell", "transfer", "correction"];
+
+function genActivityId() {
+  return "act_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
 
 router.post("/contributions", async (req, res) => {
   const { ok, errors } = validate(req.body, {
@@ -290,19 +319,38 @@ router.post("/contributions", async (req, res) => {
     // fallbacks below), matching their original behavior exactly.
     currency: { type: "string", optional: true, match: /^(EGP|USD|EUR|SAR)$/ },
     amountOriginal: { type: "number", optional: true, finite: true },
+    // New, all optional — see ACTIVITY_TYPES / file header above.
+    type: { type: "string", optional: true },
+    itemId: { type: "string", optional: true, maxLength: 100 },
+    fromItemId: { type: "string", optional: true, maxLength: 100 },
+    toItemId: { type: "string", optional: true, maxLength: 100 },
+    assetItemId: { type: "string", optional: true, maxLength: 100 },
+    fundingItemId: { type: "string", optional: true, maxLength: 100 },
   });
   if (!ok) return res.json({ ok: false, error: errors[0] || "invalidData" });
 
-  const { date, amountUsd, note, currency, amountOriginal } = req.body;
+  const { date, amountUsd, note, currency, amountOriginal, type, itemId, fromItemId, toItemId, assetItemId, fundingItemId } =
+    req.body;
   if (currency && !CONTRIB_CURRENCIES.includes(currency)) return res.json({ ok: false, error: "invalidData" });
+  if (type && !ACTIVITY_TYPES.includes(type)) return res.json({ ok: false, error: "invalidData" });
+  // A Transfer/Buy/Sell describes exactly one action with two intrinsic
+  // sides — require both sides together, never one alone, so a saved
+  // Activity can't silently describe a half-finished action.
+  if (type === "transfer" && (!fromItemId || !toItemId)) return res.json({ ok: false, error: "invalidData" });
+  if (type === "buy" && (!assetItemId || !fundingItemId)) return res.json({ ok: false, error: "invalidData" });
+  if (type === "sell" && (!assetItemId || !fundingItemId)) return res.json({ ok: false, error: "invalidData" });
 
   const user = await getContributionsRow(req.username);
   if (!user) return res.json({ ok: false, error: "userNotFound" });
 
-  // One contribution entry per date — logging the same date again (e.g. the
-  // user corrects a typo) replaces it rather than creating a duplicate.
+  // One Activity per (date, id) — legacy behavior (one entry per date,
+  // replacing on re-save) is preserved for untyped/income/expense entries by
+  // matching on date+no-id, as before. Typed activities get a stable id so
+  // multiple can share a date (e.g. a Deposit and a Correction on the same
+  // day) without clobbering each other.
   const contributions = user.contributions || [];
   const entry = {
+    id: genActivityId(),
     date,
     amountUsd,
     note: typeof note === "string" ? note.slice(0, 200) : "",
@@ -311,31 +359,72 @@ router.post("/contributions", async (req, res) => {
     // every growth calculation already relies on, so nothing downstream changes.
     currency: currency || "USD",
     amountOriginal: typeof amountOriginal === "number" ? amountOriginal : amountUsd,
+    type: type || undefined,
+    itemId: itemId || undefined,
+    fromItemId: fromItemId || undefined,
+    toItemId: toItemId || undefined,
+    assetItemId: assetItemId || undefined,
+    fundingItemId: fundingItemId || undefined,
   };
-  const idx = contributions.findIndex((c) => c.date === date);
-  idx >= 0 ? (contributions[idx] = entry) : contributions.push(entry);
+  const legacyIdx = !type ? contributions.findIndex((c) => c.date === date && !c.type) : -1;
+  legacyIdx >= 0 ? (contributions[legacyIdx] = entry) : contributions.push(entry);
   contributions.sort((a, b) => a.date.localeCompare(b.date));
 
   await pool.query("UPDATE kanz_users SET contributions = $1 WHERE username = $2", [
     JSON.stringify(contributions),
     req.username,
   ]);
-  res.json({ ok: true });
+  res.json({ ok: true, activity: entry });
 });
 
 router.delete("/contributions", async (req, res) => {
-  const date = req.body.date;
+  const { date, id } = req.body;
   if (!isValidDateStr(date)) return res.json({ ok: false, error: "invalidDate" });
 
   const user = await getContributionsRow(req.username);
   if (!user) return res.json({ ok: false, error: "userNotFound" });
 
-  const contributions = (user.contributions || []).filter((c) => c.date !== date);
+  // If an id is given (typed Activities may share a date), delete that
+  // specific entry; otherwise fall back to legacy date-only deletion.
+  const contributions = (user.contributions || []).filter((c) => (id ? c.id !== id : c.date !== date));
   await pool.query("UPDATE kanz_users SET contributions = $1 WHERE username = $2", [
     JSON.stringify(contributions),
     req.username,
   ]);
   res.json({ ok: true, contributions });
+});
+
+// ── Attribution (derived — see lib/attribution.js) ──────────────────────
+// Pure read: recomputes the breakdown on every request from Snapshots +
+// Activities + Item History. Nothing here is stored.
+router.get("/attribution", async (req, res) => {
+  const { from, to } = req.query;
+  if (!isValidDateStr(from) || !isValidDateStr(to)) return res.json({ ok: false, error: "invalidDate" });
+
+  const { rows } = await pool.query(
+    "SELECT data, history, contributions, item_history FROM kanz_users WHERE username = $1",
+    [req.username]
+  );
+  const user = rows[0];
+  if (!user) return res.json({ ok: false, error: "userNotFound" });
+
+  // Same source of truth computeSnapshot() uses for pricing every item —
+  // built here purely as a lookup, not a new fact.
+  const customAssets = (user.data && user.data.customAssets) || [];
+  const currencyById = { ...BASE_ASSET_CURRENCY };
+  for (const c of customAssets) if (c && c.id && c.currency) currencyById[c.id] = c.currency;
+  const itemCurrency = (itemId) => currencyById[itemId] || "USD";
+
+  const result = computeAttribution(
+    user.history || [],
+    user.contributions || [],
+    user.item_history || [],
+    from,
+    to,
+    itemCurrency,
+    priceForServerSide
+  );
+  res.json({ ok: true, attribution: result });
 });
 
 // The router remains the default export used by app.js. isFiniteNumberMap and

@@ -51,6 +51,21 @@ const RPC_MAP = {
   loadContributionsForClient: (u, tok) => ({ method: "GET", path: "/contributions", bearer: tok }),
   addContribution: (u, entry, tok) => ({ method: "POST", path: "/contributions", bearer: tok, body: entry }),
   deleteContribution: (u, date, tok) => ({ method: "DELETE", path: "/contributions", bearer: tok, body: { date } }),
+  // Same underlying storage as Contributions (see docs-dev/architecture-principles.md)
+  // — generalized names/shape for intent-driven Activities (salary, deposit,
+  // withdrawal, buy, sell, transfer, correction).
+  addActivity: (u, entry, tok) => ({ method: "POST", path: "/contributions", bearer: tok, body: entry }),
+  deleteActivity: (u, dateOrId, tok) => ({
+    method: "DELETE",
+    path: "/contributions",
+    bearer: tok,
+    body: typeof dateOrId === "object" ? dateOrId : { date: dateOrId },
+  }),
+  loadAttribution: (u, fromDate, toDate, tok) => ({
+    method: "GET",
+    path: "/attribution?from=" + encodeURIComponent(fromDate) + "&to=" + encodeURIComponent(toDate),
+    bearer: tok,
+  }),
   getHistoricalRate: (dateStr) => ({ method: "GET", path: "/historical-rate?date=" + encodeURIComponent(dateStr) }),
   fetchBenchmarkSeries: (from, to) => ({
     method: "GET",

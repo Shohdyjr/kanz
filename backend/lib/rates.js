@@ -163,7 +163,24 @@ function priceForServerSide(currency, rates) {
   }
 }
 
-/** Computes a portfolio snapshot (grouped USD totals) for a given day. */
+/**
+ * Computes a portfolio snapshot (grouped USD totals) for a given day.
+ *
+ * Also retains the native (non-USD-converted) quantity behind each currency
+ * bucket, plus the exact rates used to price them (`nativeTotals`/`ratesUsed`
+ * below). This is additive to the existing `{date, totalUsd, egpUsd, hardUsd,
+ * goldUsd, assetsUsd}` shape, not a replacement for it.
+ *
+ * Why: two snapshots' USD totals alone can't tell you *why* a bucket's USD
+ * value changed — a bucket can move because its native quantity changed
+ * (a deposit, a withdrawal, a trade) or because the rate used to price it
+ * changed (gold got more expensive in USD, or EGP moved against USD) — same
+ * USD delta, completely different meaning. Keeping the native quantity and
+ * the rate as two separate numbers lets that be decomposed later with plain
+ * arithmetic (see backend/lib/attribution.js), instead of guessed at. This
+ * invents no allocation rule — it just stops discarding two numbers (native
+ * qty, rates) this function already has in hand at snapshot time.
+ */
 function computeSnapshot(userData, rates, dateStr) {
   const excludedIds = userData.excludedBaseIds || [];
   const overrides = userData.baseOverrides || {};
@@ -186,19 +203,42 @@ function computeSnapshot(userData, rates, dateStr) {
     });
 
   const totals = { egpUsd: 0, hardUsd: 0, goldUsd: 0, assetsUsd: 0 };
+  // Native (non-USD) quantity behind each bucket. Hard currencies are kept
+  // per-currency (USD/EUR/SAR don't share a unit), everything else is a
+  // single native unit per bucket (EGP, grams of gold).
+  const nativeTotals = { egp: 0, gold: 0, usd: 0, eur: 0, sar: 0 };
 
   for (const asset of [...baseAssets, ...customAssets]) {
-    const value = (parseFloat(qty[asset.id]) || 0) * priceForServerSide(asset.currency, rates);
-    if (asset.isAsset) totals.assetsUsd += value;
-    else if (asset.currency === "EGP") totals.egpUsd += value;
-    else if (asset.currency === "GOLD") totals.goldUsd += value;
-    else if (HARD_CURRENCIES.includes(asset.currency)) totals.hardUsd += value;
+    const nativeQty = parseFloat(qty[asset.id]) || 0;
+    const value = nativeQty * priceForServerSide(asset.currency, rates);
+    if (asset.isAsset) {
+      totals.assetsUsd += value; // assets aren't decomposed into rate-vs-quantity — see attribution.js
+    } else if (asset.currency === "EGP") {
+      totals.egpUsd += value;
+      nativeTotals.egp += nativeQty;
+    } else if (asset.currency === "GOLD") {
+      totals.goldUsd += value;
+      nativeTotals.gold += nativeQty;
+    } else if (HARD_CURRENCIES.includes(asset.currency)) {
+      totals.hardUsd += value;
+      const key = asset.currency.toLowerCase();
+      if (nativeTotals[key] !== undefined) nativeTotals[key] += nativeQty;
+    }
   }
 
   return {
     date: dateStr,
     totalUsd: totals.egpUsd + totals.hardUsd + totals.goldUsd + totals.assetsUsd,
     ...totals,
+    nativeTotals,
+    // Only the rates this snapshot actually priced against — kept minimal
+    // and explicit, not the whole fetchRatesServerSide() payload.
+    ratesUsed: {
+      egpPerUsd: rates.egpPerUsd,
+      eurPerUsd: rates.eurPerUsd,
+      sarPerUsd: rates.sarPerUsd,
+      goldUsdPerGram: rates.goldUsdPerGram,
+    },
   };
 }
 
