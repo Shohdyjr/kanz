@@ -135,8 +135,42 @@ function saveContribEntry(yearMonth, type, rawAmt, currency, note, onDone) {
     });
 }
 
-function deleteContrib(date) {
-  callApi("deleteContribution", currentUser, date, sessionToken)
+// Icon + i18n-label-key for every Activity type, used by the unified entry
+// list below. Untyped legacy rows are treated exactly as they always were
+// (income if amountUsd >= 0, else expense).
+const ACTIVITY_DISPLAY = {
+  salary: { icon: "💰", labelKey: "activityTypeSalary", color: "var(--wt-green)" },
+  income: { icon: "▲", labelKey: "contribIncomeLabel", color: "var(--wt-green)" },
+  deposit: { icon: "▲", labelKey: "activityTypeDeposit", color: "var(--wt-green)" },
+  withdrawal: { icon: "▼", labelKey: "activityTypeWithdrawal", color: "var(--wt-red)" },
+  expense: { icon: "▼", labelKey: "contribExpenseLabel", color: "var(--wt-red)" },
+  buy: { icon: "🛒", labelKey: "activityTypeBuy", color: "var(--wt-text)" },
+  sell: { icon: "💵", labelKey: "activityTypeSell", color: "var(--wt-text)" },
+  transfer: { icon: "↔️", labelKey: "activityTypeTransfer", color: "var(--wt-text-dim)" },
+  correction: { icon: "✎", labelKey: "activityTypeCorrection", color: "var(--wt-text-dim)" },
+};
+function activityDisplayFor(c) {
+  const type = c.type || (parseFloat(c.amountUsd) >= 0 ? "income" : "expense");
+  return ACTIVITY_DISPLAY[type] || ACTIVITY_DISPLAY.income;
+}
+// Resolves an itemId (stored on typed Activities) to a display name, falling
+// back to the raw id if the item was later deleted/renamed — never hides
+// the fact that an Activity references something, even if that something
+// is gone.
+function activityItemLabel(itemId) {
+  if (!itemId) return "";
+  const a = ASSETS.find((x) => x.id === itemId);
+  return a ? assetName(a) : itemId;
+}
+
+function deleteContrib(entry) {
+  // `entry` is either a legacy date string (old call sites) or a full
+  // Activity object — pass its id when present so same-day typed Activities
+  // don't clobber each other (see backend/routes/data.js DELETE /contributions).
+  const isObj = entry && typeof entry === "object";
+  const date = isObj ? entry.date : entry;
+  const id = isObj ? entry.id : undefined;
+  callApi("deleteActivity", currentUser, id ? { date, id } : date, sessionToken)
     .then(function (j) {
       if (j && j.ok) loadContributions();
     })
@@ -145,52 +179,10 @@ function deleteContrib(date) {
     });
 }
 
-// ── Per-cell inline editor ──
-// We keep a tiny piece of ephemeral state in a global so the full render()
-// cycle can show an expanded input row inside the right cell.
-let _editingCell = null; // "YYYY-MM:income" | "YYYY-MM:expense" | null
-let _editErr = null;
-// Remembers the last currency picked in the cell editor for the rest of the
-// session, so choosing "EGP" once doesn't mean re-picking it on every entry.
-let _editCurrency = "EGP";
-
-function openCellEditor(yearMonth, type) {
-  _editingCell = yearMonth + ":" + type;
-  _editErr = null;
-  render();
-  setTimeout(() => {
-    const el = document.getElementById("contrib-cell-input");
-    if (el) el.focus();
-  }, 40);
-}
-
-function closeCellEditor() {
-  _editingCell = null;
-  _editErr = null;
-  render();
-}
-
-function submitCellEntry(ev, yearMonth, type) {
-  ev.preventDefault();
-  const inp = document.getElementById("contrib-cell-input");
-  const noteInp = document.getElementById("contrib-cell-note");
-  const curInp = document.getElementById("contrib-cell-currency");
-  const amt = inp ? inp.value : "";
-  const note = noteInp ? noteInp.value : "";
-  const currency = curInp ? curInp.value : _editCurrency;
-  _editCurrency = currency; // remember for next time
-  saveContribEntry(yearMonth, type, amt, currency, note, function (err) {
-    if (err) {
-      _editErr = err;
-      render();
-    } else {
-      _editingCell = null;
-      _editErr = null;
-    }
-  });
-}
-
 // ── Render a single month card ──
+// No inline per-cell editor anymore — adding always goes through
+// openActivityModal() (docs/js/activities.js), the single intent-driven
+// entry point. This card is purely a monthly summary + browsable log.
 function renderMonthCard(year, m0) {
   const m1 = String(m0 + 1).padStart(2, "0");
   const yearMonth = year + "-" + m1;
@@ -199,86 +191,44 @@ function renderMonthCard(year, m0) {
   const isCurrentMonth = new Date().getFullYear() === year && new Date().getMonth() === m0;
   const netColor = net >= 0 ? "var(--wt-green)" : "var(--wt-red)";
   const netSign = net >= 0 ? "+" : "";
-  const hasData = income > 0 || expense > 0;
+  const hasCashFlow = income > 0 || expense > 0;
 
   const borderStyle = isCurrentMonth ? "border:1.5px solid var(--wt-gold-dim)" : "border:1px solid var(--wt-line)";
 
-  // Entries for this month (for the per-entry delete list)
+  // Every Activity in this month, of any type — not just income/expense —
+  // so nothing recorded is ever hidden from this screen.
   const monthEntries = (contributionsData || []).filter((c) => c.date.startsWith(yearMonth));
 
-  const editingIncome = _editingCell === yearMonth + ":income";
-  const editingExpense = _editingCell === yearMonth + ":expense";
-
-  function rowHTML(type, amount, color, icon, labelKey) {
-    const editing = _editingCell === yearMonth + ":" + type;
-    const amtDisplay =
-      amount > 0
-        ? `<span style="color:${color};font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600">${icon}${fmtUsd(amount)}</span>`
-        : `<span style="color:var(--wt-text-dim);font-size:10px;opacity:0.5">${t(labelKey)}</span>`;
-
-    if (editing) {
-      return `
-        <form onsubmit="submitCellEntry(event,'${yearMonth}','${type}')" style="margin:4px 0">
-          <div style="display:flex;gap:4px;align-items:center">
-            <input id="contrib-cell-input" type="number" step="any" min="0"
-              placeholder="0.00" dir="ltr"
-              style="width:64px;padding:3px 6px;border-radius:6px;
-                     border:1px solid var(--wt-line-strong);background:var(--wt-bg);
-                     color:var(--wt-text);font-size:12px;font-family:'JetBrains Mono',monospace">
-            <select id="contrib-cell-currency" dir="ltr"
-              style="padding:3px 4px;border-radius:6px;border:1px solid var(--wt-line-strong);
-                     background:var(--wt-bg);color:var(--wt-text);font-size:11px">
-              ${CONTRIB_CURRENCIES.map((c) => `<option value="${c}" ${c === _editCurrency ? "selected" : ""}>${c}</option>`).join("")}
-            </select>
-            <button type="submit" class="wt-btn" style="padding:2px 8px;font-size:11px">${t("add")}</button>
-            <button type="button" class="wt-btn-ghost" style="padding:2px 6px;font-size:11px" onclick="closeCellEditor()">✕</button>
-          </div>
-          <input id="contrib-cell-note" type="text" maxlength="100"
-            placeholder="${t("contribNotePh")}"
-            style="margin-top:3px;width:100%;padding:2px 6px;border-radius:5px;
-                   border:1px solid var(--wt-line);background:var(--wt-bg);
-                   color:var(--wt-text);font-size:10px">
-          ${_editErr ? `<p style="color:var(--wt-red);font-size:10px;margin:2px 0 0">${t(_editErr) || _editErr}</p>` : ""}
-        </form>`;
-    }
-    return `
-      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;
-                  padding:2px 0;border-radius:4px"
-           onclick="openCellEditor('${yearMonth}','${type}')">
-        ${amtDisplay}
-        <span style="font-size:10px;color:var(--wt-text-dim);opacity:0.6;padding-left:4px">+</span>
-      </div>`;
-  }
-
-  // Compact entry list (for deleting old entries)
   const entryList =
     monthEntries.length > 0
       ? `
-    <div style="margin-top:6px;border-top:1px solid var(--wt-line);padding-top:5px">
+    <div style="margin-top:6px;border-top:1px solid var(--wt-line);padding-top:5px;display:flex;flex-direction:column;gap:2px">
       ${monthEntries
         .map((c) => {
-          const pos = (parseFloat(c.amountUsd) || 0) >= 0;
-          // Legacy entries (saved before the currency field existed) have no
-          // `currency`/`amountOriginal` — those just fall back to the USD
-          // figure exactly like before this feature was added.
+          const disp = activityDisplayFor(c);
           const hasOriginal = c.currency && c.currency !== "USD" && typeof c.amountOriginal === "number";
           const amountLabel = hasOriginal
             ? `${fmtByCurrency(Math.abs(c.amountOriginal), c.currency)} <span style="opacity:0.6">(≈${fmtUsd(Math.abs(parseFloat(c.amountUsd) || 0))})</span>`
             : fmtUsd(Math.abs(parseFloat(c.amountUsd) || 0));
+          // Typed activities show which item(s) they touched; legacy
+          // income/expense entries have none.
+          const itemBits = [activityItemLabel(c.itemId), activityItemLabel(c.fromItemId), activityItemLabel(c.toItemId), activityItemLabel(c.assetItemId)]
+            .filter(Boolean)
+            .join(" → ");
           return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;
-                             color:var(--wt-text-dim);padding:1px 0">
-          <span style="color:${pos ? "var(--wt-green)" : "var(--wt-red)"}">
-            ${pos ? "▲" : "▼"} ${amountLabel}
+                             color:var(--wt-text-dim);padding:1px 0;gap:4px">
+          <span style="color:${disp.color};white-space:nowrap">
+            ${disp.icon} ${t(disp.labelKey)} — ${amountLabel}
           </span>
-          ${c.note ? `<span style="opacity:0.7;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.note)}</span>` : ""}
-          <button onclick="deleteContrib('${esc(c.date)}')"
+          <span style="opacity:0.7;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(itemBits || c.note || "")}</span>
+          <button onclick='deleteContrib(${JSON.stringify(c)})'
             style="background:none;border:none;cursor:pointer;color:var(--wt-red);
                    font-size:10px;padding:0 2px;line-height:1">×</button>
         </div>`;
         })
         .join("")}
     </div>`
-      : "";
+      : `<p style="font-size:10px;color:var(--wt-text-dim);opacity:0.5;margin:4px 0 0">${t("activityNoneThisMonth")}</p>`;
 
   return `
     <div style="border-radius:var(--wt-radius);${borderStyle};
@@ -289,11 +239,8 @@ function renderMonthCard(year, m0) {
         <span style="font-size:12px;font-weight:600;color:${isCurrentMonth ? "var(--wt-gold)" : "var(--wt-text)"}">
           ${monthLabel(m0)}
         </span>
-        ${hasData ? `<span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:${netColor}">${netSign}${fmtUsd(Math.abs(net))}</span>` : ""}
+        ${hasCashFlow ? `<span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:${netColor}">${netSign}${fmtUsd(Math.abs(net))}</span>` : ""}
       </div>
-
-      ${rowHTML("income", income, "var(--wt-green)", "▲ ", "contribIncomeLabel")}
-      ${rowHTML("expense", expense, "var(--wt-red)", "▼ ", "contribExpenseLabel")}
 
       ${entryList}
     </div>`;
@@ -335,6 +282,16 @@ function renderContribModal() {
           </div>
           <button class="wt-btn-ghost" style="align-self:center" onclick="closeContribModal()">✕ ${t("close")}</button>
         </div>
+      </div>
+
+      <!-- quick-add: intent-driven entry points, all opening the same tabbed modal -->
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+        ${["salary", "deposit", "withdrawal", "buy", "sell", "transfer", "correction"]
+          .map(
+            (k) =>
+              `<button class="wt-btn-ghost" onclick="openActivityModal('${k}')">${t("activityType" + k.charAt(0).toUpperCase() + k.slice(1))}</button>`
+          )
+          .join("")}
       </div>
 
       <!-- 4×3 grid -->

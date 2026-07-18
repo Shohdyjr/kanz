@@ -106,6 +106,14 @@ function getGrowthCandidate(days) {
 // attribute a contribution to the EGP vs. hard-currency change-breakdown
 // category it actually landed in, since a contribution already carries the
 // currency the user typed it in.
+// Types that represent money genuinely entering/leaving the user's control
+// (not moved between their own holdings) — kept in sync with
+// EXTERNAL_CASH_FLOW_TYPES in backend/lib/attribution.js. Buy/Sell/Transfer/
+// Correction activities are stored in the same array but must NOT be
+// subtracted here as if they were external cash flow, or a Buy would wrongly
+// look like a deposit and a Sell like a withdrawal.
+const CASH_FLOW_ACTIVITY_TYPES = new Set(["salary", "deposit", "withdrawal", "income", "expense"]);
+
 function sumContributionsBetween(sinceDateInclusive, untilDateInclusive, currencies) {
   if (!contributionsData || contributionsData.length === 0) return 0;
   return contributionsData
@@ -113,7 +121,8 @@ function sumContributionsBetween(sinceDateInclusive, untilDateInclusive, currenc
       (c) =>
         (!sinceDateInclusive || c.date >= sinceDateInclusive) &&
         c.date <= untilDateInclusive &&
-        (!currencies || currencies.includes(c.currency))
+        (!currencies || currencies.includes(c.currency)) &&
+        CASH_FLOW_ACTIVITY_TYPES.has(c.type || (parseFloat(c.amountUsd) >= 0 ? "income" : "expense"))
     )
     .reduce((sum, c) => sum + (parseFloat(c.amountUsd) || 0), 0);
 }

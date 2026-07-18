@@ -70,8 +70,10 @@ function applyQtyDelta(itemId, nativeDelta) {
 function postActivity(fields, onDone) {
   callApi("addActivity", currentUser, fields, sessionToken)
     .then((j) => {
-      if (j && j.ok) onDone && onDone(null);
-      else onDone && onDone((j && j.error) || "genericError");
+      if (j && j.ok) {
+        loadContributions(); // refresh contributionsData so the Activities log reflects this immediately
+        onDone && onDone(null);
+      } else onDone && onDone((j && j.error) || "genericError");
     })
     .catch(() => onDone && onDone("connectionError"));
 }
