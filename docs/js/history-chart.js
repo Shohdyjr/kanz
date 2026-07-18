@@ -264,12 +264,20 @@ function renderChangeAnalysis(filteredHistory) {
         changeAnalysisExclContrib ? t("growthToggleShowIncl") : t("growthToggleShowExcl")
       }</button>`
     : "";
+  // When excl mode is on but nothing was actually found to subtract, the
+  // rows look identical to incl mode — make that explicit instead of
+  // leaving it to look like the toggle silently did nothing.
+  const noneFoundHint =
+    exclMode && egpContributed === 0 && hardContributed === 0
+      ? `<p style="font-size:10px;color:var(--wt-text-dim);opacity:0.7;margin:2px 0 0">${t("changeAnalysisNoneFound")}</p>`
+      : "";
 
   root.innerHTML = `
   <div class="wt-change-header">
     <p class="wt-bk-leg-title" style="margin:0">${t("changeAnalysisTitle")}</p>
     ${toggleBtn}
   </div>
+  ${noneFoundHint}
   ${rows
     .map((r) => {
       const up = r.delta >= 0;

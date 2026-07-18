@@ -127,7 +127,13 @@ function sumContributionsBetween(sinceDateInclusive, untilDateInclusive, currenc
       (c) =>
         (!sinceDateInclusive || c.date >= sinceDateInclusive) &&
         c.date <= untilDateInclusive &&
-        (!currencies || currencies.includes(c.currency)) &&
+        // Entries saved before the currency field existed have no `currency`
+        // at all — the backend already treats that as USD at save time
+        // (see POST /contributions: `currency: currency || "USD"`), so read
+        // it back the same way here. Without this fallback, a legacy entry
+        // matched neither the EGP filter nor the USD/EUR/SAR filter and
+        // silently vanished from both buckets instead of landing in one.
+        (!currencies || currencies.includes(c.currency || "USD")) &&
         CASH_FLOW_ACTIVITY_TYPES.has(c.type || (parseFloat(c.amountUsd) >= 0 ? "income" : "expense"))
     )
     .reduce((sum, c) => sum + (parseFloat(c.amountUsd) || 0), 0);
