@@ -463,7 +463,7 @@ function expandAllRcSections() {
   });
 }
 
-function rcSectionHtml(key, titleText, bodyHtml, subtitleHtml) {
+function rcSectionHtml(key, titleText, bodyHtml) {
   const collapsed = !!rcCollapsed[key];
   return `
     <div class="wt-rc-section${collapsed ? " wt-rc-collapsed" : ""}" id="rc-sec-${key}">
@@ -473,7 +473,6 @@ function rcSectionHtml(key, titleText, bodyHtml, subtitleHtml) {
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </button>
       </div>
-      ${subtitleHtml || ""}
       <div class="wt-rc-section-body">${bodyHtml}</div>
     </div>`;
 }
@@ -502,13 +501,12 @@ function renderProductInfoSection(a) {
         <input type="text" id="rc-info-name-en" value="${esc(a.name_en)}" autocomplete="off" dir="ltr" required>
       </div>
       <div class="wt-field">
-        <label for="rc-info-currency">${t("currencyLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+        <label for="rc-info-currency">${t("currencyLabel")} <span style="color:var(--wt-danger,#e05252)">*</span>${isBase ? infoDot("currencyLockedNote") : ""}</label>
         <select id="rc-info-currency" required ${isBase ? "disabled" : ""}>
           ${Object.keys(CURRENCY_LABEL)
             .map((c) => `<option value="${c}" ${c === a.currency ? "selected" : ""}>${t("currencyNames")[c]}</option>`)
             .join("")}
         </select>
-        ${isBase ? `<p style="font-size:11px;color:var(--wt-text-dim);margin:6px 0 0">${t("currencyLockedNote")}</p>` : ""}
       </div>
       <div class="wt-field">
         <label for="rc-info-group">${t("groupLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
@@ -534,8 +532,7 @@ function renderPresetsSection() {
           `<button type="button" class="wt-btn-ghost wt-preset-btn${p.id === rcSelectedPresetId ? " selected" : ""}" data-preset-id="${p.id}" onclick="applyReturnPreset('${p.id}')">${esc(lang === "en" ? p.name_en : p.name_ar)}</button>`
       ).join("")}
     </div>`;
-  const subtitle = `<p class="wt-rc-section-subtitle">${t("presetsSubtitle")}</p>`;
-  return rcSectionHtml("presets", t("sectionPresets"), body, subtitle);
+  return rcSectionHtml("presets", t("sectionPresets") + infoDot("presetsSubtitle"), body);
 }
 
 // Toggles the ⓘ help text under any Financial Model field.
@@ -615,6 +612,13 @@ function renderMilestonesSection(a) {
 // A small ⓘ button + collapsible help paragraph, reused for every Financial
 // Model field. Keeps the form itself uncluttered while the explanation is
 // always one click away.
+// A small ⓘ with a native hover tooltip — for short supplementary notes
+// that don't need to stay on-screen (unlike fieldLabel's click-to-toggle
+// help, this adds zero vertical space either way, open or closed).
+function infoDot(textKey) {
+  return `<span class="wt-help-icon" style="cursor:help" title="${esc(t(textKey))}">ⓘ</span>`;
+}
+
 function fieldLabel(fieldId, labelKey, helpKey) {
   return `
     <label for="${fieldId}">
@@ -653,14 +657,12 @@ function onGrowthSourceChange() {
   const isManual = source === "manual";
   const advancedSection = document.getElementById("rc-sec-advancedOverrides");
   const tierBlock = document.getElementById("rc-tierRates-block");
-  const tierHint = document.getElementById("rc-tierRates-hint");
   const tierDuration = document.getElementById("rc-tierRates-duration");
   const tierInput = document.getElementById("rc-tierRates");
   const formulaBlock = document.getElementById("rc-growthFormula-block");
   const formulaInput = document.getElementById("rc-growthFormula");
   if (advancedSection) advancedSection.style.display = isFixed || isManual ? "" : "none";
   if (tierBlock) tierBlock.style.display = isFixed ? "" : "none";
-  if (tierHint) tierHint.style.display = isFixed ? "" : "none";
   if (tierDuration) tierDuration.style.display = isFixed ? "" : "none";
   if (tierInput) tierInput.disabled = !isFixed; // required only when it actually applies — disabled fields are skipped by form validation
   if (formulaBlock) formulaBlock.style.display = isManual ? "" : "none";
@@ -697,11 +699,10 @@ function renderReturnPanel() {
             </select>
           </div>
           <div class="wt-field">
-            <label for="rc-apy">${t("thApy")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+            <label for="rc-apy">${t("thApy")} <span style="color:var(--wt-danger,#e05252)">*</span>${infoDot("apyEditableHint")}</label>
             <input type="number" id="rc-apy" min="0" max="100" step="any" required value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
           </div>
-        </div>
-        <p class="wt-return-summary-category" style="margin-top:-4px">${t("apyEditableHint")}</p>`;
+        </div>`;
 
   // Financial Model fields — ordered to match the Financial Engine's actual
   // execution order (see growth-pipeline.js): growth source/frequency first
@@ -744,14 +745,13 @@ function renderReturnPanel() {
   const advancedBody = `
           <div class="wt-field-row-3" id="rc-tierRates-block" ${cfg.growthSource === "fixedRate" ? "" : 'style="display:none"'}>
             <div class="wt-field">
-              <label for="rc-tierRates">${t("tierRatesLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+              <label for="rc-tierRates">${t("tierRatesLabel")} <span style="color:var(--wt-danger,#e05252)">*</span>${infoDot("tierRatesHint")}</label>
               <input type="text" id="rc-tierRates" placeholder="27,22,17" dir="ltr" required
                 ${cfg.growthSource === "fixedRate" ? "" : "disabled"}
                 oninput="refreshProductConfigPreview()"
                 value="${Array.isArray(cfg.tierRates) ? cfg.tierRates.join(",") : ""}">
             </div>
           </div>
-          <p id="rc-tierRates-hint" style="font-size:11px;color:var(--wt-text-dim);margin:8px 0 4px;${cfg.growthSource === "fixedRate" ? "" : "display:none"}">${t("tierRatesHint")}</p>
           <p id="rc-tierRates-duration" class="wt-return-summary-category" style="margin:4px 0 8px;${cfg.growthSource === "fixedRate" ? "" : "display:none"}">${tierRatesDurationText(cfg)}</p>
 
           <!-- Custom growth formula — overrides the built-in interest math for
@@ -762,12 +762,11 @@ function renderReturnPanel() {
                growthSource:"manual" — hidden otherwise, same reasoning as
                tierRates above. -->
           <div class="wt-field" id="rc-growthFormula-block" ${cfg.growthSource === "manual" ? "" : 'style="display:none"'}>
-            <label for="rc-growthFormula">${t("growthFormulaLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+            <label for="rc-growthFormula">${t("growthFormulaLabel")} <span style="color:var(--wt-danger,#e05252)">*</span>${infoDot("growthFormulaHint")}</label>
             <textarea id="rc-growthFormula" dir="ltr" rows="2" spellcheck="false" required
               ${cfg.growthSource === "manual" ? "" : "disabled"}
               placeholder="principal * (rate/100/365) * days"
               oninput="previewGrowthFormula(); refreshProductConfigPreview();">${esc(cfg.growthFormula || "")}</textarea>
-            <p style="font-size:11px;color:var(--wt-text-dim);margin:4px 0 0">${t("growthFormulaHint")}</p>
             <p id="rc-formula-preview" class="wt-return-summary-category" style="margin-top:6px">${t("growthFormulaDefaultNote")}</p>
           </div>`;
 
@@ -777,9 +776,9 @@ function renderReturnPanel() {
       <button type="button" class="wt-fullpage-back" onclick="closeReturnPanel()">← ${t("cancel")}</button>
       <h3>
         ${t("productConfigTitle")}
-        ${a ? `<button type="button" class="wt-help-icon" title="${t("productSummaryTitle")}" onclick="toggleProductSummary()">ⓘ</button>` : ""}
+        <span class="wt-help-icon" style="cursor:help" title="${esc(t("productConfigHint"))}">ⓘ</span>
+        ${a ? `<button type="button" class="wt-help-icon" title="${t("productSummaryTitle")}" onclick="toggleProductSummary()">💡</button>` : ""}
       </h3>
-      <p style="font-size:12px;color:var(--wt-text-dim);margin:-6px 0 14px">${t("productConfigHint")}</p>
       ${
         a
           ? (function () {
