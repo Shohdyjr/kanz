@@ -971,6 +971,23 @@ body {
   line-height: 1.5;
   margin: 0;
 }
+.wt-cron-panel-accrual {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--wt-line);
+}
+.wt-cron-panel-accrual-label {
+  font-size: 10px;
+  color: var(--wt-text-dim);
+  margin: 0 0 2px;
+}
+.wt-cron-panel-accrual-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--wt-green);
+  margin-bottom: 4px;
+}
 .wt-item-hist-modal {
   max-width: 420px;
 }

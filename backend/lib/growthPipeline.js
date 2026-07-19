@@ -637,6 +637,63 @@ function nextCronTouch(qty, apyPercent, cfg, todayStr) {
   return { date: tomorrow, reasonKey: "cronTouchDaily" };
 }
 
+// ── Phase 1 of the domain redesign (see docs-dev/architecture-principles.md
+// "Financial Product Redesign" section) — separating Credit from
+// Compounding/Distribution as its own concept, and Accrued Earnings as a
+// value distinct from the stored balance. Both are pure, computed-only
+// additions: nothing about what's stored (qty, item_history) changes here.
+
+// The cadence at which accrued earnings actually become real (credited) —
+// compounding if the product reinvests, else distribution if it pays out
+// cash, else null (credited continuously — a daily-growth product's stored
+// balance already reflects fully-credited value every day, since the cron's
+// daily fallback folds growth straight into qty; see dailyGrowthDelta).
+// validateDomainModel() guarantees compounding and distribution are never
+// both active, so this is never ambiguous.
+function creditFrequency(cfg) {
+  const config = cfg || {};
+  if (config.compoundingFrequency && config.compoundingFrequency !== "none") return config.compoundingFrequency;
+  if (config.distributionFrequency && config.distributionFrequency !== "none") return config.distributionFrequency;
+  return null;
+}
+
+// Splits a product's current stored balance into what's already credited
+// (the balance itself — real, already reinvested or already paid out) vs.
+// earned-but-not-yet-credited (accruing at the product's rate, but won't
+// become a real event until the next Credit boundary). For a continuously
+// credited product this is always zero — nothing is ever "pending" because
+// the cron folds growth in every single day. For a periodic product (e.g. a
+// certificate crediting quarterly), this fills a real gap: today, nothing
+// shows the person "how much have you earned since the last credit event
+// that hasn't posted yet". This is always an ESTIMATE — projected from the
+// balance as of the last credit boundary, assuming no deposit/withdrawal
+// happened since (one would skew it slightly) — never a stored value.
+function accrualBreakdown(qty, apyPercent, cfg, todayStr) {
+  const config = cfg || {};
+  const rate = apyPercent || 0;
+  if (!rate || !qty) return { creditedBalance: qty || 0, accruedEarnings: 0, lastCreditDate: null, nextCreditDate: null };
+
+  // Gates on growthFrequency, not creditFrequency(cfg) — that's a different
+  // axis (whether earned interest reinvests or pays out cash once it's
+  // real). Whether the cron touches qty continuously (daily) or only on a
+  // periodic boundary is decided by growthFrequency alone, exactly mirroring
+  // dailyGrowthDelta's own branching — a daily-growth, monthly-compounding
+  // product (e.g. Mashreq-style savings) is folded into qty every single
+  // day, so it's continuously credited regardless of compoundingFrequency's
+  // label; nothing is ever "pending" for it.
+  const monthsStep = monthsStepForFreq(config.growthFrequency);
+  if (config.growthSource === "nav" || !config.startDate || !monthsStep) {
+    return { creditedBalance: qty, accruedEarnings: 0, lastCreditDate: null, nextCreditDate: null };
+  }
+
+  const today = parseDateStr(todayStr);
+  const lastCreditDate = periodStartAtOrBefore(config.startDate, monthsStep, today);
+  const accruedEstimate = projectValueAt(qty, rate, config, lastCreditDate, today) - qty;
+  const nextCreditDate = anniversaryAfter(config.startDate, monthsStep, today);
+
+  return { creditedBalance: qty, accruedEarnings: Math.max(0, accruedEstimate), lastCreditDate, nextCreditDate };
+}
+
 const GrowthPipeline = {
   parseDateStr,
   daysBetweenDates,
@@ -655,6 +712,8 @@ const GrowthPipeline = {
   projectValueAt,
   dailyGrowthDelta,
   nextCronTouch,
+  creditFrequency,
+  accrualBreakdown,
   validateDomainModel,
 };
 
