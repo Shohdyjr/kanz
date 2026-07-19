@@ -603,6 +603,48 @@ function dailyGrowthDelta(qty, apyPercent, cfg, todayStr) {
   return { amount: qty * dailyRate, reinvest: true };
 }
 
+// Tells the person, in plain terms, the next date the daily cron will
+// actually touch (post growth to) this item's stored balance. Mirrors
+// dailyGrowthDelta()'s branching exactly — every "does it apply today?"
+// check there has a matching "when next?" answer here — so the two can
+// never silently drift apart.
+//   reasonKey is one of:
+//     "cronTouchNoBalance" — no balance or no rate set; nothing to post
+//     "cronTouchDaily"     — touches every day (most common: growthSource
+//                             nav, growthFrequency daily, or a manual formula)
+//     "cronTouchPeriodic"  — touches only on its own periodic boundary
+//                             (growthFrequency has a real monthsStep)
+//     "cronTouchManual"    — never auto-touched; needs manual review
+//                             (tiered certificates, or a non-reinvesting
+//                             product with no period structure to anchor to)
+function nextCronTouch(qty, apyPercent, cfg, todayStr) {
+  const rate = apyPercent || 0;
+  if (!rate || !qty) return { date: null, reasonKey: "cronTouchNoBalance" };
+  const today = parseDateStr(todayStr);
+  const config = cfg || {};
+  const reinvest = !!(config.compoundingFrequency && config.compoundingFrequency !== "none");
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+
+  if (config.startDate && Array.isArray(config.tierRates) && config.tierRates.length) {
+    return { date: null, reasonKey: "cronTouchManual" };
+  }
+
+  const monthsStep = monthsStepForFreq(config.growthFrequency);
+  if (config.growthSource !== "nav" && config.startDate && monthsStep) {
+    return { date: anniversaryAfter(config.startDate, monthsStep, today), reasonKey: "cronTouchPeriodic" };
+  }
+
+  if (config.growthSource === "manual" && config.growthFormula) {
+    return { date: tomorrow, reasonKey: "cronTouchDaily" };
+  }
+
+  if (config.growthSource !== "nav" && !reinvest) {
+    return { date: null, reasonKey: "cronTouchManual" };
+  }
+
+  return { date: tomorrow, reasonKey: "cronTouchDaily" };
+}
+
 const GrowthPipeline = {
   parseDateStr,
   daysBetweenDates,
@@ -620,6 +662,7 @@ const GrowthPipeline = {
   tieredValueAt,
   projectValueAt,
   dailyGrowthDelta,
+  nextCronTouch,
   validateDomainModel,
 };
 

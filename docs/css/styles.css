@@ -923,6 +923,54 @@ body {
   width: 14px;
   height: 14px;
 }
+.wt-cron {
+  background: transparent;
+  border: none;
+  color: var(--wt-text-dim);
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: 0.15s;
+  font-size: 12px;
+}
+.wt-cron:hover {
+  color: var(--wt-gold-light);
+  background: rgba(212, 175, 55, 0.1);
+}
+.wt-cron svg {
+  width: 14px;
+  height: 14px;
+}
+.wt-cron-panel {
+  position: fixed !important;
+  top: 50% !important;
+  inset-inline-start: 50% !important;
+  transform: translate(-50%, -50%);
+  max-width: 280px;
+}
+.wt-cron-panel-date {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--wt-gold-light);
+  margin: 6px 0 4px;
+}
+.wt-cron-panel-date.wt-cron-panel-none {
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--wt-text-dim);
+}
+.wt-cron-panel-reason {
+  font-size: 12px;
+  color: var(--wt-text-dim);
+  line-height: 1.5;
+  margin: 0;
+}
 .wt-item-hist-modal {
   max-width: 420px;
 }

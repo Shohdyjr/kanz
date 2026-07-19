@@ -947,22 +947,26 @@ function projectAssetValue(a) {
 // cycle end" for milestone purposes. For a NAV product that's its
 // liquidityFrequency (Thunder Cloud Monthly grows every day, but the
 // milestone that matters to the user is "End of Month" — when redemption
-// actually happens). Non-nav products are almost always the same story:
-// growth and the payout/milestone cadence match. The one exception is a
-// product whose value updates daily (growthFrequency: daily) but only
-// actually PAYS OUT on a wider cadence (distributionFrequency: monthly,
-// e.g. Mashreq Neo Savings) — the milestone that matters there is the
-// payout date, not "tomorrow" (the number changing daily is real and still
-// drives the projected value itself; it just isn't a milestone worth a
-// label of its own). Only widens to distributionFrequency, never narrows —
-// a product that pays out MORE often than it grows (rare/nonsensical)
-// still milestones on its growth cadence.
+// actually happens). For everything else, growthFrequency is the internal
+// accrual rate (how often the projected number itself ticks), which for a
+// daily-accruing product is a genuine but not milestone-worthy event — the
+// milestone that matters is whichever REAL financial event actually happens
+// to the money: either compoundingFrequency (interest reinvested into the
+// balance, e.g. a savings account crediting monthly) or distributionFrequency
+// (cash paid out instead, e.g. an annual coupon). validateDomainModel()
+// guarantees at most one of the two is ever active, so whichever is set
+// (and wider than growthFrequency) is unambiguously the milestone cadence.
 const FREQUENCY_RANK = { daily: 0, monthly: 1, quarterly: 2, semiAnnual: 3, annual: 4, maturity: 5 };
 function cycleFrequency(cfg) {
   if (cfg.growthSource === "nav") return cfg.liquidityFrequency;
   const g = cfg.growthFrequency;
-  const d = cfg.distributionFrequency;
-  if (d && d !== "none" && (FREQUENCY_RANK[d] || 0) > (FREQUENCY_RANK[g] || 0)) return d;
+  const realEvent =
+    cfg.compoundingFrequency && cfg.compoundingFrequency !== "none"
+      ? cfg.compoundingFrequency
+      : cfg.distributionFrequency && cfg.distributionFrequency !== "none"
+        ? cfg.distributionFrequency
+        : null;
+  if (realEvent && (FREQUENCY_RANK[realEvent] || 0) > (FREQUENCY_RANK[g] || 0)) return realEvent;
   return g;
 }
 

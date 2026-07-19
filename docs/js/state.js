@@ -257,6 +257,7 @@ if (OLD_PROJECTION_COL_KEYS.some((k) => hiddenCols.has(k))) {
   }
 }
 let columnPanelOpen = false; // the small "choose columns" popover, opened from the table header
+let cronTouchOpenId = null; // asset id whose "next cron touch" popover is open (see docs/js/cron-touch.js), or null
 
 function slugify(s) {
   return (
