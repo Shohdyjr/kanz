@@ -947,10 +947,23 @@ function projectAssetValue(a) {
 // cycle end" for milestone purposes. For a NAV product that's its
 // liquidityFrequency (Thunder Cloud Monthly grows every day, but the
 // milestone that matters to the user is "End of Month" — when redemption
-// actually happens); for everything else it's simply growthFrequency, since
-// growth and the payout/milestone cadence are the same boundary there.
+// actually happens). Non-nav products are almost always the same story:
+// growth and the payout/milestone cadence match. The one exception is a
+// product whose value updates daily (growthFrequency: daily) but only
+// actually PAYS OUT on a wider cadence (distributionFrequency: monthly,
+// e.g. Mashreq Neo Savings) — the milestone that matters there is the
+// payout date, not "tomorrow" (the number changing daily is real and still
+// drives the projected value itself; it just isn't a milestone worth a
+// label of its own). Only widens to distributionFrequency, never narrows —
+// a product that pays out MORE often than it grows (rare/nonsensical)
+// still milestones on its growth cadence.
+const FREQUENCY_RANK = { daily: 0, monthly: 1, quarterly: 2, semiAnnual: 3, annual: 4, maturity: 5 };
 function cycleFrequency(cfg) {
-  return cfg.growthSource === "nav" ? cfg.liquidityFrequency : cfg.growthFrequency;
+  if (cfg.growthSource === "nav") return cfg.liquidityFrequency;
+  const g = cfg.growthFrequency;
+  const d = cfg.distributionFrequency;
+  if (d && d !== "none" && (FREQUENCY_RANK[d] || 0) > (FREQUENCY_RANK[g] || 0)) return d;
+  return g;
 }
 
 function endOfCycleDate(cfg, todayMid) {
