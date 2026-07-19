@@ -8,7 +8,7 @@ const { computeAttribution } = require("../lib/attribution");
 const { BASE_ASSET_CURRENCY, priceForServerSide, fetchRatesServerSide } = require("../lib/rates");
 const router = express.Router();
 
-// All /api/data, /api/history, /api/contributions endpoints are auth-gated;
+// All /api/data, /api/history, /api/activities endpoints are auth-gated;
 // this limiter is a second layer against token-leakage abuse — 100 reqs / 15 min.
 router.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 100, standardHeaders: true, legacyHeaders: false }));
 
@@ -262,11 +262,11 @@ router.delete("/history", async (req, res) => {
 });
 
 // ── Activities (facts about intentional user actions) ──────────────────
-// Generalized from the original `contributions` column/model. Kept in the
-// SAME `contributions` DB column deliberately — no migration needed, and
-// every existing row already fits the generalized shape unchanged (an old
-// entry with no `type` is treated as `income`/`expense` per its amount's
-// sign — see inferLegacyType in lib/attribution.js).
+// Generalized from the original `contributions` model — this column is now
+// named `activities` to match (see backend/db/init.js for the rename
+// migration). Every existing row already fits the generalized shape
+// unchanged (an old entry with no `type` is treated as `income`/`expense`
+// per its amount's sign — see inferLegacyType in lib/attribution.js).
 //
 // An Activity is a fact about ONE atomic action. Per Kanz's architecture
 // principles it may carry fields intrinsic to that single action (a
@@ -274,30 +274,29 @@ router.delete("/history", async (req, res) => {
 // but must NEVER reference another Activity — there is deliberately no
 // `sourceActivityId`/`threadId`/parent field anywhere in this shape, and
 // none should ever be added (see docs-dev/architecture-principles.md).
-async function getContributionsRow(username) {
-  const { rows } = await pool.query("SELECT contributions FROM kanz_users WHERE username = $1", [username]);
+//
+// "Contribution"/"contributed" is a separate, still-valid term used
+// elsewhere (sumContributionsBetween, changeAnalysisExclContrib in
+// docs/js/helpers.js + history-chart.js) for a derived financial figure —
+// how much of a wealth change came from money the user added, vs the market
+// moving on its own. That concept is distinct from this log and keeps its
+// own name; only the log/entity itself was renamed to Activity.
+async function getActivitiesRow(username) {
+  const { rows } = await pool.query("SELECT activities FROM kanz_users WHERE username = $1", [username]);
   return rows[0] || null;
 }
 
 const isValidDateStr = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
 
-router.get("/contributions", async (req, res) => {
-  const user = await getContributionsRow(req.username);
-  if (!user) return res.json({ ok: false, error: "userNotFound" });
-  res.json({ ok: true, contributions: user.contributions || [] });
-});
-// Same data, generalized name — new clients should prefer this endpoint.
-// Both read the identical underlying column; kept as two paths only so
-// existing callers of loadContributionsForClient need no changes.
 router.get("/activities", async (req, res) => {
-  const user = await getContributionsRow(req.username);
+  const user = await getActivitiesRow(req.username);
   if (!user) return res.json({ ok: false, error: "userNotFound" });
-  res.json({ ok: true, activities: user.contributions || [] });
+  res.json({ ok: true, activities: user.activities || [] });
 });
 
 // Currencies the client's own FX rates (docs/js/helpers.js priceFor) can
 // price — kept in sync with BASE_ASSET_CURRENCY's fiat entries in lib/rates.js.
-const CONTRIB_CURRENCIES = ["EGP", "USD", "EUR", "SAR"];
+const ACTIVITY_CURRENCIES = ["EGP", "USD", "EUR", "SAR"];
 
 // The closed set of intents an Activity may express. Deliberately flat and
 // small — see docs-dev/architecture-principles.md ("intent-driven actions").
@@ -309,7 +308,7 @@ function genActivityId() {
   return "act_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-router.post("/contributions", async (req, res) => {
+router.post("/activities", async (req, res) => {
   const { ok, errors } = validate(req.body, {
     date: { type: "string", match: /^\d{4}-\d{2}-\d{2}$/ },
     amountUsd: { type: "number", finite: true, nonzero: true },
@@ -331,7 +330,7 @@ router.post("/contributions", async (req, res) => {
 
   const { date, amountUsd, note, currency, amountOriginal, type, itemId, fromItemId, toItemId, assetItemId, fundingItemId } =
     req.body;
-  if (currency && !CONTRIB_CURRENCIES.includes(currency)) return res.json({ ok: false, error: "invalidData" });
+  if (currency && !ACTIVITY_CURRENCIES.includes(currency)) return res.json({ ok: false, error: "invalidData" });
   if (type && !ACTIVITY_TYPES.includes(type)) return res.json({ ok: false, error: "invalidData" });
   // A Transfer/Buy/Sell describes exactly one action with two intrinsic
   // sides — require both sides together, never one alone, so a saved
@@ -340,7 +339,7 @@ router.post("/contributions", async (req, res) => {
   if (type === "buy" && (!assetItemId || !fundingItemId)) return res.json({ ok: false, error: "invalidData" });
   if (type === "sell" && (!assetItemId || !fundingItemId)) return res.json({ ok: false, error: "invalidData" });
 
-  const user = await getContributionsRow(req.username);
+  const user = await getActivitiesRow(req.username);
   if (!user) return res.json({ ok: false, error: "userNotFound" });
 
   // One Activity per (date, id) — legacy behavior (one entry per date,
@@ -348,7 +347,7 @@ router.post("/contributions", async (req, res) => {
   // matching on date+no-id, as before. Typed activities get a stable id so
   // multiple can share a date (e.g. a Deposit and a Correction on the same
   // day) without clobbering each other.
-  const contributions = user.contributions || [];
+  const activities = user.activities || [];
   const entry = {
     id: genActivityId(),
     date,
@@ -366,32 +365,32 @@ router.post("/contributions", async (req, res) => {
     assetItemId: assetItemId || undefined,
     fundingItemId: fundingItemId || undefined,
   };
-  const legacyIdx = !type ? contributions.findIndex((c) => c.date === date && !c.type) : -1;
-  legacyIdx >= 0 ? (contributions[legacyIdx] = entry) : contributions.push(entry);
-  contributions.sort((a, b) => a.date.localeCompare(b.date));
+  const legacyIdx = !type ? activities.findIndex((c) => c.date === date && !c.type) : -1;
+  legacyIdx >= 0 ? (activities[legacyIdx] = entry) : activities.push(entry);
+  activities.sort((a, b) => a.date.localeCompare(b.date));
 
-  await pool.query("UPDATE kanz_users SET contributions = $1 WHERE username = $2", [
-    JSON.stringify(contributions),
+  await pool.query("UPDATE kanz_users SET activities = $1 WHERE username = $2", [
+    JSON.stringify(activities),
     req.username,
   ]);
   res.json({ ok: true, activity: entry });
 });
 
-router.delete("/contributions", async (req, res) => {
+router.delete("/activities", async (req, res) => {
   const { date, id } = req.body;
   if (!isValidDateStr(date)) return res.json({ ok: false, error: "invalidDate" });
 
-  const user = await getContributionsRow(req.username);
+  const user = await getActivitiesRow(req.username);
   if (!user) return res.json({ ok: false, error: "userNotFound" });
 
   // If an id is given (typed Activities may share a date), delete that
   // specific entry; otherwise fall back to legacy date-only deletion.
-  const contributions = (user.contributions || []).filter((c) => (id ? c.id !== id : c.date !== date));
-  await pool.query("UPDATE kanz_users SET contributions = $1 WHERE username = $2", [
-    JSON.stringify(contributions),
+  const activities = (user.activities || []).filter((c) => (id ? c.id !== id : c.date !== date));
+  await pool.query("UPDATE kanz_users SET activities = $1 WHERE username = $2", [
+    JSON.stringify(activities),
     req.username,
   ]);
-  res.json({ ok: true, contributions });
+  res.json({ ok: true, activities });
 });
 
 // ── Attribution (derived — see lib/attribution.js) ──────────────────────
@@ -402,7 +401,7 @@ router.get("/attribution", async (req, res) => {
   if (!isValidDateStr(from) || !isValidDateStr(to)) return res.json({ ok: false, error: "invalidDate" });
 
   const { rows } = await pool.query(
-    "SELECT data, history, contributions, item_history FROM kanz_users WHERE username = $1",
+    "SELECT data, history, activities, item_history FROM kanz_users WHERE username = $1",
     [req.username]
   );
   const user = rows[0];
@@ -417,7 +416,7 @@ router.get("/attribution", async (req, res) => {
 
   const result = computeAttribution(
     user.history || [],
-    user.contributions || [],
+    user.activities || [],
     user.item_history || [],
     from,
     to,

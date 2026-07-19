@@ -92,8 +92,8 @@ function render() {
           // Real Growth is rendered per-window, right inside that window's own
           // chip — never as a single value tacked on after the last window.
           // `showReal` is the actual granularity gate: contributions are
-          // logged with monthly granularity (always the 1st of the month —
-          // see contributions.js), so splitting a rolling 7/30-day window
+          // summed at whatever date they were actually logged on (see
+          // activities-log.js), so splitting a rolling 7/30-day window
           // into "added vs grew" isn't meaningful — a contribution can't be
           // attributed to a specific week within its month, so those two
           // windows never render this metric. MTD/YTD/all-time are
@@ -127,7 +127,7 @@ function render() {
           : ""
       }
       <button class="wt-theme-btn" style="margin-top:12px;position:relative" onclick="openGoalModal()">${savingsGoal > 0 ? t("editGoalBtn") : t("setGoalBtn")}</button>
-      <button class="wt-theme-btn" style="margin-top:12px;position:relative" onclick="openContribModal()">${t("logContribBtn")}</button>    </div>
+      <button class="wt-theme-btn" style="margin-top:12px;position:relative" onclick="openActivityLog()">${t("logActivityBtn")}</button>    </div>
 
     <div id="wt-bk-root"></div>
 
@@ -299,7 +299,7 @@ function render() {
         : ""
     }
     ${goalModalOpen ? renderGoalModal() : ""}
-    ${contribModalOpen ? renderContribModal() : ""}
+    ${activityLogOpen ? renderActivityLog() : ""}
     ${activityModalOpen ? renderActivityModal() : ""}
     ${emailModalOpen ? renderEmailModal() : ""}
     ${itemHistoryModalId ? renderItemHistoryModal() : ""}

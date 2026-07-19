@@ -1,8 +1,10 @@
 // ══════════════════════════════════════════════════════════════════════
 //  Activities — facts about intentional user actions
 //  ──────────────────────────────────────────────────────────────────
-//  Generalizes contributions.js (Salary/Deposit/Withdrawal were already
-//  "income"/"expense" contributions) into six named, intent-driven actions.
+//  Generalizes the old income/expense-only model (Salary/Deposit/Withdrawal
+//  were already "income"/"expense" contributions) into six named,
+//  intent-driven actions, logged into the shared Activities log
+//  (see activities-log.js).
 //  The user picks WHY they're changing a number before they change it —
 //  there is no follow-up question and no generic "edit balance, then
 //  classify it" step. Portfolio (`qty`) remains the only source of truth;
@@ -66,12 +68,12 @@ function applyQtyDelta(itemId, nativeDelta) {
   qtyUpdatedAt[itemId] = todayLocalStr();
 }
 
-/** Records the Activity itself — same endpoint contributions.js already uses. */
+/** Records the Activity itself — same endpoint activities-log.js already uses. */
 function postActivity(fields, onDone) {
   callApi("addActivity", currentUser, fields, sessionToken)
     .then((j) => {
       if (j && j.ok) {
-        loadContributions(); // refresh contributionsData so the Activities log reflects this immediately
+        loadActivities(); // refresh activitiesData so the Activities log reflects this immediately
         onDone && onDone(null);
       } else onDone && onDone((j && j.error) || "genericError");
     })

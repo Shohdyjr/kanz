@@ -209,15 +209,17 @@ let sessionToken = null; // authorizes every sensitive server request — memory
 let savingsGoal = 0; // savings goal in USD — 0 means no goal set
 let goalModalOpen = false;
 
-// Net money manually added/withdrawn (e.g. "salary minus expenses this
-// month"), kept separate from `historyData` so growth % can be split into
-// "money I added" vs "my assets actually grew in value" — see helpers.js.
-let contributionsData = [];
-let contribModalOpen = false;
-// Timeline view of contributionsData (docs/js/contributions.js): which
+// The full Activity log (salary, deposit, withdrawal, buy, sell, transfer,
+// correction), kept separate from `historyData` so growth % can be split
+// into "money I added" vs "my assets actually grew in value" — see
+// helpers.js. "Contribution" is still the right word for that split
+// (sumContributionsBetween) even though this array itself is Activities.
+let activitiesData = [];
+let activityLogOpen = false;
+// Timeline view of activitiesData (docs/js/activities-log.js): which
 // "YYYY-MM" month rows are expanded to show their entry log. Current month
-// starts expanded by default each time the modal opens.
-let expandedContribMonths = new Set();
+// starts expanded by default each time the log opens.
+let expandedActivityMonths = new Set();
 let emailModalOpen = false; // recovery-email settings modal, opened from the top bar
 
 // Intent-driven Activity logging (see docs/js/activities.js). `activityType`

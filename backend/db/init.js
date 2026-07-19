@@ -28,12 +28,34 @@ async function initDb() {
   // expenses this month"). Kept separate from `history` so the growth
   // calculations on the client can tell "I added money" apart from "what I
   // already had grew in value" — see docs/js/helpers.js computeGrowth().
-  await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS contributions JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS activities JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+
+  // One-time rename: this column started life as `contributions` back when
+  // it only held income/expense entries. It now holds every logged Activity
+  // (salary, deposit, withdrawal, buy, sell, transfer, correction), so the
+  // column name is renamed to match — "contributions" now refers only to
+  // the money-added-vs-market-grew calculation (see sumContributionsBetween
+  // in docs/js/helpers.js), not this log itself. Safe to run repeatedly:
+  // a no-op once the old column is gone.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'kanz_users' AND column_name = 'contributions')
+         AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'kanz_users' AND column_name = 'activities')
+      THEN
+        ALTER TABLE kanz_users RENAME COLUMN contributions TO activities;
+      ELSIF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'kanz_users' AND column_name = 'contributions') THEN
+        -- Both columns exist (interrupted prior run) — merge any stragglers into activities, then drop the old one.
+        UPDATE kanz_users SET activities = contributions WHERE activities = '[]'::jsonb AND contributions != '[]'::jsonb;
+        ALTER TABLE kanz_users DROP COLUMN contributions;
+      END IF;
+    END $$;
+  `);
 
   // Per-item history: one entry per (itemId, date) whenever the daily cron
   // applies an item's APY growth. Lets the UI show "this item grew from X to
   // Y on this date" per item, separate from the aggregate `history` snapshots
-  // and from manually-logged `contributions`. See cron/dailySnapshot.js.
+  // and from manually-logged `activities`. See cron/dailySnapshot.js.
   await pool.query(`ALTER TABLE kanz_users ADD COLUMN IF NOT EXISTS item_history JSONB NOT NULL DEFAULT '[]'::jsonb;`);
 
   // Optional recovery email — nullable because existing accounts predate this

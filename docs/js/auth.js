@@ -264,7 +264,7 @@ async function completeLogin(username, token, expiresAt) {
   excludedBaseIds = new Set();
   baseOverrides = {};
   historyData = [];
-  contributionsData = [];
+  activitiesData = [];
   theme = "dark";
   lang = "en";
   savingsGoal = 0;
@@ -273,7 +273,7 @@ async function completeLogin(username, token, expiresAt) {
   fetchRates();
   loadData();
   loadHistory();
-  loadContributions();
+  loadActivities();
 }
 
 function logout() {
@@ -295,13 +295,13 @@ function logout() {
   excludedBaseIds = new Set();
   baseOverrides = {};
   historyData = [];
-  contributionsData = [];
+  activitiesData = [];
   historyChart = null;
   outerChart = null;
   innerChart = null;
   savingsGoal = 0;
   goalModalOpen = false;
-  contribModalOpen = false;
+  activityLogOpen = false;
   emailModalOpen = false;
   forgotFlowUsername = null;
   forgotFlowEmail = null;
@@ -357,13 +357,13 @@ function attemptAutoLogin() {
         excludedBaseIds = new Set();
         baseOverrides = {};
         historyData = [];
-        contributionsData = [];
+        activitiesData = [];
         ASSETS.forEach((a) => (qty[a.id] = 0));
         render();
         fetchRates();
         loadData();
         loadHistory();
-        loadContributions();
+        loadActivities();
       } else {
         try {
           localStorage.removeItem("kanz_remember");

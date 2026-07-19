@@ -1,7 +1,7 @@
 /**
  * Wealth Attribution — derives *why* Net Worth changed between two dates,
  * entirely from facts Kanz already records: Snapshots (`history`), Activities
- * (`contributions`, generalized — see routes/data.js), and Item History
+ * (`activities[]` — see routes/data.js), and Item History
  * (cron-posted investment income).
  *
  * This file computes nothing new about the world; it only re-groups numbers
@@ -68,7 +68,8 @@ function sumActivities(activities, fromDate, toDate, types) {
 }
 
 /**
- * Pre-generalization Activities (the original `contributions[]` shape) never
+ * Pre-generalization Activities (the original `activities[]` shape, before
+ * intent-driven types existed) never
  * had a `type` field — only a sign on `amountUsd`. Treat those exactly as
  * they always behaved (positive = income/external inflow, negative =
  * expense/external outflow) rather than silently dropping them from
@@ -145,7 +146,7 @@ function decomposeBucket(fromSnap, toSnap, nativeKey, priceAt) {
  * Computes the full attribution breakdown for (fromDate, toDate].
  *
  * @param {object[]} history       - snapshots (`history[]`), ascending by date
- * @param {object[]} activities    - Activities (`contributions[]`, generalized)
+ * @param {object[]} activities    - Activities (`activities[]`, generalized)
  * @param {object[]} itemHistory   - `item_history[]`
  * @param {string} fromDate        - YYYY-MM-DD, exclusive
  * @param {string} toDate          - YYYY-MM-DD, inclusive

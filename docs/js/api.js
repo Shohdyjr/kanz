@@ -48,16 +48,11 @@ const RPC_MAP = {
   loadHistoryForClient: (u, tok) => ({ method: "GET", path: "/history", bearer: tok }),
   addManualHistoryEntry: (u, entry, tok) => ({ method: "POST", path: "/history", bearer: tok, body: { entry } }),
   deleteHistoryEntry: (u, date, tok) => ({ method: "DELETE", path: "/history", bearer: tok, body: { date } }),
-  loadContributionsForClient: (u, tok) => ({ method: "GET", path: "/contributions", bearer: tok }),
-  addContribution: (u, entry, tok) => ({ method: "POST", path: "/contributions", bearer: tok, body: entry }),
-  deleteContribution: (u, date, tok) => ({ method: "DELETE", path: "/contributions", bearer: tok, body: { date } }),
-  // Same underlying storage as Contributions (see docs-dev/architecture-principles.md)
-  // — generalized names/shape for intent-driven Activities (salary, deposit,
-  // withdrawal, buy, sell, transfer, correction).
-  addActivity: (u, entry, tok) => ({ method: "POST", path: "/contributions", bearer: tok, body: entry }),
+  loadActivitiesForClient: (u, tok) => ({ method: "GET", path: "/activities", bearer: tok }),
+  addActivity: (u, entry, tok) => ({ method: "POST", path: "/activities", bearer: tok, body: entry }),
   deleteActivity: (u, dateOrId, tok) => ({
     method: "DELETE",
-    path: "/contributions",
+    path: "/activities",
     bearer: tok,
     body: typeof dateOrId === "object" ? dateOrId : { date: dateOrId },
   }),

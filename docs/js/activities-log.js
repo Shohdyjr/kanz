@@ -1,0 +1,398 @@
+// ── Activities log — full-screen timeline ──────────────────────────────
+// A scrollable list of months, newest first, from the current month back
+// to whenever the earliest Activity was logged — no year boundary, so
+// browsing further back is just scrolling, not switching years. Each row
+// is collapsed to a one-line summary by default and expands in place to
+// show that month's full Activity log.
+//   + income (green)  — money that came IN this month (salary, bonus, etc.)
+//   - expenses (red)  — money that went OUT (spent, withdrawn)
+// The net (income − expenses) is what gets passed to helpers.js so growth
+// calculations can subtract it from raw wealth deltas.
+//
+// Naming note: this file/screen is about the Activity log itself — the
+// facts of what was logged. "Contribution"/"contributed" is a different,
+// still-valid term used elsewhere (sumContributionsBetween, monthSummary
+// below, changeAnalysisExclContrib in history-chart.js) for a derived
+// financial figure: how much of a wealth change came from money the user
+// added, vs the market moving on its own. Only the log/entity was renamed
+// to Activity; that separate financial concept keeps its own name.
+
+// ── State ──
+// Each Activity entry has:
+//   { date, type, amountUsd, amountOriginal, currency, note, ...intrinsic fields }
+// Untyped legacy entries (pre-Activities) are treated as income/expense by
+// the sign of amountUsd — see activityDisplayFor() below.
+
+function openActivityLog() {
+  activityLogOpen = true;
+  // Current month starts expanded every time the screen opens — that's the
+  // one row someone almost always wants to see without an extra tap.
+  expandedActivityMonths = new Set([todayLocalStr().slice(0, 7)]);
+  render();
+}
+
+function closeActivityLog() {
+  activityLogOpen = false;
+  render();
+}
+
+function loadActivities() {
+  if (!currentUser) return;
+  callApi("loadActivitiesForClient", currentUser, sessionToken)
+    .then(function (j) {
+      if (j && j.ok && Array.isArray(j.activities)) {
+        activitiesData = j.activities.sort((a, b) => a.date.localeCompare(b.date));
+      }
+      render();
+    })
+    .catch(function (err) {
+      console.error("loadActivities:", err);
+    });
+}
+
+// ── Helpers ──
+
+const MONTH_NAMES_AR = [
+  "يناير",
+  "فبراير",
+  "مارس",
+  "أبريل",
+  "مايو",
+  "يونيو",
+  "يوليو",
+  "أغسطس",
+  "سبتمبر",
+  "أكتوبر",
+  "نوفمبر",
+  "ديسمبر",
+];
+const MONTH_NAMES_EN = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function monthLabel(m0) {
+  // m0 is 0-indexed
+  return lang === "ar" ? MONTH_NAMES_AR[m0] : MONTH_NAMES_EN[m0];
+}
+
+// "YYYY-MM" -> "Month YYYY" (or Arabic equivalent) for timeline rows, where
+// the year always needs to be visible since rows span multiple years.
+function monthYearLabel(yearMonth) {
+  const [y, m] = yearMonth.split("-");
+  return `${monthLabel(parseInt(m, 10) - 1)} ${y}`;
+}
+
+// Every "YYYY-MM" from the current month back to the earliest logged
+// Activity (or just the current month if there's no history yet), newest
+// first — the full continuous span the timeline scrolls through, with no
+// per-year cutoff.
+function buildTimelineMonths() {
+  const current = todayLocalStr().slice(0, 7);
+  const earliest = (activitiesData || []).reduce((min, c) => {
+    const ym = (c.date || "").slice(0, 7);
+    return ym && (!min || ym < min) ? ym : min;
+  }, current);
+
+  const months = [];
+  let [y, m] = current.split("-").map(Number);
+  const [ey, em] = earliest.split("-").map(Number);
+  while (y > ey || (y === ey && m >= em)) {
+    months.push(`${y}-${String(m).padStart(2, "0")}`);
+    m -= 1;
+    if (m === 0) {
+      m = 12;
+      y -= 1;
+    }
+  }
+  return months;
+}
+
+function toggleActivityMonth(yearMonth) {
+  if (expandedActivityMonths.has(yearMonth)) expandedActivityMonths.delete(yearMonth);
+  else expandedActivityMonths.add(yearMonth);
+  render();
+}
+
+// Returns {income, expense, net} for YYYY-MM
+// Returns { currencies: { EGP: {income, expense}, USD: {...}, ... } } — each
+// activity's cash-flow amount is kept in the currency it was actually
+// logged in (native amountOriginal), never merged into one USD figure.
+// amountUsd is only used as a fallback for legacy entries that predate the
+// currency field.
+function monthSummary(yearMonth) {
+  const currencies = {};
+  (activitiesData || []).forEach((c) => {
+    if (!c.date.startsWith(yearMonth)) return;
+    const amtUsd = parseFloat(c.amountUsd) || 0;
+    const isIncome = INCOME_ACTIVITY_TYPES.has(c.type) || (!c.type && amtUsd > 0);
+    const isExpense = EXPENSE_ACTIVITY_TYPES.has(c.type) || (!c.type && amtUsd < 0);
+    if (!isIncome && !isExpense) return;
+
+    const cur = c.currency || "USD";
+    const native = typeof c.amountOriginal === "number" ? c.amountOriginal : amtUsd;
+    const mag = Math.abs(native);
+    if (!currencies[cur]) currencies[cur] = { income: 0, expense: 0 };
+    if (isIncome) currencies[cur].income += mag;
+    else currencies[cur].expense += mag;
+  });
+  return { currencies };
+}
+
+// Merges several monthSummary()-shaped {currencies} objects into one — used
+// for the all-time header totals, which sum every month without ever
+// converting between currencies.
+function mergeCurrencySummaries(summaries) {
+  const merged = {};
+  summaries.forEach((s) => {
+    Object.entries(s.currencies).forEach(([cur, v]) => {
+      if (!merged[cur]) merged[cur] = { income: 0, expense: 0 };
+      merged[cur].income += v.income;
+      merged[cur].expense += v.expense;
+    });
+  });
+  return merged;
+}
+
+// ── Activity type display map ──
+
+// Icon + i18n-label-key for every Activity type, used by the unified entry
+// list below. Untyped legacy rows are treated exactly as they always were
+// (income if amountUsd >= 0, else expense).
+const ACTIVITY_DISPLAY = {
+  salary: { icon: "💰", labelKey: "activityTypeSalary", color: "var(--wt-green)" },
+  income: { icon: "▲", labelKey: "activityIncomeLabel", color: "var(--wt-green)" },
+  deposit: { icon: "▲", labelKey: "activityTypeDeposit", color: "var(--wt-green)" },
+  withdrawal: { icon: "▼", labelKey: "activityTypeWithdrawal", color: "var(--wt-red)" },
+  expense: { icon: "▼", labelKey: "activityExpenseLabel", color: "var(--wt-red)" },
+  buy: { icon: "🛒", labelKey: "activityTypeBuy", color: "var(--wt-text)" },
+  sell: { icon: "💵", labelKey: "activityTypeSell", color: "var(--wt-text)" },
+  transfer: { icon: "↔️", labelKey: "activityTypeTransfer", color: "var(--wt-text-dim)" },
+  correction: { icon: "✎", labelKey: "activityTypeCorrection", color: "var(--wt-text-dim)" },
+};
+function activityDisplayFor(c) {
+  const type = c.type || (parseFloat(c.amountUsd) >= 0 ? "income" : "expense");
+  return ACTIVITY_DISPLAY[type] || ACTIVITY_DISPLAY.income;
+}
+// Resolves an itemId (stored on typed Activities) to a display name, falling
+// back to the raw id if the item was later deleted/renamed — never hides
+// the fact that an Activity references something, even if that something
+// is gone.
+function activityItemLabel(itemId) {
+  if (!itemId) return "";
+  const a = ASSETS.find((x) => x.id === itemId);
+  return a ? assetName(a) : itemId;
+}
+
+// Undoes the qty change an Activity made to whichever item(s) it touched,
+// the mirror image of applyQtyDelta() in activities.js. Deleting a logged
+// Activity must never leave a balance it created behind — the log entry
+// and the qty it caused are two views of the same fact and have to be
+// deleted together.
+//
+// For salary/deposit/withdrawal/correction the original native delta is
+// stored verbatim as amountOriginal, so reversal is exact. For
+// transfer/buy/sell only one side's native delta is stored; the other
+// side is recomputed from amountUsd at today's price, which is exact if
+// prices haven't moved since and a close best-effort otherwise.
+function reverseActivityQty(entry) {
+  if (!entry || typeof entry !== "object") return; // legacy date-only delete: nothing to reverse
+  const amt = parseFloat(entry.amountOriginal);
+  if (entry.type === "transfer" && entry.fromItemId && entry.toItemId) {
+    if (!isNaN(amt)) applyQtyDelta(entry.fromItemId, amt); // undo the -rawAmt taken from fromItemId
+    const toAsset = ASSETS.find((a) => a.id === entry.toItemId);
+    const toPrice = toAsset && priceFor(toAsset);
+    const usdValue = parseFloat(entry.amountUsd) || 0;
+    if (toPrice) applyQtyDelta(entry.toItemId, -(usdValue / toPrice));
+  } else if ((entry.type === "buy" || entry.type === "sell") && entry.assetItemId && entry.fundingItemId) {
+    if (!isNaN(amt)) applyQtyDelta(entry.fundingItemId, -amt); // undo the funding-side delta
+    const assetItem = ASSETS.find((a) => a.id === entry.assetItemId);
+    const assetPrice = assetItem && priceFor(assetItem);
+    const usdValue = Math.abs(parseFloat(entry.amountUsd) || 0);
+    if (assetPrice) {
+      const assetNativeDelta = usdValue / assetPrice;
+      applyQtyDelta(entry.assetItemId, entry.type === "buy" ? -assetNativeDelta : assetNativeDelta);
+    }
+  } else if (entry.itemId && !isNaN(amt)) {
+    // salary / deposit / withdrawal / correction — single item, exact reversal
+    applyQtyDelta(entry.itemId, -amt);
+  }
+}
+
+function deleteActivityEntry(entry) {
+  // `entry` is either a legacy date string (old call sites) or a full
+  // Activity object — pass its id when present so same-day typed Activities
+  // don't clobber each other (see backend/routes/data.js DELETE /activities).
+  const isObj = entry && typeof entry === "object";
+  const date = isObj ? entry.date : entry;
+  const id = isObj ? entry.id : undefined;
+
+  // Undo the balance change locally first (same pattern submitActivityInner
+  // uses: qty mutation + scheduleSave), THEN delete the log entry — so a
+  // failed/slow API call never leaves the log gone but the balance stuck.
+  if (isObj) {
+    reverseActivityQty(entry);
+    updateTotals();
+    scheduleSave();
+    renderBreakdown();
+  }
+
+  callApi("deleteActivity", currentUser, id ? { date, id } : date, sessionToken)
+    .then(function (j) {
+      if (j && j.ok) loadActivities();
+    })
+    .catch(function (err) {
+      console.error("deleteActivityEntry:", err);
+    });
+}
+
+// Renders one small colored "+1,200 EGP" / "-50 USD" badge per currency
+// that had cash flow — never merges them into a single number. Multiple
+// badges wrap onto their own line if a month/total spans several currencies.
+function renderCurrencyBadges(currencies, fontSize) {
+  const entries = Object.entries(currencies).filter(([, v]) => v.income > 0 || v.expense > 0);
+  if (entries.length === 0) return "";
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end">
+    ${entries
+      .map(([cur, v]) => {
+        const net = v.income - v.expense;
+        const color = net >= 0 ? "var(--wt-green)" : "var(--wt-red)";
+        const sign = net >= 0 ? "+" : "";
+        return `<span style="font-family:'JetBrains Mono',monospace;font-size:${fontSize}px;font-weight:700;color:${color};white-space:nowrap">${sign}${fmtByCurrency(Math.abs(net), cur)}</span>`;
+      })
+      .join("")}
+  </div>`;
+}
+
+// ── Render a single timeline row ──
+// No inline per-cell editor anymore — adding always goes through
+// openActivityModal() (docs/js/activities.js). Collapsed by default; click
+// the row to expand/collapse its entry log in place.
+function renderMonthRow(yearMonth) {
+  const { currencies } = monthSummary(yearMonth);
+  const isCurrentMonth = yearMonth === todayLocalStr().slice(0, 7);
+  const isExpanded = expandedActivityMonths.has(yearMonth);
+
+  const borderStyle = isCurrentMonth ? "border:1.5px solid var(--wt-gold-dim)" : "border:1px solid var(--wt-line)";
+
+  // Every Activity in this month, of any type — not just income/expense —
+  // so nothing recorded is ever hidden from this screen.
+  const monthEntries = (activitiesData || []).filter((c) => c.date.startsWith(yearMonth));
+
+  const entryList =
+    monthEntries.length > 0
+      ? `
+    <div style="margin-top:6px;border-top:1px solid var(--wt-line);padding-top:5px;display:flex;flex-direction:column;gap:2px">
+      ${monthEntries
+        .map((c) => {
+          const disp = activityDisplayFor(c);
+          const hasOriginal = c.currency && c.currency !== "USD" && typeof c.amountOriginal === "number";
+          const amountLabel = hasOriginal
+            ? `${fmtByCurrency(Math.abs(c.amountOriginal), c.currency)} <span style="opacity:0.6">(≈${fmtUsd(Math.abs(parseFloat(c.amountUsd) || 0))})</span>`
+            : fmtUsd(Math.abs(parseFloat(c.amountUsd) || 0));
+          // Typed activities show which item(s) they touched; legacy
+          // income/expense entries have none.
+          const itemBits = [activityItemLabel(c.itemId), activityItemLabel(c.fromItemId), activityItemLabel(c.toItemId), activityItemLabel(c.assetItemId)]
+            .filter(Boolean)
+            .join(" → ");
+          return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;
+                             color:var(--wt-text-dim);padding:1px 0;gap:4px">
+          <span style="color:${disp.color};white-space:nowrap">
+            ${disp.icon} ${t(disp.labelKey)} — ${amountLabel}
+          </span>
+          <span style="opacity:0.7;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(itemBits || c.note || "")}</span>
+          <button onclick='event.stopPropagation();deleteActivityEntry(${JSON.stringify(c)})'
+            style="background:none;border:none;cursor:pointer;color:var(--wt-red);
+                   font-size:10px;padding:0 2px;line-height:1">×</button>
+        </div>`;
+        })
+        .join("")}
+    </div>`
+      : `<p style="font-size:10px;color:var(--wt-text-dim);opacity:0.5;margin:4px 0 0">${t("activityNoneThisMonth")}</p>`;
+
+  return `
+    <div class="wt-activity-row" style="border-radius:var(--wt-radius);${borderStyle};
+                background:rgba(255,255,255,0.02);padding:10px 12px;cursor:pointer"
+         onclick="toggleActivityMonth('${yearMonth}')">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-size:9px;color:var(--wt-text-dim);width:12px;flex-shrink:0">${isExpanded ? "▾" : "▸"}</span>
+        <span style="font-size:13px;font-weight:600;color:${isCurrentMonth ? "var(--wt-gold)" : "var(--wt-text)"};flex:1">
+          ${monthYearLabel(yearMonth)}
+        </span>
+        ${renderCurrencyBadges(currencies, 11)}
+      </div>
+
+      ${isExpanded ? entryList : ""}
+    </div>`;
+}
+
+// ── Full-screen overlay ──
+function renderActivityLog() {
+  const months = buildTimelineMonths(); // newest first, current month back to earliest Activity
+
+  // All-time totals — no year boundary AND no currency merging: each
+  // currency the user has ever logged cash flow in keeps its own
+  // income/expense/net, never collapsed into a single converted figure.
+  const allCurrencies = mergeCurrencySummaries(months.map((ym) => monthSummary(ym)));
+  const currencyTotalsHtml = Object.entries(allCurrencies)
+    .filter(([, v]) => v.income > 0 || v.expense > 0)
+    .map(([cur, v]) => {
+      const net = v.income - v.expense;
+      const netColor = net >= 0 ? "var(--wt-green)" : "var(--wt-red)";
+      return `
+        <div style="text-align:center">
+          <div style="font-size:10px;color:var(--wt-text-dim);margin-bottom:2px">${cur}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--wt-green)">▲ ${fmtByCurrency(v.income, cur)}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--wt-red)">▼ ${fmtByCurrency(v.expense, cur)}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:${netColor};margin-top:2px;padding-top:2px;border-top:1px solid var(--wt-line)">${net >= 0 ? "+" : ""}${fmtByCurrency(Math.abs(net), cur)}</div>
+        </div>`;
+    })
+    .join("");
+
+  return `
+  <div class="wt-activity-fullscreen">
+    <div class="wt-activity-fs-inner">
+
+      <!-- header -->
+      <div class="wt-activity-fs-header">
+        <div>
+          <h2 style="margin:0;font-size:18px;font-weight:700">${t("activityScreenTitle")}</h2>
+          <p style="margin:4px 0 0;font-size:12px;color:var(--wt-text-dim)">${t("activityScreenHint")}</p>
+        </div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-end">
+          ${currencyTotalsHtml}
+          <button class="wt-btn-ghost" style="align-self:center" onclick="closeActivityLog()">✕ ${t("close")}</button>
+        </div>
+      </div>
+
+      <!-- quick-add: intent-driven entry points, all opening the same tabbed modal -->
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+        ${["salary", "deposit", "withdrawal", "buy", "sell", "transfer", "correction"]
+          .map(
+            (k) =>
+              `<button class="wt-btn-ghost" onclick="openActivityModal('${k}')">${t("activityType" + k.charAt(0).toUpperCase() + k.slice(1))}</button>`
+          )
+          .join("")}
+      </div>
+
+      <!-- scrollable timeline, newest month first -->
+      <div class="wt-activity-timeline">
+        ${months.map((ym) => renderMonthRow(ym)).join("")}
+      </div>
+
+      <p style="font-size:11px;color:var(--wt-text-dim);margin-top:12px;text-align:center">
+        ${t("activityClickHint")}
+      </p>
+    </div>
+  </div>`;
+}

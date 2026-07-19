@@ -15,7 +15,7 @@ produce it.
 ## 2. Facts over Interpretations
 
 Kanz stores facts: Portfolio state, Snapshots (`history[]`), Activities
-(`contributions[]`, generalized), Item History (`item_history[]`), and market
+(`activities[]`), Item History (`item_history[]`), and market
 prices/FX rates. Everything else — attribution, performance, trends, reports
 — is an *interpretation*, computed at read time from those facts.
 
@@ -69,7 +69,7 @@ not the default path.
 |---|---|
 | Portfolio (`data.qty`) | Current state |
 | Snapshots (`history[]`) | Historical state |
-| Activities (`contributions[]`) | User intent |
+| Activities (`activities[]`) | User intent |
 | Item History (`item_history[]`) | System-generated (interest) growth |
 | Analytics (`lib/attribution.js`) | Derived interpretation |
 

@@ -232,11 +232,11 @@ function renderChangeAnalysis(filteredHistory) {
   const start = filteredHistory[0];
   const end = filteredHistory[filteredHistory.length - 1];
 
-  // Contributions carry the currency the user actually logged them in (see
-  // CONTRIB_CURRENCIES in contributions.js: EGP or a hard currency), so they
-  // map cleanly onto the egpUsd/hardUsd change-breakdown categories — but
-  // never onto gold or assets, which aren't offered as a contribution
-  // currency, so those two categories are always identical between modes.
+  // Contributions carry the currency the user actually logged them in (EGP,
+  // USD, EUR, or SAR — see activities-log.js), so they map cleanly onto the
+  // egpUsd/hardUsd change-breakdown categories — but never onto gold or
+  // assets, which aren't offered as a contribution currency, so those two
+  // categories are always identical between modes.
   //
   // Same granularity rule as the hero "Real growth" chips (see render.js):
   // contributions are logged with monthly granularity (always the 1st of

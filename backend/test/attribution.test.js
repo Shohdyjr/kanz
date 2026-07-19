@@ -70,12 +70,12 @@ test("computeAttribution: without a currency lookup, item_history deltas are ass
   assert.ok(Math.abs(result.unattributed) < 1e-9);
 });
 
-test("computeAttribution: legacy untyped contributions (income/expense by sign) still count", () => {
+test("computeAttribution: legacy untyped Activities (income/expense by sign) still count", () => {
   const history = [
     { date: "2026-01-01", totalUsd: 1000, nativeTotals: { egp: 0, gold: 0, usd: 0, eur: 0, sar: 0 }, ratesUsed: { egpPerUsd: 30, eurPerUsd: 1, sarPerUsd: 3.75, goldUsdPerGram: 60 } },
     { date: "2026-02-01", totalUsd: 900, nativeTotals: { egp: 0, gold: 0, usd: 0, eur: 0, sar: 0 }, ratesUsed: { egpPerUsd: 30, eurPerUsd: 1, sarPerUsd: 3.75, goldUsdPerGram: 60 } },
   ];
-  // No `type` field at all — the shape every pre-Activities contribution has.
+  // No `type` field at all — the shape every pre-typed Activity has.
   const activities = [{ date: "2026-01-10", amountUsd: -100 }];
   const result = computeAttribution(history, activities, [], "2026-01-01", "2026-02-01");
 

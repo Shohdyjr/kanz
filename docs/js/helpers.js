@@ -3,8 +3,8 @@ const fmtUsd = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2
 const fmtEgp = (n) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + (lang === "en" ? " EGP" : " ج.م");
 // Generic "amount + currency code" formatter for currencies without their
-// own dedicated formatter above (used by the contributions grid, where the
-// user can log a salary/expense in EGP, USD, EUR, or SAR — see contributions.js).
+// own dedicated formatter above (used by the Activities timeline, where the
+// user can log a salary/expense in EGP, USD, EUR, or SAR — see activities-log.js).
 const fmtByCurrency = (n, currency) => {
   if (currency === "USD") return fmtUsd(n);
   if (currency === "EGP") return fmtEgp(n);
@@ -91,21 +91,15 @@ function getGrowthCandidate(days) {
 // grew in value" ────────────────────────────────────────────────────
 // Salary being bigger than expenses means wealth goes up every month even if
 // nothing you already own changed in value at all — that's saving, not
-// growth. This sums the contributions logged in docs/js/contributions.js
+// growth. This sums the Activities logged in docs/js/activities-log.js
 // that fall strictly after `sinceDateExclusive` and up to `untilDateInclusive`,
 // so it can be subtracted from a raw diff to isolate the real, price-driven change.
 // Kept as a helper name (`*Exclusive`) for historical reasons, but the
-// comparison is actually inclusive (`>=`) on the start date. Contributions
-// are logged with monthly granularity (always the 1st of the month, since
-// the full-screen yearly grid replaced the old free-form date field — see
-// contributions.js), and MTD's window start is exactly that same "1st of
-// the month" date. A strict `>` used to silently exclude the current
-// month's own contribution from its own MTD comparison.
-// `currencies`, if given, restricts the sum to contributions logged in one of
-// those currencies (see CONTRIB_CURRENCIES in contributions.js) — used to
-// attribute a contribution to the EGP vs. hard-currency change-breakdown
-// category it actually landed in, since a contribution already carries the
-// currency the user typed it in.
+// comparison is actually inclusive (`>=`) on the start date.
+// `currencies`, if given, restricts the sum to Activities logged in one of
+// those currencies — used to attribute a contribution to the EGP vs.
+// hard-currency change-breakdown category it actually landed in, since an
+// Activity already carries the currency the user typed it in.
 // Types that represent money genuinely entering/leaving the user's control
 // (not moved between their own holdings) — kept in sync with
 // EXTERNAL_CASH_FLOW_TYPES in backend/lib/attribution.js. Buy/Sell/Transfer/
@@ -115,21 +109,21 @@ function getGrowthCandidate(days) {
 const CASH_FLOW_ACTIVITY_TYPES = new Set(["salary", "deposit", "withdrawal", "income", "expense"]);
 
 // Which cash-flow types count as "income" vs "expense" for month totals
-// (used by monthSummary() in contributions.js). Kept here alongside
+// (used by monthSummary() in activities-log.js). Kept here alongside
 // CASH_FLOW_ACTIVITY_TYPES so the two stay in sync as new types are added.
 const INCOME_ACTIVITY_TYPES = new Set(["salary", "deposit", "income"]);
 const EXPENSE_ACTIVITY_TYPES = new Set(["withdrawal", "expense"]);
 
 function sumContributionsBetween(sinceDateInclusive, untilDateInclusive, currencies) {
-  if (!contributionsData || contributionsData.length === 0) return 0;
-  return contributionsData
+  if (!activitiesData || activitiesData.length === 0) return 0;
+  return activitiesData
     .filter(
       (c) =>
         (!sinceDateInclusive || c.date >= sinceDateInclusive) &&
         c.date <= untilDateInclusive &&
         // Entries saved before the currency field existed have no `currency`
         // at all — the backend already treats that as USD at save time
-        // (see POST /contributions: `currency: currency || "USD"`), so read
+        // (see POST /activities: `currency: currency || "USD"`), so read
         // it back the same way here. Without this fallback, a legacy entry
         // matched neither the EGP filter nor the USD/EUR/SAR filter and
         // silently vanished from both buckets instead of landing in one.

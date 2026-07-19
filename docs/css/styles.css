@@ -320,39 +320,6 @@ body {
   border-color: var(--wt-gold-dim);
   color: var(--wt-gold-light);
 }
-.wt-contrib-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 180px;
-  overflow-y: auto;
-}
-.wt-contrib-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  padding: 6px 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-.wt-contrib-date {
-  font-family: "JetBrains Mono", monospace;
-  color: var(--wt-text-dim);
-  flex-shrink: 0;
-}
-.wt-contrib-amount {
-  font-family: "JetBrains Mono", monospace;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.wt-contrib-note {
-  color: var(--wt-text-dim);
-  opacity: 0.85;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
 .wt-goal-bar-wrap {
   margin-top: 16px;
   position: relative;
@@ -2228,7 +2195,7 @@ body {
 }
 
 /* ── Contributions full-screen overlay ── */
-.wt-contrib-fullscreen {
+.wt-activity-fullscreen {
   position: fixed;
   inset: 0;
   background: var(--wt-bg-gradient);
@@ -2237,13 +2204,13 @@ body {
   display: flex;
   flex-direction: column;
 }
-.wt-contrib-fs-inner {
+.wt-activity-fs-inner {
   max-width: 900px;
   width: 100%;
   margin: 0 auto;
   padding: 28px 20px 48px;
 }
-.wt-contrib-fs-header {
+.wt-activity-fs-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -2253,16 +2220,16 @@ body {
   padding-bottom: 18px;
   border-bottom: 1px solid var(--wt-line);
 }
-.wt-contrib-timeline {
+.wt-activity-timeline {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.wt-contrib-row {
+.wt-activity-row {
   transition:
     border-color 0.15s,
     background 0.15s;
 }
-.wt-contrib-row:hover {
+.wt-activity-row:hover {
   background: rgba(255, 255, 255, 0.04) !important;
 }
