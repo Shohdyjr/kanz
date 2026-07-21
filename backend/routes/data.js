@@ -92,13 +92,13 @@ const isValidApyMap = (v) =>
 // a cash distributionFrequency).
 const RETURN_CONFIG_ENUMS = {
   productType: ["savings", "fixedDeposit", "certificate", "monthlyCertificate", "quarterlyCertificate", "maturityCertificate", "moneyMarketFund", "fixedIncomeFund", "investmentFund", "treasuryBill", "bond", "dividendFund", "goldFund", "etf", "stock"],
-  rateType: ["fixed", "variable"],
+  rateType: ["fixed", "variable", "tiered"],
   growthSource: ["fixedRate", "nav", "manual", "discount"],
   growthFrequency: ["daily", "monthly", "quarterly", "semiAnnual", "annual", "maturity"],
   distributionFrequency: ["none", "daily", "monthly", "quarterly", "annual", "maturity"],
   compoundingFrequency: ["none", "daily", "monthly", "quarterly", "semiAnnual", "annual", "maturity"],
   liquidityFrequency: ["daily", "weekly", "monthly", "quarterly", "maturity", "restricted"],
-  balanceBasis: ["currentBalance", "fixedPrincipal"],
+  balanceBasis: ["currentBalance", "fixedPrincipal", "lowestPeriodBalance"],
   // Whether the % rate stored in `apy` is the bank's quoted Nominal APR
   // (simple annual rate, the convention most Egyptian banks quote) or an
   // already-compounded Effective APY/EAR (common for money-market/fixed
@@ -107,8 +107,10 @@ const RETURN_CONFIG_ENUMS = {
   // WHERE, within growthFrequency's own cadence, a Credit event actually
   // falls — see creditBoundaryAtOrBefore/nextCreditBoundary in
   // growthPipeline.js. "anniversary" (unset defaults here too) preserves
-  // every existing config's behavior unchanged.
-  creditAnchor: ["anniversary", "calendarPeriodEnd", "fixedDay"],
+  // every existing config's behavior unchanged. "daily" is equivalent to
+  // "anniversary" for daily-cadence products — same boundary math, just a
+  // clearer label when growth/compounding/liquidity are all daily too.
+  creditAnchor: ["anniversary", "calendarPeriodEnd", "fixedDay", "daily"],
 };
 const RETURN_CONFIG_KEYS = [
   ...Object.keys(RETURN_CONFIG_ENUMS),

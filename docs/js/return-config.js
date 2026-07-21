@@ -821,9 +821,11 @@ function tierRatesDurationText(cfg) {
 
 // Step-up rates (tierRates) are only ever meaningful for a Certificate
 // product — a savings account or an estimated-APY fund uses the single
-// rc-apy rate instead. So this block shows, and is only ever *required*,
-// when BOTH growthSource is "fixedRate" AND productType is "certificate".
-// (growthFormula/manual stays keyed off growthSource alone, unrelated.)
+// rc-apy rate instead. So the Rate field and the Step-up-rates field swap
+// places, and only ever *required*, when BOTH growthSource is "fixedRate"
+// AND productType is "certificate". (growthFormula/manual stays keyed off
+// growthSource alone, unrelated — it lives directly in the Financial Model
+// section, no wrapper.)
 function onGrowthSourceChange() {
   const source = document.getElementById("rc-growthSource").value;
   const productTypeEl = document.getElementById("rc-productType");
@@ -832,17 +834,19 @@ function onGrowthSourceChange() {
   const tierApplies = isFixed && isCertificate;
   const isManual = source === "manual";
   const isDiscount = source === "discount";
-  const advancedSection = document.getElementById("rc-sec-advancedOverrides");
+  const apyBlock = document.getElementById("rc-apy-block");
+  const apyInput = document.getElementById("rc-apy");
   const tierBlock = document.getElementById("rc-tierRates-block");
   const tierDuration = document.getElementById("rc-tierRates-duration");
   const tierInput = document.getElementById("rc-tierRates");
   const formulaBlock = document.getElementById("rc-growthFormula-block");
   const formulaInput = document.getElementById("rc-growthFormula");
   const discountBlock = document.getElementById("rc-discount-block");
-  if (advancedSection) advancedSection.style.display = isFixed || isManual ? "" : "none";
+  if (apyBlock) apyBlock.style.display = tierApplies ? "none" : "";
+  if (apyInput) apyInput.disabled = tierApplies; // required only when it actually applies — disabled fields are skipped by form validation
   if (tierBlock) tierBlock.style.display = tierApplies ? "" : "none";
   if (tierDuration) tierDuration.style.display = tierApplies ? "" : "none";
-  if (tierInput) tierInput.disabled = !tierApplies; // required only when it actually applies — disabled fields are skipped by form validation
+  if (tierInput) tierInput.disabled = !tierApplies;
   if (formulaBlock) formulaBlock.style.display = isManual ? "" : "none";
   if (formulaInput) formulaInput.disabled = !isManual;
   if (discountBlock) {
@@ -875,6 +879,11 @@ function renderReturnPanel() {
   const cfg = (a && returnConfig[id]) || {};
   const validation = a ? (typeof validateDomainModel === "function" ? validateDomainModel(cfg) : { valid: true, errors: [] }) : { valid: true, errors: [] };
 
+  // Step-up rates only ever apply to a Certificate on a fixed rate — see
+  // onGrowthSourceChange, which keeps this in sync as either field changes.
+  const advancedApplies = cfg.growthSource === "fixedRate" || cfg.growthSource === "manual";
+  const tierApplies = cfg.growthSource === "fixedRate" && cfg.productType === "certificate";
+
   const generalBody = `
         <div class="wt-field-row-4">
           <div class="wt-field">
@@ -897,11 +906,18 @@ function renderReturnPanel() {
                 .join("")}
             </select>
           </div>
-          <div class="wt-field">
+          <div class="wt-field" id="rc-apy-block" ${tierApplies ? 'style="display:none"' : ""}>
             <label for="rc-apy">${t("thApy")} <span style="color:var(--wt-danger,#e05252)">*</span>${infoDot("apyEditableHint")}</label>
-            <input type="number" id="rc-apy" min="0" max="100" step="any" required value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
+            <input type="number" id="rc-apy" min="0" max="100" step="any" ${tierApplies ? "disabled" : "required"} value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
           </div>
-        </div>`;
+          <div class="wt-field" id="rc-tierRates-block" ${tierApplies ? "" : 'style="display:none"'}>
+            <label for="rc-tierRates">${t("tierRatesLabel")} <span style="color:var(--wt-danger,#e05252)">*</span>${infoDot("tierRatesHint")}</label>
+            <input type="text" id="rc-tierRates" placeholder="27,22,17" dir="ltr" ${tierApplies ? "required" : "disabled"}
+              oninput="refreshProductConfigPreview()"
+              value="${Array.isArray(cfg.tierRates) ? cfg.tierRates.join(",") : ""}">
+          </div>
+        </div>
+        <p id="rc-tierRates-duration" class="wt-return-summary-category" style="margin:-6px 0 8px;${tierApplies ? "" : "display:none"}">${tierRatesDurationText(cfg)}</p>`;
 
   // Financial Model fields — ordered to match the Financial Engine's actual
   // execution order (see growth-pipeline.js): growth source/frequency first
@@ -975,32 +991,17 @@ function renderReturnPanel() {
           </div>
         </div>`;
 
-  // Step-up rates only ever apply to a Certificate on a fixed rate — see
-  // onGrowthSourceChange, which keeps this in sync as either field changes.
-  const advancedApplies = cfg.growthSource === "fixedRate" || cfg.growthSource === "manual";
-  const tierApplies = cfg.growthSource === "fixedRate" && cfg.productType === "certificate";
-  const advancedBody = `
-          <div class="wt-field-row-3" id="rc-tierRates-block" ${tierApplies ? "" : 'style="display:none"'}>
-            <div class="wt-field">
-              <label for="rc-tierRates">${t("tierRatesLabel")} <span style="color:var(--wt-danger,#e05252)">*</span>${infoDot("tierRatesHint")}</label>
-              <input type="text" id="rc-tierRates" placeholder="27,22,17" dir="ltr" required
-                ${tierApplies ? "" : "disabled"}
-                oninput="refreshProductConfigPreview()"
-                value="${Array.isArray(cfg.tierRates) ? cfg.tierRates.join(",") : ""}">
-            </div>
-          </div>
-          <p id="rc-tierRates-duration" class="wt-return-summary-category" style="margin:4px 0 8px;${tierApplies ? "" : "display:none"}">${tierRatesDurationText(cfg)}</p>
-
-          <!-- Custom growth formula — overrides the built-in interest math for
-               THIS item only, everywhere it's used (simulator, table columns,
-               and the real daily cron), without needing a code change. Leave
-               blank to keep using the built-in default for whatever
-               growth model is picked above. Only meaningful for
-               growthSource:"manual" — hidden otherwise, same reasoning as
-               tierRates above. -->
-          <div class="wt-field" id="rc-growthFormula-block" ${cfg.growthSource === "manual" ? "" : 'style="display:none"'}>
-            <label for="rc-growthFormula">${t("growthFormulaLabel")} <span style="color:var(--wt-danger,#e05252)">*</span>${infoDot("growthFormulaHint")}</label>
-            <textarea id="rc-growthFormula" dir="ltr" rows="2" spellcheck="false" required
+  // Custom growth formula — overrides the built-in interest math for THIS
+  // item only, everywhere it's used (simulator, table columns, and the real
+  // daily cron), without needing a code change. Leave blank to keep using
+  // the built-in default for whatever growth model is picked above. Only
+  // meaningful for growthSource:"manual" — hidden otherwise. Lives directly
+  // in the Financial Model section (no separate "Advanced overrides"
+  // wrapper — removed since it only ever held this one field).
+  const growthFormulaBody = `
+        <div class="wt-field" id="rc-growthFormula-block" ${cfg.growthSource === "manual" ? "" : 'style="display:none"'}>
+          <label for="rc-growthFormula">${t("growthFormulaLabel")} <span style="color:var(--wt-danger,#e05252)">*</span>${infoDot("growthFormulaHint")}</label>
+          <textarea id="rc-growthFormula" dir="ltr" rows="2" spellcheck="false" required
               ${cfg.growthSource === "manual" ? "" : "disabled"}
               placeholder="principal * (rate/100/365) * days"
               oninput="previewGrowthFormula(); refreshProductConfigPreview();">${esc(cfg.growthFormula || "")}</textarea>
@@ -1059,16 +1060,7 @@ function renderReturnPanel() {
 
           <div class="wt-rc-col-main">
             ${rcSectionHtml("general", t("sectionGeneral"), generalBody)}
-            ${rcSectionHtml("financialModel", t("sectionFinancialModel"), financialModelBody + discountBody)}
-            <div id="rc-sec-advancedOverrides" class="wt-rc-section${rcCollapsed.advancedOverrides ? " wt-rc-collapsed" : ""}" ${advancedApplies ? "" : 'style="display:none"'}>
-              <div class="wt-rc-section-header" onclick="toggleRcSection('advancedOverrides')">
-                <h4 class="wt-rc-section-title">${t("sectionDatesLiquidity")}</h4>
-                <button type="button" class="wt-rc-toggle" title="${t("toggleSectionTitle")}" onclick="event.stopPropagation();toggleRcSection('advancedOverrides')">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-              </div>
-              <div class="wt-rc-section-body">${advancedBody}</div>
-            </div>
+            ${rcSectionHtml("financialModel", t("sectionFinancialModel"), financialModelBody + discountBody + growthFormulaBody)}
           </div>
         </div>
 
