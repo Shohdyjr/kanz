@@ -61,7 +61,12 @@ function renderHistory() {
       <button class="wt-chart-period-btn ${historyChartPeriod === "mtd" ? "active" : ""}" onclick="setHistoryChartPeriod('mtd')">${t("chartPeriodMtd")}</button>
       <button class="wt-chart-period-btn ${historyChartPeriod === "ytd" ? "active" : ""}" onclick="setHistoryChartPeriod('ytd')">${t("chartPeriodYtd")}</button>
       <button class="wt-chart-period-btn ${historyChartPeriod === "all" ? "active" : ""}" onclick="setHistoryChartPeriod('all')">${t("chartPeriodAll")}</button>
-      <button class="wt-chart-period-btn ${showBenchmark ? "active" : ""}" onclick="toggleBenchmark()" style="margin-inline-start:auto">${t("benchmarkToggle")}</button>
+      <button class="wt-chart-period-btn ${historyChartMode === "multi" ? "active" : ""}" onclick="toggleHistoryChartMode()" title="${t("chartModeToggle")}" style="margin-inline-start:auto">⟳</button>
+      ${
+        historyChartMode === "overall"
+          ? `<button class="wt-chart-period-btn ${showBenchmark ? "active" : ""}" onclick="toggleBenchmark()">${t("benchmarkToggle")}</button>`
+          : ""
+      }
     </div>
     ${benchmarkError ? `<div style="color:var(--wt-red,#e5484d);font-size:12px;margin-bottom:6px">${benchmarkError}</div>` : ""}
     <div style="position:relative;height:220px">
@@ -98,11 +103,25 @@ function renderHistory() {
   const gold = getComputedStyle(document.getElementById("bodyRoot")).getPropertyValue("--wt-gold-light").trim();
   const lineColor = getComputedStyle(document.getElementById("bodyRoot")).getPropertyValue("--wt-text-dim").trim();
 
-  historyChart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: labels,
-      datasets: [
+  const isMulti = historyChartMode === "multi";
+
+  const datasets = isMulti
+    ? [
+        { label: t("bkEgp"), data: egpSeries, color: BK_COLORS.EGP },
+        { label: t("bkHard"), data: hardSeries, color: "#4a8fdb" },
+        { label: t("bkGold"), data: goldSeries, color: BK_COLORS.GOLD },
+        { label: t("bkAssets"), data: assetsSeries, color: BK_COLORS.ASSETS },
+      ].map((d) => ({
+        label: d.label,
+        data: d.data,
+        borderColor: d.color,
+        backgroundColor: "transparent",
+        borderWidth: 2,
+        pointRadius: 2,
+        pointBackgroundColor: d.color,
+        tension: 0.25,
+      }))
+    : [
         {
           label: t("historyTotalLabel"),
           data: totals,
@@ -113,13 +132,22 @@ function renderHistory() {
           pointBackgroundColor: gold,
           tension: 0.25,
         },
-      ],
-    },
+      ];
+
+  historyChart = new Chart(ctx, {
+    type: "line",
+    data: { labels: labels, datasets: datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
+        legend: isMulti
+          ? {
+              display: true,
+              position: "bottom",
+              labels: { color: lineColor, boxWidth: 10, boxHeight: 10, font: { size: 11 }, usePointStyle: true },
+            }
+          : { display: false },
         tooltip: { callbacks: { label: (ctx) => " " + ctx.dataset.label + ": " + fmtUsd(ctx.parsed.y) } },
       },
       scales: {
@@ -132,7 +160,13 @@ function renderHistory() {
     },
   });
 
-  if (showBenchmark) loadAndOverlayBenchmark(labels, totals);
+  if (!isMulti && showBenchmark) loadAndOverlayBenchmark(labels, totals);
+}
+
+// ── Toggle: total-only line vs. per-category (EGP/Hard/Gold/Assets) lines ──
+function toggleHistoryChartMode() {
+  historyChartMode = historyChartMode === "overall" ? "multi" : "overall";
+  renderHistory();
 }
 
 // ── S&P 500 benchmark comparison (optional) ──────────────────────

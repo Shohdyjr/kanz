@@ -180,6 +180,7 @@ let historyModalOpen = false; // open/close the "add manual snapshot" modal
 let historyManagerOpen = false; // open/close the history manager panel (view/edit/delete)
 let historyChartPeriod = "mtd"; // "7d" | "30d" | "mtd" | "ytd" | "all" — chart's visible period
 let showBenchmark = false; // whether to overlay the S&P 500 comparison line
+let historyChartMode = "overall"; // "overall" | "multi" — total line vs. per-category lines
 let benchmarkError = null; // user-visible message when the benchmark fetch fails
 let histRate = null; // { egpPerUsd, date } — historical exchange rate, once fetched
 let histRateStatus = "idle"; // idle | loading | ok | error
