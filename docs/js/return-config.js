@@ -22,56 +22,78 @@
 // distributionFrequency is WHEN cash is paid out, compoundingFrequency is
 // WHEN growth is reinvested, liquidityFrequency is WHEN funds are
 // redeemable — four independent concepts, not one overloaded payoutFreq.
+// ── SOURCE OF TRUTH — confirmed with the user on 2026-07-21 ────────────
+// | Preset                            | Product Type | Rate Type | Rate Basis | Growth Source | Growth Freq | Balance Basis         | Distribution | Compounding | Liquidity | Credit Anchor | Roll Fwd |
+// |------------------------------------|--------------|-----------|------------|---------------|-------------|------------------------|--------------|-------------|-----------|----------------|----------|
+// | Mashreq NEO Savings                | savings      | variable  | nominal    | fixedRate     | daily       | currentBalance         | none         | monthly     | daily     | calendarPeriodEnd | yes  |
+// | Mashreq Day by Day                 | savings      | variable  | nominal    | fixedRate     | daily       | currentBalance         | none         | daily       | daily     | daily          | no       |
+// | Mashreq Extra Savings              | savings      | variable  | nominal    | fixedRate     | daily       | lowestPeriodBalance    | none         | monthly     | daily     | calendarPeriodEnd | yes  |
+// | NBE Platinum 3-Year Step-Up Cert.  | certificate  | tiered    | nominal    | fixedRate     | daily       | fixedPrincipal         | annual       | none        | maturity  | anniversary    | yes      |
+// | Thndr Cloud Daily (Estimated)      | moneyMarketFund | variable | effective | fixedRate  | daily       | currentBalance         | none         | daily       | daily     | daily          | no       |
+// | Thndr Cloud Monthly (Estimated)    | moneyMarketFund | variable | effective | fixedRate  | daily       | currentBalance         | none         | monthly     | monthly   | calendarPeriodEnd | yes  |
+//
+// Rate = an estimated APY typed in manually (suggestedApy below), updated by
+// hand whenever the real published yield moves. NO NAV logic is implemented
+// for the two Thndr presets — despite the real Thndr Cloud funds being
+// NAV/unit-price products, these two presets deliberately approximate them
+// as plain fixed-rate products (growthSource: "fixedRate"), exactly like
+// Mashreq. Do not change growthSource back to "nav" for these two ids.
 const RETURN_PRESETS = [
   {
-    id: "thndr_cloud_instant",
-    name_ar: "Thndr Cloud Instant (اليومي)",
-    name_en: "Thndr Cloud Instant (Daily)",
-    productType: "fixedIncomeFund",
+    id: "thndr_cloud_daily_estimated",
+    name_ar: "Thndr Cloud Daily (تقديري)",
+    name_en: "Thndr Cloud Daily (Estimated)",
+    productType: "moneyMarketFund",
     rateType: "variable",
     rateBasis: "effective",
-    growthSource: "nav",
+    growthSource: "fixedRate",
+    balanceBasis: "currentBalance",
     growthFrequency: "daily",
     distributionFrequency: "none",
     compoundingFrequency: "daily",
     liquidityFrequency: "daily",
+    creditAnchor: "daily",
+    creditBusinessDayAdjust: false,
     suggestedApy: 18.11,
   },
   {
-    id: "thndr_cloud_monthly",
-    name_ar: "Thndr Cloud Monthly (الشهري)",
-    name_en: "Thndr Cloud Monthly",
-    productType: "fixedIncomeFund",
+    id: "thndr_cloud_monthly_estimated",
+    name_ar: "Thndr Cloud Monthly (تقديري)",
+    name_en: "Thndr Cloud Monthly (Estimated)",
+    productType: "moneyMarketFund",
     rateType: "variable",
     rateBasis: "effective",
-    growthSource: "nav",
-    // Grows daily — NAV moves every day. Never distributes: all growth is
-    // reflected in the price. Only liquidity (redemption) is monthly.
+    growthSource: "fixedRate",
+    balanceBasis: "currentBalance",
     growthFrequency: "daily",
     distributionFrequency: "none",
-    compoundingFrequency: "daily",
+    compoundingFrequency: "monthly",
     liquidityFrequency: "monthly",
+    creditAnchor: "calendarPeriodEnd",
+    creditBusinessDayAdjust: true,
     suggestedApy: 20.06,
   },
   {
-    id: "mashreq_savings",
-    name_ar: "بنك المشرق — Savings",
-    name_en: "Mashreq — Savings",
+    id: "mashreq_neo_savings",
+    name_ar: "بنك المشرق — NEO Savings",
+    name_en: "Mashreq NEO Savings",
     productType: "savings",
     rateType: "variable",
     rateBasis: "nominal",
     growthSource: "fixedRate",
-    balanceBasis: "lowestPeriodBalance",
-    growthFrequency: "monthly",
+    balanceBasis: "currentBalance",
+    growthFrequency: "daily",
     distributionFrequency: "none",
     compoundingFrequency: "monthly",
-    liquidityFrequency: "monthly",
+    liquidityFrequency: "daily",
+    creditAnchor: "calendarPeriodEnd",
+    creditBusinessDayAdjust: true,
     suggestedApy: 18,
   },
   {
     id: "mashreq_day_by_day",
     name_ar: "بنك المشرق — يوم بيوم",
-    name_en: "Mashreq — Day by Day",
+    name_en: "Mashreq Day by Day",
     productType: "savings",
     rateType: "variable",
     rateBasis: "nominal",
@@ -81,21 +103,42 @@ const RETURN_PRESETS = [
     distributionFrequency: "none",
     compoundingFrequency: "daily",
     liquidityFrequency: "daily",
+    creditAnchor: "daily",
+    creditBusinessDayAdjust: false,
     suggestedApy: 15,
+  },
+  {
+    id: "mashreq_extra_savings",
+    name_ar: "بنك المشرق — Extra Savings",
+    name_en: "Mashreq Extra Savings",
+    productType: "savings",
+    rateType: "variable",
+    rateBasis: "nominal",
+    growthSource: "fixedRate",
+    balanceBasis: "lowestPeriodBalance",
+    growthFrequency: "daily",
+    distributionFrequency: "none",
+    compoundingFrequency: "monthly",
+    liquidityFrequency: "daily",
+    creditAnchor: "calendarPeriodEnd",
+    creditBusinessDayAdjust: true,
+    suggestedApy: 16.5,
   },
   {
     id: "nbe_platinum_stepup_3y",
     name_ar: "الأهلي — شهادة بلاتينية متدرجة (3 سنين)",
     name_en: "NBE Platinum Step-Up Certificate (3 Years)",
     productType: "certificate",
-    rateType: "fixed",
+    rateType: "tiered",
     rateBasis: "nominal",
     growthSource: "fixedRate",
     balanceBasis: "fixedPrincipal",
-    growthFrequency: "annual",
+    growthFrequency: "daily",
     distributionFrequency: "annual",
     compoundingFrequency: "none",
     liquidityFrequency: "maturity",
+    creditAnchor: "anniversary",
+    creditBusinessDayAdjust: true,
     tierRates: [27, 22, 17],
   },
 ];
@@ -396,7 +439,7 @@ function applyProductTypeDefaults(productType) {
     if (el && !el.value) el.value = String(value);
   };
   PRODUCT_CONFIG_FIELDS.forEach((f) => defaults[f] != null && setIfEmpty("rc-" + f, defaults[f]));
-  onGrowthSourceChange(); // syncs tierRates/growthFormula visibility, then refreshes preview
+  onGrowthSourceChange(); // syncs tierRates/growthFormula visibility (tierRates also depends on productType), then refreshes preview
 }
 
 // Fills the form fields from a preset with one click — the user can still
@@ -411,7 +454,9 @@ function applyReturnPreset(presetId) {
   set("rc-productType", p.productType);
   set("rc-rateType", p.rateType);
   set("rc-rateBasis", p.rateBasis || "");
-  PRODUCT_CONFIG_FIELDS.forEach((f) => set("rc-" + f, p[f]));
+  PRODUCT_CONFIG_FIELDS.forEach((f) => f !== "creditBusinessDayAdjust" && set("rc-" + f, p[f]));
+  const bizDayEl = document.getElementById("rc-creditBusinessDayAdjust");
+  if (bizDayEl) bizDayEl.checked = !!p.creditBusinessDayAdjust;
   set("rc-apy", p.suggestedApy);
   set("rc-tierRates", p.tierRates ? p.tierRates.join(",") : "");
   set("rc-growthFormula", "");
@@ -419,6 +464,7 @@ function applyReturnPreset(presetId) {
   document.querySelectorAll(".wt-preset-btn").forEach((btn) => {
     btn.classList.toggle("selected", btn.dataset.presetId === presetId);
   });
+  onCreditAnchorChange(); // syncs the fixed-day input for the preset's creditAnchor
   onGrowthSourceChange(); // syncs tierRates/growthFormula visibility for the preset's growthSource, then refreshes preview
   previewGrowthFormula();
 }
@@ -449,7 +495,7 @@ function readProductConfigForm(id) {
   // tierRates, then switched to nav). Strip anything that no longer applies
   // so a hidden field can never be silently saved and silently ignored by
   // the engine.
-  cfg.tierRates = cfg.growthSource === "fixedRate" && tierRates.length ? tierRates : null;
+  cfg.tierRates = cfg.growthSource === "fixedRate" && cfg.productType === "certificate" && tierRates.length ? tierRates : null;
   cfg.growthFormula = cfg.growthSource === "manual" ? val("rc-growthFormula").trim() || null : null;
 
   const usesCredit = cfg.growthSource === "fixedRate" || cfg.growthSource === "manual";
@@ -773,11 +819,17 @@ function tierRatesDurationText(cfg) {
   return t("tierRatesDurationWithDates")(n, dates.join(" → "));
 }
 
-// Only tierRates/growthFormula/rc-tierRates-duration blocks are conditional
-// on growthSource — everything else stays visible regardless.
+// Step-up rates (tierRates) are only ever meaningful for a Certificate
+// product — a savings account or an estimated-APY fund uses the single
+// rc-apy rate instead. So this block shows, and is only ever *required*,
+// when BOTH growthSource is "fixedRate" AND productType is "certificate".
+// (growthFormula/manual stays keyed off growthSource alone, unrelated.)
 function onGrowthSourceChange() {
   const source = document.getElementById("rc-growthSource").value;
+  const productTypeEl = document.getElementById("rc-productType");
   const isFixed = source === "fixedRate";
+  const isCertificate = productTypeEl && productTypeEl.value === "certificate";
+  const tierApplies = isFixed && isCertificate;
   const isManual = source === "manual";
   const isDiscount = source === "discount";
   const advancedSection = document.getElementById("rc-sec-advancedOverrides");
@@ -788,9 +840,9 @@ function onGrowthSourceChange() {
   const formulaInput = document.getElementById("rc-growthFormula");
   const discountBlock = document.getElementById("rc-discount-block");
   if (advancedSection) advancedSection.style.display = isFixed || isManual ? "" : "none";
-  if (tierBlock) tierBlock.style.display = isFixed ? "" : "none";
-  if (tierDuration) tierDuration.style.display = isFixed ? "" : "none";
-  if (tierInput) tierInput.disabled = !isFixed; // required only when it actually applies — disabled fields are skipped by form validation
+  if (tierBlock) tierBlock.style.display = tierApplies ? "" : "none";
+  if (tierDuration) tierDuration.style.display = tierApplies ? "" : "none";
+  if (tierInput) tierInput.disabled = !tierApplies; // required only when it actually applies — disabled fields are skipped by form validation
   if (formulaBlock) formulaBlock.style.display = isManual ? "" : "none";
   if (formulaInput) formulaInput.disabled = !isManual;
   if (discountBlock) {
@@ -923,22 +975,21 @@ function renderReturnPanel() {
           </div>
         </div>`;
 
-  // Only ever relevant for growthSource:"fixedRate" (tierRates) or "manual"
-  // (growthFormula) — the whole section is hidden (display:none, set/kept in
-  // sync by onGrowthSourceChange) for every other growthSource so it never
-  // shows up empty, independent of its own collapse state.
+  // Step-up rates only ever apply to a Certificate on a fixed rate — see
+  // onGrowthSourceChange, which keeps this in sync as either field changes.
   const advancedApplies = cfg.growthSource === "fixedRate" || cfg.growthSource === "manual";
+  const tierApplies = cfg.growthSource === "fixedRate" && cfg.productType === "certificate";
   const advancedBody = `
-          <div class="wt-field-row-3" id="rc-tierRates-block" ${cfg.growthSource === "fixedRate" ? "" : 'style="display:none"'}>
+          <div class="wt-field-row-3" id="rc-tierRates-block" ${tierApplies ? "" : 'style="display:none"'}>
             <div class="wt-field">
               <label for="rc-tierRates">${t("tierRatesLabel")} <span style="color:var(--wt-danger,#e05252)">*</span>${infoDot("tierRatesHint")}</label>
               <input type="text" id="rc-tierRates" placeholder="27,22,17" dir="ltr" required
-                ${cfg.growthSource === "fixedRate" ? "" : "disabled"}
+                ${tierApplies ? "" : "disabled"}
                 oninput="refreshProductConfigPreview()"
                 value="${Array.isArray(cfg.tierRates) ? cfg.tierRates.join(",") : ""}">
             </div>
           </div>
-          <p id="rc-tierRates-duration" class="wt-return-summary-category" style="margin:4px 0 8px;${cfg.growthSource === "fixedRate" ? "" : "display:none"}">${tierRatesDurationText(cfg)}</p>
+          <p id="rc-tierRates-duration" class="wt-return-summary-category" style="margin:4px 0 8px;${tierApplies ? "" : "display:none"}">${tierRatesDurationText(cfg)}</p>
 
           <!-- Custom growth formula — overrides the built-in interest math for
                THIS item only, everywhere it's used (simulator, table columns,

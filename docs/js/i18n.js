@@ -180,7 +180,7 @@ const I18N = {
       bond: "سند",
       treasuryBill: "أذون خزانة",
     },
-    rateTypeOptions: { fixed: "ثابتة", variable: "متغيرة" },
+    rateTypeOptions: { fixed: "ثابتة", variable: "متغيرة", tiered: "متدرجة" },
     calcMethodOptions: {
       dailyBalance: "الرصيد اليومي (Daily Balance)",
       lowestMonthlyBalance: "أقل رصيد في الشهر (Lowest Monthly Balance)",
@@ -267,6 +267,7 @@ const I18N = {
       anniversary: "ذكرى تاريخ الفتح",
       calendarPeriodEnd: "نهاية الفترة التقويمية",
       fixedDay: "يوم ثابت في الشهر",
+      daily: "يوميًا",
     },
     creditDayLabel: "يوم الترحيل",
     creditBusinessDayAdjustLabel: "لو وقع في إجازة أسبوعية، يتأجل لأول يوم شغل",
@@ -659,7 +660,7 @@ const I18N = {
       bond: "Bond",
       treasuryBill: "Treasury Bill",
     },
-    rateTypeOptions: { fixed: "Fixed", variable: "Variable" },
+    rateTypeOptions: { fixed: "Fixed", variable: "Variable", tiered: "Tiered" },
     calcMethodOptions: {
       dailyBalance: "Daily Balance",
       lowestMonthlyBalance: "Lowest Monthly Balance",
@@ -746,6 +747,7 @@ const I18N = {
       anniversary: "Opening anniversary",
       calendarPeriodEnd: "Calendar period end",
       fixedDay: "Fixed day of month",
+      daily: "Daily",
     },
     creditDayLabel: "Credit day",
     creditBusinessDayAdjustLabel: "Roll forward to the next business day if it falls on a weekend",
