@@ -53,6 +53,28 @@
 //  every returnConfig write is checked against (backend/routes/data.js).
 // ══════════════════════════════════════════════════════════════════════════
 
+// ── Growth Model registry ───────────────────────────────────────────────
+// Each growthSource is a self-contained strategy that owns whether Credit
+// concepts (Compounding/Distribution/Accrual) apply to it at all — this is
+// what makes NAV and Discount "not using Compounding" a validation FACT
+// about that model, not a special case bolted onto validateDomainModel.
+// Adding a new valuation strategy (e.g. a future marketPrice model for
+// stocks/ETFs priced by trades rather than a fund's own NAV) means adding
+// one entry here plus a branch in projectValueAt/dailyGrowthDelta — never a
+// scattered growthSource === "..." check somewhere else in the engine.
+//   usesCredit         — Compounding/Distribution/Accrual concepts apply
+//   requiresRate        — needs a apy/rate % to mean anything
+//   requiresDailyGrowth — must use growthFrequency: "daily" (continuous)
+const GROWTH_MODELS = {
+  fixedRate: { usesCredit: true, requiresRate: true, requiresDailyGrowth: false },
+  nav: { usesCredit: false, requiresRate: true, requiresDailyGrowth: true },
+  // Treasury Bills, zero-coupon bonds: value is purely the gap between
+  // purchasePrice and faceValue, realized continuously toward maturityDate.
+  // No rate, no periods, no credit events — see discountValueAt below.
+  discount: { usesCredit: false, requiresRate: false, requiresDailyGrowth: false },
+  manual: { usesCredit: true, requiresRate: true, requiresDailyGrowth: false },
+};
+
 // Domain rules. Explains exactly *why* a config is invalid — no silent
 // coercion. Called from backend/routes/data.js on every write; the engine
 // itself assumes it only ever receives configs that already passed this.
@@ -60,17 +82,21 @@ function validateDomainModel(cfg) {
   const c = cfg || {};
   const errors = [];
   if (!c.growthSource) return { valid: true, errors }; // not configured yet — nothing to validate
+  const model = GROWTH_MODELS[c.growthSource];
+  if (!model) {
+    errors.push(`Unknown growthSource: '${c.growthSource}'.`);
+    return { valid: false, errors };
+  }
   const distributing = c.distributionFrequency && c.distributionFrequency !== "none";
   const compounding = c.compoundingFrequency && c.compoundingFrequency !== "none";
 
-  if (c.growthSource === "nav" && distributing) {
-    errors.push("NAV-based products cannot have an active distributionFrequency: growth is entirely reflected in the price, there is no separate cash coupon to distribute.");
+  if (!model.usesCredit && (distributing || compounding)) {
+    errors.push(
+      `growthSource: '${c.growthSource}' doesn't use Compounding or Distribution — its value already reflects the full return on its own (a NAV price, or a discount-to-face accrual), so leave those two fields unset.`
+    );
   }
-  if (c.growthSource === "nav" && c.growthFrequency !== "daily") {
-    errors.push("NAV-based products grow continuously with the market and must use growthFrequency: 'daily'.");
-  }
-  if (c.growthSource === "fixedRate" && c.growthFrequency === "market") {
-    errors.push("Fixed-rate products cannot use market-driven growth — that combination belongs to growthSource: 'nav' or 'marketPrice'.");
+  if (model.requiresDailyGrowth && c.growthFrequency !== "daily") {
+    errors.push(`growthSource: '${c.growthSource}' grows continuously and must use growthFrequency: 'daily'.`);
   }
   if (distributing && compounding) {
     errors.push("A product cannot both distribute cash and compound automatically at the same time — growth is either paid out or reinvested, not both.");
@@ -78,8 +104,18 @@ function validateDomainModel(cfg) {
   if (Array.isArray(c.tierRates) && c.tierRates.length && c.growthSource !== "fixedRate") {
     errors.push("Tiered step-up rates (tierRates) only apply to growthSource: 'fixedRate' certificates.");
   }
-  if (!distributing && !compounding && c.growthSource !== "manual" && !Array.isArray(c.tierRates)) {
+  if (model.usesCredit && !distributing && !compounding && c.growthSource !== "manual" && !Array.isArray(c.tierRates)) {
     errors.push("A product must either distribute or compound its growth somehow (distributionFrequency or compoundingFrequency must be active), or declare growthSource: 'manual' with a custom formula.");
+  }
+  if (c.growthSource === "discount") {
+    if (!(c.faceValue > 0)) errors.push("growthSource: 'discount' requires a faceValue (the amount paid out at maturity).");
+    if (!c.maturityDate) errors.push("growthSource: 'discount' requires a maturityDate.");
+    if (c.maturityDate && c.startDate && parseDateStr(c.maturityDate) <= parseDateStr(c.startDate)) {
+      errors.push("growthSource: 'discount' requires maturityDate to be after startDate (the issue date).");
+    }
+  }
+  if (c.creditAnchor === "fixedDay" && !(c.creditDay >= 1 && c.creditDay <= 31)) {
+    errors.push("creditAnchor: 'fixedDay' requires a creditDay between 1 and 31.");
   }
   return { valid: errors.length === 0, errors };
 }
@@ -202,6 +238,90 @@ function anniversaryAfter(startDateStr, monthsStep, after) {
     cursor = addMonthsClamped(anchor, n * monthsStep);
   }
   return cursor;
+}
+
+// ── Credit Anchor ────────────────────────────────────────────────────────
+// WHERE, within the Calculation cadence (growthFrequency's own monthsStep),
+// a real Credit event actually falls — a separate question from HOW OFTEN
+// (that's still growthFrequency). Generalizes the one shape the engine used
+// to hardcode (an anniversary of the account's own startDate — correct for
+// a certificate/CD whose term literally starts on deposit day) to the other
+// shapes real institutions use:
+//   "anniversary"       — startDate + N*monthsStep (default; unchanged
+//                          behavior for every existing config, since this
+//                          is what periodStartAtOrBefore/anniversaryAfter
+//                          always did before creditAnchor existed)
+//   "calendarPeriodEnd" — the calendar month/quarter/year-end containing
+//                          the reference date, regardless of which day the
+//                          account opened (e.g. Mashreq NEO Savings credits
+//                          at calendar month-end, not "one month after you
+//                          opened it")
+//   "fixedDay"           — the same numbered day of the month every time
+//                          (config.creditDay, clamped to the month's actual
+//                          last day), stepped monthsStep months at a time
+// `config.creditBusinessDayAdjust: true` rolls a boundary landing on a
+// Saturday/Sunday forward to the following Monday. Weekend-only — Kanz has
+// no holiday calendar, so a public holiday can still land a credit a day
+// off; documented here rather than silently pretended away.
+function endOfCalendarPeriod(d, monthsStep) {
+  const periodEndMonth = Math.floor(d.getMonth() / monthsStep) * monthsStep + monthsStep - 1;
+  return new Date(d.getFullYear(), periodEndMonth + 1, 0);
+}
+
+function fixedDayInMonth(year, month0, creditDay) {
+  const lastDay = new Date(year, month0 + 1, 0).getDate();
+  return new Date(year, month0, Math.min(creditDay || 1, lastDay));
+}
+
+function rollToBusinessDay(d) {
+  const day = d.getDay(); // 0 = Sunday, 6 = Saturday
+  if (day === 0) return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+  if (day === 6) return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 2);
+  return d;
+}
+
+// Most recent Credit boundary at-or-before `at`.
+function creditBoundaryAtOrBefore(cfg, monthsStep, at) {
+  const config = cfg || {};
+  const kind = config.creditAnchor || "anniversary";
+  let boundary;
+  if (kind === "calendarPeriodEnd") {
+    boundary = endOfCalendarPeriod(at, monthsStep);
+    if (boundary.getTime() > at.getTime()) {
+      boundary = endOfCalendarPeriod(new Date(at.getFullYear(), at.getMonth() - monthsStep, 1), monthsStep);
+    }
+  } else if (kind === "fixedDay") {
+    boundary = fixedDayInMonth(at.getFullYear(), at.getMonth(), config.creditDay);
+    if (boundary.getTime() > at.getTime()) {
+      const prevMonth = new Date(at.getFullYear(), at.getMonth() - monthsStep, 1);
+      boundary = fixedDayInMonth(prevMonth.getFullYear(), prevMonth.getMonth(), config.creditDay);
+    }
+  } else {
+    boundary = periodStartAtOrBefore(config.startDate, monthsStep, at);
+  }
+  return config.creditBusinessDayAdjust ? rollToBusinessDay(boundary) : boundary;
+}
+
+// Next Credit boundary strictly after `after`.
+function nextCreditBoundary(cfg, monthsStep, after) {
+  const config = cfg || {};
+  const kind = config.creditAnchor || "anniversary";
+  let boundary;
+  if (kind === "calendarPeriodEnd") {
+    boundary = endOfCalendarPeriod(after, monthsStep);
+    if (boundary.getTime() <= after.getTime()) {
+      boundary = endOfCalendarPeriod(new Date(after.getFullYear(), after.getMonth() + monthsStep, 1), monthsStep);
+    }
+  } else if (kind === "fixedDay") {
+    boundary = fixedDayInMonth(after.getFullYear(), after.getMonth(), config.creditDay);
+    if (boundary.getTime() <= after.getTime()) {
+      const nextMonth = new Date(after.getFullYear(), after.getMonth() + monthsStep, 1);
+      boundary = fixedDayInMonth(nextMonth.getFullYear(), nextMonth.getMonth(), config.creditDay);
+    }
+  } else {
+    boundary = anniversaryAfter(config.startDate, monthsStep, after);
+  }
+  return config.creditBusinessDayAdjust ? rollToBusinessDay(boundary) : boundary;
 }
 
 // ── Safe expression evaluator for user-written growth formulas ─────────
@@ -468,14 +588,37 @@ function tieredValueAt(principal, startDateStr, tierRates, targetDate) {
   return value * Math.pow(1 + lastRate / 100, remDays / 365);
 }
 
+// ── Discount growth model (Treasury Bills, zero-coupon bonds) ───────────
+// Value grows linearly (straight-line, actual/actual) from purchasePrice at
+// issue (config.startDate) to faceValue at config.maturityDate — no rate,
+// no periods, no credit events: the "return" is entirely the gap between
+// what you paid and what you'll get back, realized continuously as time
+// passes. This is what lets Treasury Bills and zero-coupon bonds be
+// represented without a dedicated product type — they're just this one
+// growth model plus a face value and a maturity date.
+function discountValueAt(config, targetDate) {
+  if (!config.startDate || !config.maturityDate) return config.purchasePrice || 0;
+  const issue = parseDateStr(config.startDate);
+  const maturity = parseDateStr(config.maturityDate);
+  const purchasePrice = config.purchasePrice || 0;
+  const faceValue = config.faceValue || 0;
+  if (maturity <= issue) return purchasePrice;
+  if (targetDate >= maturity) return faceValue;
+  if (targetDate <= issue) return purchasePrice;
+  const totalDays = daysBetweenDates(issue, maturity);
+  const elapsedDays = daysBetweenDates(issue, targetDate);
+  return purchasePrice + (faceValue - purchasePrice) * (elapsedDays / totalDays);
+}
+
 // ── The one projection entry point, used by BOTH the table's projection
 // columns and the simulator (via an explicit rateBasis override) ──────────
 // `basisOverride`, when given, replaces cfg.rateBasis (the simulator's
 // APY/APR toggle re-runs this exact math under the other interpretation
 // without touching the item's saved config).
 function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverride, assumeContinuous) {
-  if (!principal || targetDate <= fromDate) return principal;
   const config = cfg || {};
+  if (config.growthSource === "discount") return discountValueAt(config, targetDate);
+  if (!principal || targetDate <= fromDate) return principal;
 
   if (config.startDate && Array.isArray(config.tierRates) && config.tierRates.length) {
     const tierAnchor = assumeContinuous ? config.startDate : formatDateStr(fromDate);
@@ -558,10 +701,19 @@ function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverrid
 // The interest is always computed and logged on the real growth boundary;
 // only whether it folds back into `qty` depends on compoundingFrequency.
 function dailyGrowthDelta(qty, apyPercent, cfg, todayStr) {
+  const config = cfg || {};
+  const today = parseDateStr(todayStr);
+
+  if (config.growthSource === "discount") {
+    if (!qty) return null;
+    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    const before = discountValueAt(config, yesterday);
+    const after = discountValueAt(config, today);
+    return after !== before ? { amount: after - before, reinvest: true } : null;
+  }
+
   const rate = apyPercent || 0;
   if (!rate || !qty) return null;
-  const today = parseDateStr(todayStr);
-  const config = cfg || {};
   const reinvest = !!(config.compoundingFrequency && config.compoundingFrequency !== "none");
 
   // Tiered certificates aren't auto-posted day to day by the cron
@@ -571,8 +723,10 @@ function dailyGrowthDelta(qty, apyPercent, cfg, todayStr) {
 
   const monthsStep = monthsStepForFreq(config.growthFrequency);
   if (config.growthSource !== "nav" && config.startDate && monthsStep) {
-    const periodStart = periodBoundaryAt(config.startDate, monthsStep, today);
-    if (!periodStart) return null; // not a growth boundary yet — balance stays flat
+    const boundaryToday = creditBoundaryAtOrBefore(config, monthsStep, today);
+    if (boundaryToday.getTime() !== today.getTime()) return null; // not a Credit day — balance stays flat
+    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    const periodStart = creditBoundaryAtOrBefore(config, monthsStep, yesterday);
     const days = daysBetweenDates(periodStart, today);
     const periodsPerYear = 12 / monthsStep;
     const nominalRate = config.rateBasis === "effective" ? effectiveToNominal(rate, periodsPerYear) : rate;
@@ -618,10 +772,19 @@ function dailyGrowthDelta(qty, apyPercent, cfg, todayStr) {
 //                             (tiered certificates, or a non-reinvesting
 //                             product with no period structure to anchor to)
 function nextCronTouch(qty, apyPercent, cfg, todayStr) {
+  const config = cfg || {};
+  const today = parseDateStr(todayStr);
+
+  if (config.growthSource === "discount") {
+    if (!qty) return { date: null, reasonKey: "cronTouchNoBalance" };
+    const maturity = config.maturityDate ? parseDateStr(config.maturityDate) : null;
+    if (maturity && today >= maturity) return { date: null, reasonKey: "cronTouchManual" };
+    const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    return { date: tomorrow, reasonKey: "cronTouchDaily" };
+  }
+
   const rate = apyPercent || 0;
   if (!rate || !qty) return { date: null, reasonKey: "cronTouchNoBalance" };
-  const today = parseDateStr(todayStr);
-  const config = cfg || {};
   const reinvest = !!(config.compoundingFrequency && config.compoundingFrequency !== "none");
   const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 
@@ -631,7 +794,7 @@ function nextCronTouch(qty, apyPercent, cfg, todayStr) {
 
   const monthsStep = monthsStepForFreq(config.growthFrequency);
   if (config.growthSource !== "nav" && config.startDate && monthsStep) {
-    return { date: anniversaryAfter(config.startDate, monthsStep, today), reasonKey: "cronTouchPeriodic" };
+    return { date: nextCreditBoundary(config, monthsStep, today), reasonKey: "cronTouchPeriodic" };
   }
 
   if (config.growthSource === "manual" && config.growthFormula) {
@@ -660,6 +823,8 @@ function nextCronTouch(qty, apyPercent, cfg, todayStr) {
 // both active, so this is never ambiguous.
 function creditFrequency(cfg) {
   const config = cfg || {};
+  const model = GROWTH_MODELS[config.growthSource];
+  if (!model || !model.usesCredit) return null;
   if (config.compoundingFrequency && config.compoundingFrequency !== "none") return config.compoundingFrequency;
   if (config.distributionFrequency && config.distributionFrequency !== "none") return config.distributionFrequency;
   return null;
@@ -678,8 +843,13 @@ function creditFrequency(cfg) {
 // happened since (one would skew it slightly) — never a stored value.
 function accrualBreakdown(qty, apyPercent, cfg, todayStr) {
   const config = cfg || {};
+  const model = GROWTH_MODELS[config.growthSource];
   const rate = apyPercent || 0;
-  if (!rate || !qty) return { creditedBalance: qty || 0, accruedEarnings: 0, lastCreditDate: null, nextCreditDate: null };
+  // Models without Credit (nav, discount) never have anything "pending" —
+  // their value already reflects everything, continuously, on its own.
+  if (!model || !model.usesCredit || !rate || !qty) {
+    return { creditedBalance: qty || 0, accruedEarnings: 0, lastCreditDate: null, nextCreditDate: null };
+  }
 
   // Gates on growthFrequency, not creditFrequency(cfg) — that's a different
   // axis (whether earned interest reinvests or pays out cash once it's
@@ -690,14 +860,14 @@ function accrualBreakdown(qty, apyPercent, cfg, todayStr) {
   // day, so it's continuously credited regardless of compoundingFrequency's
   // label; nothing is ever "pending" for it.
   const monthsStep = monthsStepForFreq(config.growthFrequency);
-  if (config.growthSource === "nav" || !config.startDate || !monthsStep) {
+  if (!config.startDate || !monthsStep) {
     return { creditedBalance: qty, accruedEarnings: 0, lastCreditDate: null, nextCreditDate: null };
   }
 
   const today = parseDateStr(todayStr);
-  const lastCreditDate = periodStartAtOrBefore(config.startDate, monthsStep, today);
+  const lastCreditDate = creditBoundaryAtOrBefore(config, monthsStep, today);
   const accruedEstimate = projectValueAt(qty, rate, config, lastCreditDate, today) - qty;
-  const nextCreditDate = anniversaryAfter(config.startDate, monthsStep, today);
+  const nextCreditDate = nextCreditBoundary(config, monthsStep, today);
 
   return { creditedBalance: qty, accruedEarnings: Math.max(0, accruedEstimate), lastCreditDate, nextCreditDate };
 }
@@ -710,6 +880,8 @@ const GrowthPipeline = {
   periodBoundaryAt,
   periodStartAtOrBefore,
   anniversaryAfter,
+  creditBoundaryAtOrBefore,
+  nextCreditBoundary,
   evalGrowthFormula,
   segmentInterest,
   nominalToEffective,
@@ -717,12 +889,14 @@ const GrowthPipeline = {
   periodicBoundaryValueAt,
   simpleFlatValueAt,
   tieredValueAt,
+  discountValueAt,
   projectValueAt,
   dailyGrowthDelta,
   nextCronTouch,
   creditFrequency,
   accrualBreakdown,
   validateDomainModel,
+  GROWTH_MODELS,
 };
 
 // Node (backend / cron): export as a module.

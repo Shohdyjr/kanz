@@ -268,12 +268,108 @@ function onReturnPanelAssetChange(id) {
 // customize freely. Only fields left empty/unset by the user are touched —
 // this never overwrites a value they already picked.
 const PRODUCT_TYPE_DEFAULTS = {
-  savings: { growthSource: "fixedRate", balanceBasis: "lowestPeriodBalance", compoundingFrequency: "monthly", distributionFrequency: "none", rateBasis: "nominal" },
-  fixedDeposit: { growthSource: "fixedRate", balanceBasis: "lowestPeriodBalance", compoundingFrequency: "monthly", distributionFrequency: "none", rateBasis: "nominal" },
-  certificate: { growthSource: "fixedRate", balanceBasis: "fixedPrincipal", compoundingFrequency: "none", distributionFrequency: "annual", rateBasis: "nominal" },
-  moneyMarketFund: { growthSource: "nav", growthFrequency: "daily", compoundingFrequency: "daily", distributionFrequency: "none", rateBasis: "effective" },
-  fixedIncomeFund: { growthSource: "nav", growthFrequency: "daily", compoundingFrequency: "daily", distributionFrequency: "none", rateBasis: "effective" },
-  investmentFund: { growthSource: "nav", growthFrequency: "daily", compoundingFrequency: "daily", distributionFrequency: "none", rateBasis: "effective" },
+  // Mashreq NEO Savings (Egypt) confirms: "interest is calculated daily and
+  // paid monthly," on the *actual daily balance* (not lowest-in-period), and
+  // credited at calendar month-end regardless of which day the account was
+  // opened — hence creditAnchor: "calendarPeriodEnd" rather than the default
+  // opening-date anniversary.
+  savings: {
+    growthSource: "fixedRate",
+    growthFrequency: "daily",
+    balanceBasis: "currentBalance",
+    compoundingFrequency: "monthly",
+    distributionFrequency: "none",
+    creditAnchor: "calendarPeriodEnd",
+    rateBasis: "nominal",
+  },
+  // A locked term deposit is a genuinely different product from a savings
+  // account, not the same preset: principal never moves mid-term
+  // (fixedPrincipal, not lowestPeriodBalance), it's usually paid OUT to a
+  // linked account rather than silently reinvested (distribution, not
+  // compounding), and it's locked until maturity (liquidityFrequency).
+  fixedDeposit: {
+    growthSource: "fixedRate",
+    growthFrequency: "daily",
+    balanceBasis: "fixedPrincipal",
+    compoundingFrequency: "none",
+    distributionFrequency: "monthly",
+    liquidityFrequency: "maturity",
+    rateBasis: "nominal",
+  },
+  // A step-up certificate: tierRates already models the rate schedule; this
+  // is the annual-payout variant. See monthlyCertificate/quarterlyCertificate
+  // for the other common payout cadences of the same instrument.
+  certificate: {
+    growthSource: "fixedRate",
+    growthFrequency: "daily",
+    balanceBasis: "fixedPrincipal",
+    compoundingFrequency: "none",
+    distributionFrequency: "annual",
+    rateBasis: "nominal",
+  },
+  monthlyCertificate: {
+    growthSource: "fixedRate",
+    growthFrequency: "daily",
+    balanceBasis: "fixedPrincipal",
+    compoundingFrequency: "none",
+    distributionFrequency: "monthly",
+    rateBasis: "nominal",
+  },
+  quarterlyCertificate: {
+    growthSource: "fixedRate",
+    growthFrequency: "daily",
+    balanceBasis: "fixedPrincipal",
+    compoundingFrequency: "none",
+    distributionFrequency: "quarterly",
+    rateBasis: "nominal",
+  },
+  // Zero-coupon-style: all interest at maturity, nothing paid or reinvested
+  // before then.
+  maturityCertificate: {
+    growthSource: "fixedRate",
+    growthFrequency: "daily",
+    balanceBasis: "fixedPrincipal",
+    compoundingFrequency: "none",
+    distributionFrequency: "maturity",
+    liquidityFrequency: "maturity",
+    rateBasis: "nominal",
+  },
+  // Thndr Cloud (Egypt) confirms: "the fund certificate price is updated
+  // daily" — a NAV/unit-price product, not an interest-bearing one. NAV
+  // products don't use Compounding/Distribution at all (see GROWTH_MODELS
+  // in growthPipeline.js): the price itself already IS the total return,
+  // there's no separate principal/earnings split to reinvest or pay out.
+  moneyMarketFund: { growthSource: "nav", growthFrequency: "daily", liquidityFrequency: "daily", rateBasis: "effective" },
+  fixedIncomeFund: { growthSource: "nav", growthFrequency: "daily", liquidityFrequency: "daily", rateBasis: "effective" },
+  investmentFund: { growthSource: "nav", growthFrequency: "daily", liquidityFrequency: "daily", rateBasis: "effective" },
+  dividendFund: {
+    growthSource: "nav",
+    growthFrequency: "daily",
+    distributionFrequency: "quarterly",
+    liquidityFrequency: "daily",
+    rateBasis: "effective",
+  },
+  goldFund: { growthSource: "nav", growthFrequency: "daily", liquidityFrequency: "daily", rateBasis: "effective" },
+  etf: { growthSource: "nav", growthFrequency: "daily", liquidityFrequency: "daily", rateBasis: "effective" },
+  stock: { growthSource: "nav", growthFrequency: "daily", liquidityFrequency: "daily", rateBasis: "effective" },
+  // A bond's coupon convention varies most by issuer; semi-annual is the
+  // most common default for a generic starting point.
+  bond: {
+    growthSource: "fixedRate",
+    growthFrequency: "daily",
+    balanceBasis: "fixedPrincipal",
+    compoundingFrequency: "none",
+    distributionFrequency: "semiAnnual",
+    liquidityFrequency: "maturity",
+    rateBasis: "nominal",
+  },
+  // Treasury Bills, and zero-coupon bonds generally: sold at a discount to
+  // face value, no periodic interest at all — the return is entirely the
+  // gap between purchase price and face value, realized continuously
+  // toward maturityDate. This is the "discount" growth model (see
+  // discountValueAt in growthPipeline.js), not a special product type —
+  // faceValue/purchasePrice/maturityDate are filled in per-item, not here.
+  treasuryBill: { growthSource: "discount", liquidityFrequency: "maturity" },
 };
 
 const PRODUCT_CONFIG_FIELDS = [
@@ -284,6 +380,12 @@ const PRODUCT_CONFIG_FIELDS = [
   "liquidityFrequency",
   "balanceBasis",
   "rateBasis",
+  "creditAnchor",
+  "creditDay",
+  "creditBusinessDayAdjust",
+  "faceValue",
+  "purchasePrice",
+  "maturityDate",
 ];
 
 function applyProductTypeDefaults(productType) {
@@ -341,13 +443,35 @@ function readProductConfigForm(id) {
     .split(",")
     .map((s) => parseFloat(s.trim()))
     .filter((n) => Number.isFinite(n));
-  // Safety net: these two fields are hidden in the UI once growthSource
-  // doesn't match, but a value can still be sitting in the DOM from before
-  // the user switched (e.g. picked fixedRate, typed tierRates, then
-  // switched to nav). Strip anything that no longer applies so a hidden
-  // field can never be silently saved and silently ignored by the engine.
+  // Safety net: these fields are hidden in the UI once growthSource/
+  // creditAnchor no longer matches, but a value can still be sitting in the
+  // DOM from before the user switched (e.g. picked fixedRate, typed
+  // tierRates, then switched to nav). Strip anything that no longer applies
+  // so a hidden field can never be silently saved and silently ignored by
+  // the engine.
   cfg.tierRates = cfg.growthSource === "fixedRate" && tierRates.length ? tierRates : null;
   cfg.growthFormula = cfg.growthSource === "manual" ? val("rc-growthFormula").trim() || null : null;
+
+  const usesCredit = cfg.growthSource === "fixedRate" || cfg.growthSource === "manual";
+  if (!usesCredit) {
+    cfg.compoundingFrequency = null;
+    cfg.distributionFrequency = null;
+    cfg.creditAnchor = null;
+  }
+  const creditDayEl = document.getElementById("rc-creditDay");
+  const creditDayNum = creditDayEl ? parseInt(creditDayEl.value, 10) : NaN;
+  cfg.creditDay = usesCredit && cfg.creditAnchor === "fixedDay" && Number.isFinite(creditDayNum) ? creditDayNum : null;
+  const bizDayEl = document.getElementById("rc-creditBusinessDayAdjust");
+  cfg.creditBusinessDayAdjust = usesCredit && bizDayEl ? !!bizDayEl.checked : null;
+
+  // Discount model fields — numbers, and only meaningful for growthSource: "discount".
+  const isDiscount = cfg.growthSource === "discount";
+  const purchasePriceNum = parseFloat(val("rc-purchasePrice"));
+  const faceValueNum = parseFloat(val("rc-faceValue"));
+  cfg.purchasePrice = isDiscount && Number.isFinite(purchasePriceNum) ? purchasePriceNum : null;
+  cfg.faceValue = isDiscount && Number.isFinite(faceValueNum) ? faceValueNum : null;
+  cfg.maturityDate = isDiscount ? val("rc-maturityDate") || null : null;
+
   return cfg;
 }
 
@@ -655,18 +779,41 @@ function onGrowthSourceChange() {
   const source = document.getElementById("rc-growthSource").value;
   const isFixed = source === "fixedRate";
   const isManual = source === "manual";
+  const isDiscount = source === "discount";
   const advancedSection = document.getElementById("rc-sec-advancedOverrides");
   const tierBlock = document.getElementById("rc-tierRates-block");
   const tierDuration = document.getElementById("rc-tierRates-duration");
   const tierInput = document.getElementById("rc-tierRates");
   const formulaBlock = document.getElementById("rc-growthFormula-block");
   const formulaInput = document.getElementById("rc-growthFormula");
+  const discountBlock = document.getElementById("rc-discount-block");
   if (advancedSection) advancedSection.style.display = isFixed || isManual ? "" : "none";
   if (tierBlock) tierBlock.style.display = isFixed ? "" : "none";
   if (tierDuration) tierDuration.style.display = isFixed ? "" : "none";
   if (tierInput) tierInput.disabled = !isFixed; // required only when it actually applies — disabled fields are skipped by form validation
   if (formulaBlock) formulaBlock.style.display = isManual ? "" : "none";
   if (formulaInput) formulaInput.disabled = !isManual;
+  if (discountBlock) {
+    discountBlock.style.display = isDiscount ? "" : "none";
+    discountBlock.querySelectorAll("input").forEach((el) => (el.disabled = !isDiscount));
+  }
+  // Discount/NAV don't use Compounding, Distribution, or Credit Anchor at
+  // all (see GROWTH_MODELS.usesCredit in growth-pipeline.js) — hide them
+  // rather than leave fields on screen that the engine will ignore.
+  const usesCredit = isFixed || isManual;
+  ["rc-distributionFrequency", "rc-compoundingFrequency", "rc-creditAnchor"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.closest(".wt-field").style.display = usesCredit ? "" : "none";
+  });
+  refreshProductConfigPreview();
+}
+
+function onCreditAnchorChange() {
+  const kind = document.getElementById("rc-creditAnchor").value;
+  const block = document.getElementById("rc-creditDay-block");
+  const input = document.getElementById("rc-creditDay");
+  if (block) block.style.display = kind === "fixedDay" ? "" : "none";
+  if (input) input.disabled = kind !== "fixedDay";
   refreshProductConfigPreview();
 }
 
@@ -734,6 +881,45 @@ function renderReturnPanel() {
           <div class="wt-field">
             ${fieldLabel("rc-liquidityFrequency", "liquidityFrequencyLabel", "liquidityFrequency")}
             ${domainSelect("liquidityFrequency", cfg)}
+          </div>
+          <div class="wt-field">
+            ${fieldLabel("rc-creditAnchor", "creditAnchorLabel", "creditAnchor")}
+            <select id="rc-creditAnchor" onchange="onCreditAnchorChange()">${optionsHtml(t("creditAnchorOptions"), cfg.creditAnchor)}</select>
+          </div>
+        </div>
+        <div class="wt-field-row-3" id="rc-creditDay-block" ${cfg.creditAnchor === "fixedDay" ? "" : 'style="display:none"'}>
+          <div class="wt-field">
+            <label for="rc-creditDay">${t("creditDayLabel")}</label>
+            <input type="number" id="rc-creditDay" min="1" max="31" step="1" value="${cfg.creditDay || ""}" ${cfg.creditAnchor === "fixedDay" ? "" : "disabled"}>
+          </div>
+        </div>
+        <div class="wt-field-row-3">
+          <div class="wt-field" style="flex-direction:row;align-items:center;gap:6px">
+            <input type="checkbox" id="rc-creditBusinessDayAdjust" ${cfg.creditBusinessDayAdjust ? "checked" : ""} style="width:auto">
+            <label for="rc-creditBusinessDayAdjust" style="margin:0">${t("creditBusinessDayAdjustLabel")}</label>
+          </div>
+        </div>`;
+
+  // Discount growth model (Treasury Bills, zero-coupon bonds) — no rate, no
+  // periods; value is purely purchasePrice → faceValue by maturityDate. See
+  // discountValueAt in growth-pipeline.js.
+  const discountApplies = cfg.growthSource === "discount";
+  const discountBody = `
+        <div class="wt-field-row-3" id="rc-discount-block" ${discountApplies ? "" : 'style="display:none"'}>
+          <div class="wt-field">
+            <label for="rc-purchasePrice">${t("purchasePriceLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+            <input type="number" id="rc-purchasePrice" min="0" step="any" required
+              ${discountApplies ? "" : "disabled"} oninput="refreshProductConfigPreview()" value="${cfg.purchasePrice || ""}">
+          </div>
+          <div class="wt-field">
+            <label for="rc-faceValue">${t("faceValueLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+            <input type="number" id="rc-faceValue" min="0" step="any" required
+              ${discountApplies ? "" : "disabled"} oninput="refreshProductConfigPreview()" value="${cfg.faceValue || ""}">
+          </div>
+          <div class="wt-field">
+            <label for="rc-maturityDate">${t("maturityDateLabel")} <span style="color:var(--wt-danger,#e05252)">*</span></label>
+            <input type="date" id="rc-maturityDate" required
+              ${discountApplies ? "" : "disabled"} oninput="refreshProductConfigPreview()" value="${cfg.maturityDate || ""}">
           </div>
         </div>`;
 
@@ -822,7 +1008,7 @@ function renderReturnPanel() {
 
           <div class="wt-rc-col-main">
             ${rcSectionHtml("general", t("sectionGeneral"), generalBody)}
-            ${rcSectionHtml("financialModel", t("sectionFinancialModel"), financialModelBody)}
+            ${rcSectionHtml("financialModel", t("sectionFinancialModel"), financialModelBody + discountBody)}
             <div id="rc-sec-advancedOverrides" class="wt-rc-section${rcCollapsed.advancedOverrides ? " wt-rc-collapsed" : ""}" ${advancedApplies ? "" : 'style="display:none"'}>
               <div class="wt-rc-section-header" onclick="toggleRcSection('advancedOverrides')">
                 <h4 class="wt-rc-section-title">${t("sectionDatesLiquidity")}</h4>
@@ -892,6 +1078,18 @@ function projectAssetValue(a) {
   const cfg = returnConfig[a.id] || {};
   const today = new Date();
   const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  // Discount model (Treasury Bills, zero-coupon bonds): value is a pure
+  // function of purchasePrice/faceValue/maturityDate — no rate, no periods,
+  // nothing else in this function applies. Maturity is the only milestone
+  // that means anything for this model.
+  if (cfg.growthSource === "discount") {
+    if (!cfg.maturityDate) return null;
+    const maturity = parseDateStr(cfg.maturityDate);
+    const value = computeGrowthValueAt(a.id, principal, todayMid, maturity);
+    return { next: value, nextDate: maturity, endOfCycle: value, endOfCycleDate: maturity, endOfYear: value, endOfYearDate: maturity };
+  }
+
   // A true rolling "one year from today" (not calendar Dec 31 — that could
   // be just days away if today is in December, which wouldn't match the
   // "One year from now" milestone label at all).
@@ -902,7 +1100,7 @@ function projectAssetValue(a) {
   const monthsStep = monthsStepForFreq(freq);
   let nextDate;
   if (cfg.startDate && monthsStep) {
-    nextDate = anniversaryAfter(cfg.startDate, monthsStep, todayMid);
+    nextDate = nextCreditBoundary(cfg, monthsStep, todayMid);
   } else if (freq === "monthly" || freq === "quarterly" || freq === "semiAnnual") {
     nextDate = new Date(todayMid.getFullYear(), todayMid.getMonth() + 1, todayMid.getDate());
   } else if (freq === "annual" || freq === "maturity") {
@@ -979,7 +1177,7 @@ function endOfCycleDate(cfg, todayMid) {
   const freq = cycleFrequency(cfg);
   const monthsStep = monthsStepForFreq(freq);
   if (cfg.startDate && monthsStep) {
-    return anniversaryAfter(cfg.startDate, monthsStep, todayMid);
+    return nextCreditBoundary(cfg, monthsStep, todayMid);
   }
   if (!freq || freq === "daily") return todayMid;
   return new Date(todayMid.getFullYear(), todayMid.getMonth() + 1, 0); // last day of this month
@@ -1023,6 +1221,7 @@ const MILESTONE_LABELS = {
 };
 
 function nextMilestoneLabelKey(cfg) {
+  if (cfg.growthSource === "discount") return MILESTONE_LABELS.next.maturity;
   const freq = cycleFrequency(cfg);
   if (!freq || freq === "daily") {
     return cfg.growthSource === "nav" ? MILESTONE_LABELS.next.navBasedDaily : MILESTONE_LABELS.next.tomorrow;
@@ -1048,6 +1247,7 @@ function nextMilestoneLabelKey(cfg) {
 }
 
 function cycleMilestoneLabelKey(cfg) {
+  if (cfg.growthSource === "discount") return MILESTONE_LABELS.next.maturity;
   if (cfg.growthSource === "nav") return MILESTONE_LABELS.cycle.navBased;
   return MILESTONE_LABELS.cycle[cycleFrequency(cfg)] || MILESTONE_LABELS.cycle.default;
 }
@@ -1059,6 +1259,7 @@ function cycleMilestoneLabelKey(cfg) {
 // never off `titleKey`/`title`, so that adding a translation or rewording a
 // label can never silently change behaviour.
 function nextMilestoneKind(cfg) {
+  if (cfg.growthSource === "discount") return "maturity";
   const freq = cycleFrequency(cfg);
   if (!freq || freq === "daily") return cfg.growthSource === "nav" ? "nav-update" : "interest-payment";
   if (freq === "monthly") return "month-end";
@@ -1070,6 +1271,7 @@ function nextMilestoneKind(cfg) {
 }
 
 function cycleMilestoneKind(cfg) {
+  if (cfg.growthSource === "discount") return "maturity";
   if (cfg.growthSource === "nav") return "nav-update";
   const freq = cycleFrequency(cfg);
   if (freq === "monthly") return "month-end";

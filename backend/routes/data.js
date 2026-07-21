@@ -91,9 +91,9 @@ const isValidApyMap = (v) =>
 // growthPipeline.validateDomainModel (e.g. a NAV product can't also declare
 // a cash distributionFrequency).
 const RETURN_CONFIG_ENUMS = {
-  productType: ["savings", "fixedDeposit", "certificate", "moneyMarketFund", "fixedIncomeFund", "investmentFund"],
+  productType: ["savings", "fixedDeposit", "certificate", "monthlyCertificate", "quarterlyCertificate", "maturityCertificate", "moneyMarketFund", "fixedIncomeFund", "investmentFund", "treasuryBill", "bond", "dividendFund", "goldFund", "etf", "stock"],
   rateType: ["fixed", "variable"],
-  growthSource: ["fixedRate", "nav", "manual"],
+  growthSource: ["fixedRate", "nav", "manual", "discount"],
   growthFrequency: ["daily", "monthly", "quarterly", "semiAnnual", "annual", "maturity"],
   distributionFrequency: ["none", "daily", "monthly", "quarterly", "annual", "maturity"],
   compoundingFrequency: ["none", "daily", "monthly", "quarterly", "semiAnnual", "annual", "maturity"],
@@ -104,8 +104,26 @@ const RETURN_CONFIG_ENUMS = {
   // already-compounded Effective APY/EAR (common for money-market/fixed
   // income funds like Thndr).
   rateBasis: ["nominal", "effective"],
+  // WHERE, within growthFrequency's own cadence, a Credit event actually
+  // falls — see creditBoundaryAtOrBefore/nextCreditBoundary in
+  // growthPipeline.js. "anniversary" (unset defaults here too) preserves
+  // every existing config's behavior unchanged.
+  creditAnchor: ["anniversary", "calendarPeriodEnd", "fixedDay"],
 };
-const RETURN_CONFIG_KEYS = [...Object.keys(RETURN_CONFIG_ENUMS), "startDate", "tierRates", "growthFormula", "noReturn"];
+const RETURN_CONFIG_KEYS = [
+  ...Object.keys(RETURN_CONFIG_ENUMS),
+  "startDate",
+  "tierRates",
+  "growthFormula",
+  "noReturn",
+  "creditDay",
+  "creditBusinessDayAdjust",
+  // growthSource: "discount" only (Treasury Bills, zero-coupon bonds) —
+  // see discountValueAt in growthPipeline.js.
+  "faceValue",
+  "purchasePrice",
+  "maturityDate",
+];
 const RETURN_CONFIG_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Regex only checks the shape (YYYY-MM-DD) — this also rejects dates that
 // don't exist on the calendar (e.g. 2026-02-30), which the regex alone would
@@ -145,7 +163,12 @@ const isValidReturnConfigEntry = (v) =>
   Object.keys(v).every((k) => RETURN_CONFIG_KEYS.includes(k)) &&
   Object.entries(RETURN_CONFIG_ENUMS).every(([field, allowed]) => v[field] == null || allowed.includes(v[field])) &&
   (v.startDate == null || isRealCalendarDate(v.startDate)) &&
+  (v.maturityDate == null || isRealCalendarDate(v.maturityDate)) &&
   (v.noReturn == null || typeof v.noReturn === "boolean") &&
+  (v.creditBusinessDayAdjust == null || typeof v.creditBusinessDayAdjust === "boolean") &&
+  (v.creditDay == null || (typeof v.creditDay === "number" && Number.isInteger(v.creditDay) && v.creditDay >= 1 && v.creditDay <= 31)) &&
+  (v.faceValue == null || (typeof v.faceValue === "number" && Number.isFinite(v.faceValue) && v.faceValue > 0)) &&
+  (v.purchasePrice == null || (typeof v.purchasePrice === "number" && Number.isFinite(v.purchasePrice) && v.purchasePrice > 0)) &&
   isValidGrowthFormula(v.growthFormula) &&
   isValidTierRates(v.tierRates) &&
   growthPipeline.validateDomainModel(v).valid;
