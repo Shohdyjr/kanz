@@ -117,6 +117,17 @@ function validateDomainModel(cfg) {
   if (c.creditAnchor === "fixedDay" && !(c.creditDay >= 1 && c.creditDay <= 31)) {
     errors.push("creditAnchor: 'fixedDay' requires a creditDay between 1 and 31.");
   }
+  if (c.balanceBasis === "tieredByBalance") {
+    if (!Array.isArray(c.balanceTiers) || !c.balanceTiers.length) {
+      errors.push("balanceBasis: 'tieredByBalance' requires at least one balance tier (balanceTiers).");
+    } else {
+      c.balanceTiers.forEach((t, i) => {
+        if (!(t.rate >= 0)) errors.push(`Balance tier #${i + 1} needs a rate.`);
+        if (!(t.min >= 0)) errors.push(`Balance tier #${i + 1} needs a minimum balance (min).`);
+        if (t.max != null && t.max <= t.min) errors.push(`Balance tier #${i + 1}'s max must be greater than its min.`);
+      });
+    }
+  }
   return { valid: errors.length === 0, errors };
 }
 
@@ -615,10 +626,36 @@ function discountValueAt(config, targetDate) {
 // `basisOverride`, when given, replaces cfg.rateBasis (the simulator's
 // APY/APR toggle re-runs this exact math under the other interpretation
 // without touching the item's saved config).
+// ── Balance-tiered rate (e.g. Mashreq NEO Savings: 11%/12%/16% depending on
+// which EGP balance band the account is currently in) ───────────────────
+// Confirmed behavior: it's a BAND rate, not a marginal/graduated one — the
+// WHOLE balance earns whichever single tier's rate it currently falls
+// into (same convention Egyptian banks publish these in), not "first X at
+// rate A, the rest at rate B" like a tax bracket. A tier with no `max` (or
+// `max: null`) is open-ended — it keeps applying to any balance above its
+// `min`, however high, matching Egyptian banks' behavior of the top band
+// continuing to apply above the balance they published examples up to
+// (rather than interest simply stopping).
+//
+// Resolved once per projectValueAt call against the CURRENT balance
+// (`principal`) — not re-evaluated mid-period as the balance compounds —
+// same lightweight-approximation tradeoff the rest of this engine makes
+// elsewhere (e.g. tierRates' anniversary-only re-evaluation).
+function resolveTieredRate(config, balance, fallbackRate) {
+  if (config.balanceBasis !== "tieredByBalance" || !Array.isArray(config.balanceTiers) || !config.balanceTiers.length) {
+    return fallbackRate;
+  }
+  const tier = config.balanceTiers.find(
+    (t) => balance >= (t.min || 0) && (t.max == null || balance <= t.max)
+  );
+  return tier ? tier.rate : fallbackRate;
+}
+
 function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverride, assumeContinuous) {
   const config = cfg || {};
   if (config.growthSource === "discount") return discountValueAt(config, targetDate);
   if (!principal || targetDate <= fromDate) return principal;
+  rate = resolveTieredRate(config, principal, rate);
 
   if (config.startDate && Array.isArray(config.tierRates) && config.tierRates.length) {
     const tierAnchor = assumeContinuous ? config.startDate : formatDateStr(fromDate);
@@ -712,7 +749,7 @@ function dailyGrowthDelta(qty, apyPercent, cfg, todayStr) {
     return after !== before ? { amount: after - before, reinvest: true } : null;
   }
 
-  const rate = apyPercent || 0;
+  const rate = resolveTieredRate(config, qty, apyPercent || 0);
   if (!rate || !qty) return null;
   const reinvest = !!(config.compoundingFrequency && config.compoundingFrequency !== "none");
 
@@ -783,7 +820,7 @@ function nextCronTouch(qty, apyPercent, cfg, todayStr) {
     return { date: tomorrow, reasonKey: "cronTouchDaily" };
   }
 
-  const rate = apyPercent || 0;
+  const rate = resolveTieredRate(config, qty, apyPercent || 0);
   if (!rate || !qty) return { date: null, reasonKey: "cronTouchNoBalance" };
   const reinvest = !!(config.compoundingFrequency && config.compoundingFrequency !== "none");
   const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
@@ -844,7 +881,7 @@ function creditFrequency(cfg) {
 function accrualBreakdown(qty, apyPercent, cfg, todayStr) {
   const config = cfg || {};
   const model = GROWTH_MODELS[config.growthSource];
-  const rate = apyPercent || 0;
+  const rate = resolveTieredRate(config, qty, apyPercent || 0);
   // Models without Credit (nav, discount) never have anything "pending" —
   // their value already reflects everything, continuously, on its own.
   if (!model || !model.usesCredit || !rate || !qty) {

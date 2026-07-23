@@ -98,7 +98,7 @@ const RETURN_CONFIG_ENUMS = {
   distributionFrequency: ["none", "daily", "monthly", "quarterly", "annual", "maturity"],
   compoundingFrequency: ["none", "daily", "monthly", "quarterly", "semiAnnual", "annual", "maturity"],
   liquidityFrequency: ["daily", "weekly", "monthly", "quarterly", "maturity", "restricted"],
-  balanceBasis: ["currentBalance", "fixedPrincipal", "lowestPeriodBalance"],
+  balanceBasis: ["currentBalance", "fixedPrincipal", "lowestPeriodBalance", "tieredByBalance"],
   // Whether the % rate stored in `apy` is the bank's quoted Nominal APR
   // (simple annual rate, the convention most Egyptian banks quote) or an
   // already-compounded Effective APY/EAR (common for money-market/fixed
@@ -116,6 +116,8 @@ const RETURN_CONFIG_KEYS = [
   ...Object.keys(RETURN_CONFIG_ENUMS),
   "startDate",
   "tierRates",
+  // balanceBasis: "tieredByBalance" only — see isValidBalanceTiers below.
+  "balanceTiers",
   "growthFormula",
   "noReturn",
   "creditDay",
@@ -148,6 +150,28 @@ const isValidTierRates = (v) =>
     v.length <= 15 &&
     v.every((n) => typeof n === "number" && Number.isFinite(n) && n >= -100 && n <= 1000));
 
+// Balance-tiered rate (balanceBasis: "tieredByBalance") — a whole-balance
+// band rate (see resolveTieredRate in growthPipeline.js), e.g. Mashreq NEO
+// Savings: 11%/12%/16% depending on EGP balance band. `max: null` means
+// open-ended (the top band, applies above its `min` with no ceiling).
+const isValidBalanceTiers = (v) =>
+  v == null ||
+  (Array.isArray(v) &&
+    v.length > 0 &&
+    v.length <= 15 &&
+    v.every(
+      (t) =>
+        isSafePlainObject(t) &&
+        typeof t.min === "number" &&
+        Number.isFinite(t.min) &&
+        t.min >= 0 &&
+        (t.max == null || (typeof t.max === "number" && Number.isFinite(t.max) && t.max > t.min)) &&
+        typeof t.rate === "number" &&
+        Number.isFinite(t.rate) &&
+        t.rate >= 0 &&
+        t.rate <= 100
+    ));
+
 // A formula that fails to parse would otherwise just silently fall back to
 // the default calculation the first time it's used (see evalGrowthFormula in
 // growthPipeline.js) — catching it here means the save itself fails with a
@@ -173,6 +197,7 @@ const isValidReturnConfigEntry = (v) =>
   (v.purchasePrice == null || (typeof v.purchasePrice === "number" && Number.isFinite(v.purchasePrice) && v.purchasePrice > 0)) &&
   isValidGrowthFormula(v.growthFormula) &&
   isValidTierRates(v.tierRates) &&
+  isValidBalanceTiers(v.balanceTiers) &&
   growthPipeline.validateDomainModel(v).valid;
 
 const isValidReturnConfigMap = (v) => isSafePlainObject(v) && Object.values(v).every(isValidReturnConfigEntry);

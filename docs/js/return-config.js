@@ -22,22 +22,18 @@
 // distributionFrequency is WHEN cash is paid out, compoundingFrequency is
 // WHEN growth is reinvested, liquidityFrequency is WHEN funds are
 // redeemable — four independent concepts, not one overloaded payoutFreq.
-// ── SOURCE OF TRUTH — confirmed with the user on 2026-07-21 ────────────
-// | Preset                            | Product Type | Rate Type | Rate Basis | Growth Source | Growth Freq | Balance Basis         | Distribution | Compounding | Liquidity | Credit Anchor | Roll Fwd |
-// |------------------------------------|--------------|-----------|------------|---------------|-------------|------------------------|--------------|-------------|-----------|----------------|----------|
-// | Mashreq NEO Savings                | savings      | variable  | nominal    | fixedRate     | daily       | currentBalance         | none         | monthly     | daily     | calendarPeriodEnd | yes  |
-// | Mashreq Day by Day                 | savings      | variable  | nominal    | fixedRate     | daily       | currentBalance         | none         | daily       | daily     | daily          | no       |
-// | Mashreq Extra Savings              | savings      | variable  | nominal    | fixedRate     | daily       | lowestPeriodBalance    | none         | monthly     | daily     | calendarPeriodEnd | yes  |
-// | NBE Platinum 3-Year Step-Up Cert.  | certificate  | tiered    | nominal    | fixedRate     | daily       | fixedPrincipal         | annual       | none        | maturity  | anniversary    | yes      |
-// | Thndr Cloud Daily (Estimated)      | moneyMarketFund | variable | effective | fixedRate  | daily       | currentBalance         | none         | daily       | daily     | daily          | no       |
-// | Thndr Cloud Monthly (Estimated)    | moneyMarketFund | variable | effective | fixedRate  | daily       | currentBalance         | none         | monthly     | monthly   | calendarPeriodEnd | yes  |
+// ── SOURCE OF TRUTH — confirmed with the user, rates verified against
+// official/news sources on 2026-07-22 (see docs-dev/return-presets.md for
+// sources & dates). Re-verify before relying on these for real money.
 //
-// Rate = an estimated APY typed in manually (suggestedApy below), updated by
-// hand whenever the real published yield moves. NO NAV logic is implemented
-// for the two Thndr presets — despite the real Thndr Cloud funds being
-// NAV/unit-price products, these two presets deliberately approximate them
-// as plain fixed-rate products (growthSource: "fixedRate"), exactly like
-// Mashreq. Do not change growthSource back to "nav" for these two ids.
+// Mashreq NEO Savings and Mashreq Day by Day are genuinely balance-tiered
+// products (different rate for different EGP balance bands) — modeled
+// exactly via balanceBasis:"tieredByBalance" + balanceTiers below, NOT an
+// approximation. See resolveTieredRate() in growth-pipeline.js for how a
+// balance picks its tier (whole-balance band, not marginal/graduated —
+// confirmed with the user), and docs-dev/return-presets.md for the
+// published tier numbers/sources. Mashreq Highest Interest Savings is
+// flat-rate in reality (no balance bands), so it uses a plain suggestedApy.
 const RETURN_PRESETS = [
   {
     id: "thndr_cloud_daily_estimated",
@@ -54,7 +50,7 @@ const RETURN_PRESETS = [
     liquidityFrequency: "daily",
     creditAnchor: "daily",
     creditBusinessDayAdjust: false,
-    suggestedApy: 18.11,
+    suggestedApy: 19.5,
   },
   {
     id: "thndr_cloud_monthly_estimated",
@@ -71,7 +67,7 @@ const RETURN_PRESETS = [
     liquidityFrequency: "monthly",
     creditAnchor: "calendarPeriodEnd",
     creditBusinessDayAdjust: true,
-    suggestedApy: 20.06,
+    suggestedApy: 20,
   },
   {
     id: "mashreq_neo_savings",
@@ -81,14 +77,18 @@ const RETURN_PRESETS = [
     rateType: "variable",
     rateBasis: "nominal",
     growthSource: "fixedRate",
-    balanceBasis: "currentBalance",
+    balanceBasis: "tieredByBalance",
+    balanceTiers: [
+      { min: 5000, max: 49999, rate: 11 },
+      { min: 50000, max: 499999, rate: 12 },
+      { min: 500000, max: null, rate: 16 },
+    ],
     growthFrequency: "daily",
     distributionFrequency: "none",
     compoundingFrequency: "monthly",
     liquidityFrequency: "daily",
     creditAnchor: "calendarPeriodEnd",
     creditBusinessDayAdjust: true,
-    suggestedApy: 18,
   },
   {
     id: "mashreq_day_by_day",
@@ -98,19 +98,23 @@ const RETURN_PRESETS = [
     rateType: "variable",
     rateBasis: "nominal",
     growthSource: "fixedRate",
-    balanceBasis: "currentBalance",
+    balanceBasis: "tieredByBalance",
+    balanceTiers: [
+      { min: 5000, max: 49999, rate: 9 },
+      { min: 50000, max: 499999, rate: 10.5 },
+      { min: 500000, max: null, rate: 15 },
+    ],
     growthFrequency: "daily",
     distributionFrequency: "none",
     compoundingFrequency: "daily",
     liquidityFrequency: "daily",
     creditAnchor: "daily",
     creditBusinessDayAdjust: false,
-    suggestedApy: 15,
   },
   {
-    id: "mashreq_extra_savings",
-    name_ar: "بنك المشرق — Extra Savings",
-    name_en: "Mashreq Extra Savings",
+    id: "mashreq_highest_interest_savings",
+    name_ar: "بنك المشرق — Highest Interest Savings",
+    name_en: "Mashreq Highest Interest Savings",
     productType: "savings",
     rateType: "variable",
     rateBasis: "nominal",
@@ -122,7 +126,7 @@ const RETURN_PRESETS = [
     liquidityFrequency: "daily",
     creditAnchor: "calendarPeriodEnd",
     creditBusinessDayAdjust: true,
-    suggestedApy: 16.5,
+    suggestedApy: 18, // flat rate, EGP 50k-1M — no balance tiers on this one
   },
   {
     id: "nbe_platinum_stepup_3y",
@@ -139,7 +143,7 @@ const RETURN_PRESETS = [
     liquidityFrequency: "maturity",
     creditAnchor: "anniversary",
     creditBusinessDayAdjust: true,
-    tierRates: [27, 22, 17],
+    tierRates: [22, 17.5, 13],
   },
 ];
 
@@ -459,6 +463,7 @@ function applyReturnPreset(presetId) {
   if (bizDayEl) bizDayEl.checked = !!p.creditBusinessDayAdjust;
   set("rc-apy", p.suggestedApy);
   set("rc-tierRates", p.tierRates ? p.tierRates.join(",") : "");
+  set("rc-balanceTiers", balanceTiersToText(p.balanceTiers));
   set("rc-growthFormula", "");
   rcSelectedPresetId = presetId;
   document.querySelectorAll(".wt-preset-btn").forEach((btn) => {
@@ -496,6 +501,8 @@ function readProductConfigForm(id) {
   // so a hidden field can never be silently saved and silently ignored by
   // the engine.
   cfg.tierRates = cfg.growthSource === "fixedRate" && cfg.productType === "certificate" && tierRates.length ? tierRates : null;
+  const balanceTiers = parseBalanceTiersText(val("rc-balanceTiers"));
+  cfg.balanceTiers = cfg.growthSource === "fixedRate" && cfg.balanceBasis === "tieredByBalance" && balanceTiers.length ? balanceTiers : null;
   cfg.growthFormula = cfg.growthSource === "manual" ? val("rc-growthFormula").trim() || null : null;
 
   const usesCredit = cfg.growthSource === "fixedRate" || cfg.growthSource === "manual";
@@ -826,12 +833,19 @@ function tierRatesDurationText(cfg) {
 // AND productType is "certificate". (growthFormula/manual stays keyed off
 // growthSource alone, unrelated — it lives directly in the Financial Model
 // section, no wrapper.)
+//
+// Balance-tiered rate (balanceBasis:"tieredByBalance") follows the same
+// swap pattern as tierRates — it replaces the single Rate field too, since
+// the rate is now a function of balance instead of one fixed number.
 function onGrowthSourceChange() {
   const source = document.getElementById("rc-growthSource").value;
   const productTypeEl = document.getElementById("rc-productType");
+  const balanceBasisEl = document.getElementById("rc-balanceBasis");
   const isFixed = source === "fixedRate";
   const isCertificate = productTypeEl && productTypeEl.value === "certificate";
+  const isBalanceTiered = balanceBasisEl && balanceBasisEl.value === "tieredByBalance";
   const tierApplies = isFixed && isCertificate;
+  const balanceTiersApplies = isFixed && isBalanceTiered;
   const isManual = source === "manual";
   const isDiscount = source === "discount";
   const apyBlock = document.getElementById("rc-apy-block");
@@ -839,14 +853,18 @@ function onGrowthSourceChange() {
   const tierBlock = document.getElementById("rc-tierRates-block");
   const tierDuration = document.getElementById("rc-tierRates-duration");
   const tierInput = document.getElementById("rc-tierRates");
+  const balanceTiersBlock = document.getElementById("rc-balanceTiers-block");
+  const balanceTiersInput = document.getElementById("rc-balanceTiers");
   const formulaBlock = document.getElementById("rc-growthFormula-block");
   const formulaInput = document.getElementById("rc-growthFormula");
   const discountBlock = document.getElementById("rc-discount-block");
-  if (apyBlock) apyBlock.style.display = tierApplies ? "none" : "";
-  if (apyInput) apyInput.disabled = tierApplies; // required only when it actually applies — disabled fields are skipped by form validation
+  if (apyBlock) apyBlock.style.display = tierApplies || balanceTiersApplies ? "none" : "";
+  if (apyInput) apyInput.disabled = tierApplies || balanceTiersApplies; // required only when it actually applies — disabled fields are skipped by form validation
   if (tierBlock) tierBlock.style.display = tierApplies ? "" : "none";
   if (tierDuration) tierDuration.style.display = tierApplies ? "" : "none";
   if (tierInput) tierInput.disabled = !tierApplies;
+  if (balanceTiersBlock) balanceTiersBlock.style.display = balanceTiersApplies ? "" : "none";
+  if (balanceTiersInput) balanceTiersInput.disabled = !balanceTiersApplies;
   if (formulaBlock) formulaBlock.style.display = isManual ? "" : "none";
   if (formulaInput) formulaInput.disabled = !isManual;
   if (discountBlock) {
@@ -863,6 +881,38 @@ function onGrowthSourceChange() {
   });
   refreshProductConfigPreview();
 }
+// balanceBasis changing needs the exact same swap re-evaluated — same
+// function handles both triggers.
+function onBalanceBasisChange() {
+  onGrowthSourceChange();
+}
+
+// "0-49999:11" per line -> [{min, max, rate}], max omitted/blank -> null
+// (open-ended top tier). Silently skips malformed lines rather than
+// throwing — the required-field/validateDomainModel checks downstream
+// catch an empty result.
+function parseBalanceTiersText(text) {
+  if (!text) return [];
+  return String(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const m = line.match(/^(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)?\s*:\s*(-?\d+(?:\.\d+)?)$/);
+      if (!m) return null;
+      const min = parseFloat(m[1]);
+      const max = m[2] !== undefined && m[2] !== "" ? parseFloat(m[2]) : null;
+      const rate = parseFloat(m[3]);
+      return { min, max, rate };
+    })
+    .filter(Boolean);
+}
+
+function balanceTiersToText(tiers) {
+  if (!Array.isArray(tiers) || !tiers.length) return "";
+  return tiers.map((t) => `${t.min}-${t.max == null ? "" : t.max}:${t.rate}`).join("\n");
+}
+
 
 function onCreditAnchorChange() {
   const kind = document.getElementById("rc-creditAnchor").value;
@@ -879,10 +929,13 @@ function renderReturnPanel() {
   const cfg = (a && returnConfig[id]) || {};
   const validation = a ? (typeof validateDomainModel === "function" ? validateDomainModel(cfg) : { valid: true, errors: [] }) : { valid: true, errors: [] };
 
-  // Step-up rates only ever apply to a Certificate on a fixed rate — see
-  // onGrowthSourceChange, which keeps this in sync as either field changes.
+  // Step-up rates only ever apply to a Certificate on a fixed rate, and
+  // balance-tiered rates only apply when balanceBasis is tieredByBalance —
+  // both replace the single Rate field. See onGrowthSourceChange, which
+  // keeps this in sync as any of these fields changes.
   const advancedApplies = cfg.growthSource === "fixedRate" || cfg.growthSource === "manual";
   const tierApplies = cfg.growthSource === "fixedRate" && cfg.productType === "certificate";
+  const balanceTiersApplies = cfg.growthSource === "fixedRate" && cfg.balanceBasis === "tieredByBalance";
 
   const generalBody = `
         <div class="wt-field-row-4">
@@ -906,9 +959,9 @@ function renderReturnPanel() {
                 .join("")}
             </select>
           </div>
-          <div class="wt-field" id="rc-apy-block" ${tierApplies ? 'style="display:none"' : ""}>
+          <div class="wt-field" id="rc-apy-block" ${tierApplies || balanceTiersApplies ? 'style="display:none"' : ""}>
             <label for="rc-apy">${t("thApy")} <span style="color:var(--wt-danger,#e05252)">*</span>${infoDot("apyEditableHint")}</label>
-            <input type="number" id="rc-apy" min="0" max="100" step="any" ${tierApplies ? "disabled" : "required"} value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
+            <input type="number" id="rc-apy" min="0" max="100" step="any" ${tierApplies || balanceTiersApplies ? "disabled" : "required"} value="${apy[id] || ""}" placeholder="0%" title="${t("apyHint")}">
           </div>
           <div class="wt-field" id="rc-tierRates-block" ${tierApplies ? "" : 'style="display:none"'}>
             <label for="rc-tierRates">${t("tierRatesLabel")} <span style="color:var(--wt-danger,#e05252)">*</span>${infoDot("tierRatesHint")}</label>
@@ -936,7 +989,7 @@ function renderReturnPanel() {
           </div>
           <div class="wt-field">
             ${fieldLabel("rc-balanceBasis", "balanceBasisLabel", "balanceBasis")}
-            ${domainSelect("balanceBasis", cfg)}
+            <select id="rc-balanceBasis" onchange="onBalanceBasisChange()">${optionsHtml(t("balanceBasisOptions"), cfg.balanceBasis)}</select>
           </div>
           <div class="wt-field">
             ${fieldLabel("rc-distributionFrequency", "distributionFrequencyLabel", "distributionFrequency")}
@@ -953,6 +1006,14 @@ function renderReturnPanel() {
           <div class="wt-field">
             ${fieldLabel("rc-creditAnchor", "creditAnchorLabel", "creditAnchor")}
             <select id="rc-creditAnchor" onchange="onCreditAnchorChange()">${optionsHtml(t("creditAnchorOptions"), cfg.creditAnchor)}</select>
+          </div>
+        </div>
+        <div class="wt-field-row-3" id="rc-balanceTiers-block" ${cfg.balanceBasis === "tieredByBalance" ? "" : 'style="display:none"'}>
+          <div class="wt-field" style="flex:1 1 100%">
+            <label for="rc-balanceTiers">${t("balanceTiersLabel")} <span style="color:var(--wt-danger,#e05252)">*</span>${infoDot("balanceTiersHint")}</label>
+            <textarea id="rc-balanceTiers" dir="ltr" rows="3" spellcheck="false" placeholder="0-49999:11&#10;50000-499999:12&#10;500000-:16"
+              ${cfg.balanceBasis === "tieredByBalance" ? "required" : "disabled"}
+              oninput="refreshProductConfigPreview()">${balanceTiersToText(cfg.balanceTiers)}</textarea>
           </div>
         </div>
         <div class="wt-field-row-3" id="rc-creditDay-block" ${cfg.creditAnchor === "fixedDay" ? "" : 'style="display:none"'}>
