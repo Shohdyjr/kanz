@@ -641,6 +641,33 @@ function discountValueAt(config, targetDate) {
 // (`principal`) — not re-evaluated mid-period as the balance compounds —
 // same lightweight-approximation tradeoff the rest of this engine makes
 // elsewhere (e.g. tierRates' anniversary-only re-evaluation).
+// ── AUDIT FIX (2026-07-24) ──────────────────────────────────────────────
+// Resolves which frequency actually governs a periodic-boundary/compounding
+// schedule. `growthFrequency` answers "how granular is the accrual
+// calculation" (often "daily") — it is NOT "how often does the balance
+// actually compound/credit". That's compoundingFrequency (or
+// distributionFrequency for a non-reinvested payout). Mirrors
+// cycleFrequency() in return-config.js, which already gets the "Next
+// credit" DATE right by preferring compoundingFrequency — this brings the
+// VALUE calculation below into agreement with it.
+//
+// ROOT CAUSE this fixes: monthsStepForFreq() only recognizes
+// monthly/quarterly/semiAnnual/annual/maturity — "daily" (used by every
+// preset's growthFrequency) returns null. Every call below used to do
+// monthsStepForFreq(config.growthFrequency) directly, which is therefore
+// ALWAYS null for every "calculate daily, credit monthly" product — silently
+// skipping periodicBoundaryValueAt (the correct calendar-boundary compounding
+// engine) and falling through to an unrelated continuous-daily-compounding
+// fallback that (a) anchors to `fromDate` ("today" from the table) instead
+// of the real Since-date, and (b) compounds a Nominal APR continuously
+// instead of crediting it monthly. Confirmed against real projections during
+// a mathematical audit — see docs-dev/growth-engine-audit-2026-07-24.md.
+function compoundingFrequencyFor(config) {
+  if (config.compoundingFrequency && config.compoundingFrequency !== "none") return config.compoundingFrequency;
+  if (config.distributionFrequency && config.distributionFrequency !== "none") return config.distributionFrequency;
+  return config.growthFrequency;
+}
+
 function resolveTieredRate(config, balance, fallbackRate) {
   if (config.balanceBasis !== "tieredByBalance" || !Array.isArray(config.balanceTiers) || !config.balanceTiers.length) {
     return fallbackRate;
@@ -665,7 +692,7 @@ function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverrid
 
   const basis = basisOverride || config.rateBasis;
   const compounds = config.compoundingFrequency && config.compoundingFrequency !== "none";
-  const monthsStep = monthsStepForFreq(config.growthFrequency);
+  const monthsStep = monthsStepForFreq(compoundingFrequencyFor(config));
 
   if (config.growthSource !== "nav" && config.startDate && monthsStep && compounds) {
     // periodicBoundaryValueAt's internal math is simple/nominal-style
@@ -687,7 +714,7 @@ function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverrid
       principal,
       anchorDate,
       nominalRate,
-      config.growthFrequency,
+      compoundingFrequencyFor(config),
       fromDate,
       targetDate,
       config,
@@ -758,7 +785,7 @@ function dailyGrowthDelta(qty, apyPercent, cfg, todayStr) {
   // silently posted).
   if (config.startDate && Array.isArray(config.tierRates) && config.tierRates.length) return null;
 
-  const monthsStep = monthsStepForFreq(config.growthFrequency);
+  const monthsStep = monthsStepForFreq(compoundingFrequencyFor(config));
   if (config.growthSource !== "nav" && config.startDate && monthsStep) {
     const boundaryToday = creditBoundaryAtOrBefore(config, monthsStep, today);
     if (boundaryToday.getTime() !== today.getTime()) return null; // not a Credit day — balance stays flat
@@ -829,7 +856,7 @@ function nextCronTouch(qty, apyPercent, cfg, todayStr) {
     return { date: null, reasonKey: "cronTouchManual" };
   }
 
-  const monthsStep = monthsStepForFreq(config.growthFrequency);
+  const monthsStep = monthsStepForFreq(compoundingFrequencyFor(config));
   if (config.growthSource !== "nav" && config.startDate && monthsStep) {
     return { date: nextCreditBoundary(config, monthsStep, today), reasonKey: "cronTouchPeriodic" };
   }
@@ -896,7 +923,7 @@ function accrualBreakdown(qty, apyPercent, cfg, todayStr) {
   // product (e.g. Mashreq-style savings) is folded into qty every single
   // day, so it's continuously credited regardless of compoundingFrequency's
   // label; nothing is ever "pending" for it.
-  const monthsStep = monthsStepForFreq(config.growthFrequency);
+  const monthsStep = monthsStepForFreq(compoundingFrequencyFor(config));
   if (!config.startDate || !monthsStep) {
     return { creditedBalance: qty, accruedEarnings: 0, lastCreditDate: null, nextCreditDate: null };
   }
