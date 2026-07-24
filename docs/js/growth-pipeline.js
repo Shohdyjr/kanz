@@ -563,9 +563,30 @@ function periodicBoundaryValueAt(
     cursor = nextBoundary;
     nextBoundary = anniversaryAfter(startDateStr, monthsStep, nextBoundary);
   }
-  const remDays = Math.max(0, daysBetweenDates(cursor, targetDate));
+  const remDays = Math.max(0, daysBetweenDates(cursor, targetDate) + inclusiveDayAdjustment(cursor, targetDate));
   if (remDays > 0) balance += segmentInterest(cfg, balance, ratePercent, remDays);
   return balance;
+}
+
+// ── AUDIT FIX (2026-07-24), part 2 ──────────────────────────────────────
+// `targetDate` (e.g. "Next credit: 31 Jul") is a calendar LABEL for the last
+// day of the accrual period, represented internally as that day's midnight
+// (00:00) — but the balance actually sits in the account THROUGH the end of
+// that day, earning interest for it too, before the credit posts. A plain
+// `daysBetweenDates(cursor, targetDate)` (both at 00:00) therefore comes up
+// exactly 1 day short for any span whose end IS a credit/label date — e.g.
+// "Since 1 Jul, next credit 31 Jul" (July has 31 days) was computing 30.
+// Proven independently: `anniversaryAfter()` above — the OTHER boundary
+// convention this same function already uses internally to chain multiple
+// periods — naturally lands on "1 Aug" (not "31 Jul") for the exact same
+// monthly-from-1-Jul schedule, which already implicitly includes this extra
+// day. This makes the final/tail segment agree with that internal
+// convention instead of silently dropping a day only at the edges.
+// Deliberately NOT applied inside the while-loop above (would double-count
+// every interior boundary a multi-period projection crosses) — only this
+// one final segment, which ends exactly at the date the caller asked about.
+function inclusiveDayAdjustment(cursor, targetDate) {
+  return targetDate > cursor ? 1 : 0;
 }
 
 // Plain simple interest off the ORIGINAL principal, never compounded across
@@ -573,7 +594,7 @@ function periodicBoundaryValueAt(
 // rather than reinvested into this same balance.
 function simpleFlatValueAt(principal, ratePercent, fromDate, targetDate, cfg) {
   if (!ratePercent || targetDate <= fromDate) return principal;
-  const days = daysBetweenDates(fromDate, targetDate);
+  const days = daysBetweenDates(fromDate, targetDate) + inclusiveDayAdjustment(fromDate, targetDate);
   return principal + segmentInterest(cfg, principal, ratePercent, days);
 }
 

@@ -16,9 +16,7 @@ item's real **Since** date.
 
 ---
 
-## Root cause
-
-`monthsStepForFreq()` (growth-pipeline.js) only recognizes `"monthly"`,
+## Root cause #1 — wrong compounding engine silently selected (growth-pipeline.js) only recognizes `"monthly"`,
 `"quarterly"`, `"semiAnnual"`, `"annual"`, `"maturity"`:
 
 ```js
@@ -94,9 +92,9 @@ item #10.
 | # | Suspected bug | Verdict |
 |---|---|---|
 | 1 | Counting from today instead of Since | **Confirmed** (fallback branch only — see above) |
-| 2 | Counting a full month instead of elapsed period | Not directly — but see Case 1 note below |
-| 3 | Counting the end date twice | No — `daysBetweenDates` is a plain subtraction, no double count |
-| 4 | Using 30 days instead of actual calendar days | No — `Math.round((d2-d1)/86400000)` is actual/actual |
+| 2 | Counting a full month instead of elapsed period | No — but see Root cause #2 below, a related (different) day-count bug |
+| 3 | Counting the end date twice | No — the fix below adds the day back in exactly once, at the one place it was missing, not duplicated across chained periods |
+| 4 | Using 30 days instead of actual calendar days | **Partially confirmed — see Root cause #2 below.** Calendar days were used correctly, but the credit day itself was silently excluded (30 instead of July's 31) |
 | 5 | Using 365 or 360 | Always 365, consistently |
 | 6 | APR accidentally treated as APY | **Confirmed** (fallback branch's `nominalToEffective`) |
 | 7 | Nominal interest accidentally compounded | **Confirmed** (same fallback — continuous daily compounding of a simple annual rate) |
@@ -154,7 +152,59 @@ item #10.
 
 ---
 
-## The fix
+## Root cause #2 — the credit day itself wasn't being counted
+
+**Caught by the user, confirmed and fixed 2026-07-24.** Separately from
+root cause #1 above, there was a genuine off-by-one in day-counting.
+
+`daysBetweenDates(d1, d2)` is a plain subtraction — `(d2 - d1) / 1 day`.
+Every date in this engine is stored as that calendar day's **midnight
+(00:00)**. So `daysBetweenDates("1 Jul" 00:00, "31 Jul" 00:00) = 30` — which
+is correct **only** if "31 Jul" means "the instant July 31 begins", not
+"through the end of July 31". But a bank crediting interest "on 31 Jul" (or
+any "Next credit" date shown in this app) means the **whole day** of July
+31 has already been earned by the time it posts — the balance sat in the
+account through the entire month, all 31 calendar days of July.
+
+**Proof it's a real bug, not a matter of convention:** this same function
+already contains a second, independent way of finding period boundaries —
+`anniversaryAfter(startDateStr, monthsStep, ...)`, used to chain multiple
+compounding periods together. For a "since 1 Jul, monthly" schedule, that
+function correctly lands on **1 Aug**, not 31 Jul — i.e. the codebase's own
+internal chaining logic already agreed the true boundary is the *start* of
+the next day, not the *start* of the last day. The plain
+`daysBetweenDates(cursor, targetDate)` calculation from
+`calendarPeriodEnd`'s "31 Jul" label disagreed with that by exactly 1 day.
+
+### The fix
+
+Added `inclusiveDayAdjustment()` and applied it **only** to the final
+segment of `periodicBoundaryValueAt` and to `simpleFlatValueAt` — not to
+the while-loop's interior boundaries (that would double-count every
+interior month a multi-period projection crosses), and deliberately **not**
+to `tieredValueAt` (certificates use `creditAnchor: "anniversary"`, a
+same-day-next-year boundary that was already exact — see Case 4, which
+matched before this fix and is untouched by it).
+
+```js
+function inclusiveDayAdjustment(cursor, targetDate) {
+  return targetDate > cursor ? 1 : 0;
+}
+```
+
+### Corrected numbers (both fixes applied)
+
+| Case | Days (was → now) | Interest (was → now) | Balance (was → now) |
+|---|---|---|---|
+| 1. Mashreq NEO Savings | 16 → **17** | 52.41 → **55.69** | 10,921.69 → **10,924.97** |
+| 2. Mashreq Highest Interest | 30 → **31** | 2,101.73 → **2,171.62** | 144,151.98 → **144,222.03** |
+| 3. Thndr Cloud Monthly | 8 → **9** (23–31 Jul inclusive of the 31st) | 907.70 → **1,021.16** | 226,333.70 → **226,447.16** |
+| 4. NBE Certificate | unaffected (uses `tieredValueAt`, not touched) | — | still **366,000.00**, matching your reported 366,000.80 to 0.0002% |
+
+These are the numbers the app will now show. They supersede the "expected"
+figures in the Case-by-case section above, which used the un-fixed
+(30-day-style) day count.
+
 
 Added a single helper, used everywhere `monthsStepForFreq(config.growthFrequency)`
 used to be called directly (`growth-pipeline.js`, mirrored in
