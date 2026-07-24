@@ -72,10 +72,10 @@ function renderBreakdown() {
       <div class="wt-bk-right">
         <div class="wt-bk-leg">
           <p class="wt-bk-leg-title">${t("bkMainCats")}</p>
-          <div class="wt-bk-leg-row"><div class="wt-bk-leg-dot" style="background:${BK_COLORS.EGP}"></div><span class="wt-bk-leg-name">${t("bkEgp")}</span><span class="wt-bk-leg-val">${fmtPct(egpP)}</span></div>
-          <div class="wt-bk-leg-row"><div class="wt-bk-leg-dot" style="background:#4a8fdb"></div><span class="wt-bk-leg-name">${t("bkHard")}</span><span class="wt-bk-leg-val">${fmtPct(hardP)}</span></div>
-          <div class="wt-bk-leg-row"><div class="wt-bk-leg-dot" style="background:${BK_COLORS.GOLD}"></div><span class="wt-bk-leg-name">${t("bkGold")}</span><span class="wt-bk-leg-val">${fmtPct(goldP)}</span></div>
-          <div class="wt-bk-leg-row"><div class="wt-bk-leg-dot" style="background:${BK_COLORS.ASSETS}"></div><span class="wt-bk-leg-name">${t("bkAssets")}</span><span class="wt-bk-leg-val">${fmtPct(assetsP)}</span></div>
+          <div class="wt-bk-leg-row"><div class="wt-bk-leg-dot" style="background:${BK_COLORS.EGP}"></div><span class="wt-bk-leg-name">${t("bkEgp")}</span><span class="wt-bk-leg-val">${fmtPct(egpP)}<span class="wt-bk-leg-usd"> · ${fmtUsd(egpUsd)}</span></span></div>
+          <div class="wt-bk-leg-row"><div class="wt-bk-leg-dot" style="background:#4a8fdb"></div><span class="wt-bk-leg-name">${t("bkHard")}</span><span class="wt-bk-leg-val">${fmtPct(hardP)}<span class="wt-bk-leg-usd"> · ${fmtUsd(hardTotal)}</span></span></div>
+          <div class="wt-bk-leg-row"><div class="wt-bk-leg-dot" style="background:${BK_COLORS.GOLD}"></div><span class="wt-bk-leg-name">${t("bkGold")}</span><span class="wt-bk-leg-val">${fmtPct(goldP)}<span class="wt-bk-leg-usd"> · ${fmtUsd(goldUsd)}</span></span></div>
+          <div class="wt-bk-leg-row"><div class="wt-bk-leg-dot" style="background:${BK_COLORS.ASSETS}"></div><span class="wt-bk-leg-name">${t("bkAssets")}</span><span class="wt-bk-leg-val">${fmtPct(assetsP)}<span class="wt-bk-leg-usd"> · ${fmtUsd(assetsUsd)}</span></span></div>
         </div>
         ${
           hardTotal > 0
@@ -83,15 +83,15 @@ function renderBreakdown() {
           <p class="wt-bk-leg-title">${t("bkHardDetail")}</p>
           <div class="wt-bk-bars">
             ${[
-              { n: t("bkUsd"), v: usdP, c: BK_COLORS.USD },
-              { n: t("bkEur"), v: eurP, c: BK_COLORS.EUR },
-              { n: t("bkSar"), v: sarP, c: BK_COLORS.SAR },
+              { n: t("bkUsd"), v: usdP, u: hardUsd.USD, c: BK_COLORS.USD },
+              { n: t("bkEur"), v: eurP, u: hardUsd.EUR, c: BK_COLORS.EUR },
+              { n: t("bkSar"), v: sarP, u: hardUsd.SAR, c: BK_COLORS.SAR },
             ]
               .map(
                 (b) => `<div class="wt-bk-bar-row">
                 <div class="wt-bk-bar-name">${b.n}</div>
                 <div class="wt-bk-bar-track"><div class="wt-bk-bar-fill" style="width:${b.v.toFixed(1)}%;background:${b.c}"></div></div>
-                <div class="wt-bk-bar-pct">${fmtPct(b.v)}</div>
+                <div class="wt-bk-bar-pct">${fmtPct(b.v)} <span class="wt-bk-leg-usd">· ${fmtUsd(b.u)}</span></div>
               </div>`
               )
               .join("")}

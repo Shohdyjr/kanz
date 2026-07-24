@@ -1457,6 +1457,11 @@ body {
   font-size: 12px;
   color: var(--wt-text);
   direction: ltr;
+  white-space: nowrap;
+}
+.wt-bk-leg-usd {
+  color: var(--wt-text-dim);
+  font-size: 11px;
 }
 .wt-bk-bars {
   display: flex;
@@ -1490,7 +1495,9 @@ body {
   transition: width 0.4s ease;
 }
 .wt-bk-bar-pct {
-  width: 36px;
+  width: auto;
+  min-width: 36px;
+  white-space: nowrap;
   text-align: left;
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
