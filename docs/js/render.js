@@ -231,8 +231,8 @@ function render() {
                 : (() => {
                     const cronResult = nextCronTouch(qty[a.id] || 0, apy[a.id] || 0, returnConfig[a.id] || {}, todayLocalStr());
                     return cronResult.date
-                      ? `<td class="wt-cron-cell" title="${t(cronResult.reasonKey)}">${fmtDateShort(cronResult.date)}</td>`
-                      : `<td class="wt-cron-cell wt-cron-cell-manual" title="${t(cronResult.reasonKey)}">${t("cronTouchManual")}</td>`;
+                      ? `<td class="wt-cron-cell">${fmtDateShort(cronResult.date)}</td>`
+                      : `<td class="wt-cron-cell wt-cron-cell-manual">${t("cronTouchManual")}</td>`;
                   })()
             }
             <td><div class="wt-row-actions">
