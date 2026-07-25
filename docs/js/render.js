@@ -176,10 +176,13 @@ function render() {
           <th class="wt-th-order">${t("thOrder")}</th>
           <th>${t("thAsset")}</th>
           <th>${t("thQty")}</th>
+          ${isColHidden("category") ? "" : `<th>${t("thCategory")}</th>`}
+          ${isColHidden("yield") ? "" : `<th>${t("thYield")}</th>`}
           ${isColHidden("apy") ? "" : `<th>${t("thApy")}</th>`}
           ${isColHidden("unitPrice") ? "" : `<th class="num">${t("thUnitPrice")}</th>`}
           ${isColHidden("total") ? "" : `<th class="num">${t("thTotal")}</th>`}
           ${isColHidden("projection") ? "" : `<th class="num">${t("thProjection")}</th>`}
+          ${isColHidden("cronTouch") ? "" : `<th class="num">${t("thCronTouch")}</th>`}
           <th class="wt-th-del"></th>
         </tr></thead>
         <tbody>
@@ -195,8 +198,6 @@ function render() {
             <td><div class="wt-asset-name">
               <span class="wt-asset-icon wt-asset-icon-bg">${esc(a.icon)}</span>
               <span>${esc(assetName(a))}</span>
-              <button class="wt-category-badge ${a.isAsset ? "is-asset" : "is-cash"}" onclick="toggleAssetCategory('${a.id}')" title="${t("toggleCategoryTitle")}">${a.isAsset ? t("categoryAsset") : t("categoryCash")}</button>
-              <button class="wt-category-badge ${assetGeneratesReturn(a.id) ? "is-yield-yes" : "is-yield-no"}" onclick="toggleGeneratesReturn('${a.id}')" title="${t("toggleYieldTitle")}">${assetGeneratesReturn(a.id) ? t("yieldYes") : t("yieldNo")}</button>
             </div></td>
             <td><input class="wt-qty" type="number" min="0" step="any"
               value="${qty[a.id] || ""}" placeholder="0"
@@ -204,6 +205,8 @@ function render() {
               <div class="wt-proj-date" id="qty-updated-${a.id}" title="${t("lastUpdate")}">${qtyUpdatedAt[a.id] ? fmtDateShort(parseDateStr(qtyUpdatedAt[a.id])) : ""}</div>
               ${renderSinceDateBtn(a)}
             </td>
+            ${isColHidden("category") ? "" : `<td><button class="wt-category-badge ${a.isAsset ? "is-asset" : "is-cash"}" onclick="toggleAssetCategory('${a.id}')" title="${t("toggleCategoryTitle")}">${a.isAsset ? t("categoryAsset") : t("categoryCash")}</button></td>`}
+            ${isColHidden("yield") ? "" : `<td><button class="wt-category-badge ${assetGeneratesReturn(a.id) ? "is-yield-yes" : "is-yield-no"}" onclick="toggleGeneratesReturn('${a.id}')" title="${t("toggleYieldTitle")}">${assetGeneratesReturn(a.id) ? t("yieldYes") : t("yieldNo")}</button></td>`}
             ${isColHidden("apy") ? "" : assetGeneratesReturn(a.id) ? `<td class="wt-apy-cell" title="${t("apyHint")}"><button type="button" class="wt-apy-set-link" onclick="openReturnPanel('${a.id}')">${apy[a.id] ? fmtNum(apy[a.id], 2) + "%" : t("setApyLink")}</button>${apy[a.id] && returnConfig[a.id] && returnConfig[a.id].rateBasis ? `<div class="wt-proj-date" dir="auto" title="${t("rateBasisHint")}">${t("rateBasisShort")[returnConfig[a.id].rateBasis]}</div>` : ""}</td>` : `<td class="wt-apy-cell">—</td>`}
             ${isColHidden("unitPrice") ? "" : `<td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>`}
             ${isColHidden("total") ? "" : `<td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>`}
@@ -220,6 +223,16 @@ function render() {
                     ${estimatePrefix}${fmtByCurrencyPrecise(m.value, a.currency)}
                     <div class="wt-proj-date">${fmtDateShort(m.date)}</div>
                   </td>`;
+                  })()
+            }
+            ${
+              isColHidden("cronTouch")
+                ? ""
+                : (() => {
+                    const cronResult = nextCronTouch(qty[a.id] || 0, apy[a.id] || 0, returnConfig[a.id] || {}, todayLocalStr());
+                    return cronResult.date
+                      ? `<td class="wt-cron-cell" title="${t(cronResult.reasonKey)}">${fmtDateShort(cronResult.date)}</td>`
+                      : `<td class="wt-cron-cell wt-cron-cell-manual" title="${t(cronResult.reasonKey)}">${t("cronTouchManual")}</td>`;
                   })()
             }
             <td><div class="wt-row-actions">

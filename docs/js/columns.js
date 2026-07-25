@@ -9,10 +9,13 @@
 // ══════════════════════════════════════════════════════
 
 const COLUMN_DEFS = [
+  { key: "category", labelKey: "thCategory" },
+  { key: "yield", labelKey: "thYield" },
   { key: "apy", labelKey: "thApy" },
   { key: "unitPrice", labelKey: "thUnitPrice" },
   { key: "total", labelKey: "thTotal" },
   { key: "projection", labelKey: "thProjection" },
+  { key: "cronTouch", labelKey: "thCronTouch" },
 ];
 
 function isColHidden(key) {
