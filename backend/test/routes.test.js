@@ -65,12 +65,21 @@ test("isValidDateStr: accepts strict YYYY-MM-DD strings only", () => {
 test("isValidReturnConfigMap: accepts a map of valid per-asset return-category entries", () => {
   assert.equal(
     dataRouter.isValidReturnConfigMap({
-      thndr_cloud: { productType: "fixedIncomeFund", calcMethod: "navBased", payoutFreq: "daily", compounding: true },
-      mashreq_savings: { productType: "savings", calcMethod: "dailyBalance", payoutFreq: "monthly" },
+      thndr_cloud: { growthSource: "nav", growthFrequency: "daily", liquidityFrequency: "daily" },
+      mashreq_savings: {
+        growthSource: "fixedRate",
+        balanceBasis: "currentBalance",
+        growthFrequency: "monthly",
+        compoundingFrequency: "monthly",
+        liquidityFrequency: "monthly",
+      },
       nbe_certificate: {
-        productType: "certificate",
-        calcMethod: "fixedPrincipal",
-        payoutFreq: "annual",
+        growthSource: "fixedRate",
+        balanceBasis: "fixedPrincipal",
+        growthFrequency: "annual",
+        distributionFrequency: "annual",
+        compoundingFrequency: "none",
+        liquidityFrequency: "maturity",
         startDate: "2026-01-15",
         tierRates: [27, 22, 17],
       },
@@ -88,9 +97,9 @@ test("isValidReturnConfigMap: rejects bad startDate/tierRates values", () => {
 });
 
 test("isValidReturnConfigMap: rejects unknown enum values, unknown keys, and wrong types", () => {
-  assert.equal(dataRouter.isValidReturnConfigMap({ x: { productType: "not-a-real-type" } }), false);
-  assert.equal(dataRouter.isValidReturnConfigMap({ x: { calcMethod: "dailyBalance", extra: "nope" } }), false);
-  assert.equal(dataRouter.isValidReturnConfigMap({ x: { compounding: "true" } }), false);
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { growthSource: "not-a-real-source" } }), false);
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { growthSource: "fixedRate", extra: "nope" } }), false);
+  assert.equal(dataRouter.isValidReturnConfigMap({ x: { creditBusinessDayAdjust: "true" } }), false);
   assert.equal(dataRouter.isValidReturnConfigMap([1, 2, 3]), false);
   assert.equal(dataRouter.isValidReturnConfigMap(null), false);
 });

@@ -274,15 +274,11 @@ describe("validateDomainModel — domain consistency rules", () => {
       {
         growthSource: "nav",
         growthFrequency: "daily",
-        distributionFrequency: "none",
-        compoundingFrequency: "daily",
         liquidityFrequency: "daily",
       },
       {
         growthSource: "nav",
         growthFrequency: "daily",
-        distributionFrequency: "none",
-        compoundingFrequency: "daily",
         liquidityFrequency: "monthly",
       },
       {

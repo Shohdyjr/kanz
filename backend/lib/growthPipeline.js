@@ -555,12 +555,12 @@ function periodicBoundaryValueAt(
     cursor = nextBoundary;
     nextBoundary = anniversaryAfter(startDateStr, monthsStep, nextBoundary);
   }
-  const remDays = Math.max(0, daysBetweenDates(cursor, targetDate) + inclusiveDayAdjustment(cursor, targetDate));
+  const remDays = Math.max(0, daysBetweenDates(cursor, targetDate) + inclusiveDayAdjustment(cursor, targetDate, cfg));
   if (remDays > 0) balance += segmentInterest(cfg, balance, ratePercent, remDays);
   return balance;
 }
 
-// ── AUDIT FIX (2026-07-24), part 2 ──────────────────────────────────────
+// ── AUDIT FIX (2026-07-24), part 2 — CORRECTED (2026-07-26) ─────────────
 // `targetDate` (e.g. "Next credit: 31 Jul") is a calendar LABEL for the last
 // day of the accrual period, represented internally as that day's midnight
 // (00:00) — but the balance actually sits in the account THROUGH the end of
@@ -568,17 +568,29 @@ function periodicBoundaryValueAt(
 // `daysBetweenDates(cursor, targetDate)` (both at 00:00) therefore comes up
 // exactly 1 day short for any span whose end IS a credit/label date — e.g.
 // "Since 1 Jul, next credit 31 Jul" (July has 31 days) was computing 30.
-// Proven independently: `anniversaryAfter()` above — the OTHER boundary
-// convention this same function already uses internally to chain multiple
-// periods — naturally lands on "1 Aug" (not "31 Jul") for the exact same
-// monthly-from-1-Jul schedule, which already implicitly includes this extra
-// day. This makes the final/tail segment agree with that internal
-// convention instead of silently dropping a day only at the edges.
+//
+// BUT this "last day of period" labeling only happens under
+// `creditAnchor: "calendarPeriodEnd"` (see endOfCalendarPeriod() /
+// nextCreditBoundary() in return-config.js, which literally construct a
+// "last day of month" Date for that anchor kind). The other anchor kinds —
+// the default "anniversary" (anniversaryAfter()), "fixedDay", and "daily" —
+// already compute the TRUE next boundary (e.g. "1 Aug", or "8 Jan next
+// year" for an annual anchor), which daysBetweenDates() counts correctly
+// with no adjustment needed. Applying +1 unconditionally (the original
+// 2026-07-24 fix) double-counted a day for every non-calendarPeriodEnd
+// product — e.g. a plain 1-year fixedPrincipal certificate from 8 Jan 2026
+// to 8 Jan 2027 (365 real days) was computed as 366, overstating interest.
+// Gating on creditAnchor restores the original fix's intent for the
+// calendarPeriodEnd cases it was written for (Mashreq NEO/Highest Interest
+// Savings — see docs-dev/growth-engine-audit-2026-07-24.md) without
+// affecting anniversary/fixedDay/daily-anchored products.
+//
 // Deliberately NOT applied inside the while-loop above (would double-count
 // every interior boundary a multi-period projection crosses) — only this
 // one final segment, which ends exactly at the date the caller asked about.
-function inclusiveDayAdjustment(cursor, targetDate) {
-  return targetDate > cursor ? 1 : 0;
+function inclusiveDayAdjustment(cursor, targetDate, cfg) {
+  const usesLastDayLabel = cfg && cfg.creditAnchor === "calendarPeriodEnd";
+  return usesLastDayLabel && targetDate > cursor ? 1 : 0;
 }
 
 // Plain simple interest off the ORIGINAL principal, never compounded across
@@ -586,7 +598,7 @@ function inclusiveDayAdjustment(cursor, targetDate) {
 // rather than reinvested into this same balance.
 function simpleFlatValueAt(principal, ratePercent, fromDate, targetDate, cfg) {
   if (!ratePercent || targetDate <= fromDate) return principal;
-  const days = daysBetweenDates(fromDate, targetDate) + inclusiveDayAdjustment(fromDate, targetDate);
+  const days = daysBetweenDates(fromDate, targetDate) + inclusiveDayAdjustment(fromDate, targetDate, cfg);
   return principal + segmentInterest(cfg, principal, ratePercent, days);
 }
 
