@@ -107,11 +107,11 @@ function render() {
           const realArrow = realUp ? "▲" : "▼";
           const realSign = realUp ? "+" : "";
           return `<div class="wt-growth-chip" style="color:${color}">
-            <span>${arrow} ${sign}${g.pct.toFixed(1)}%</span>
+            <span>${arrow} ${sign}${g.pct.toFixed(2)}%</span>
             <span class="wt-growth-sub">(${sign}${fmtUsd(g.diff)}) ${label}</span>
             ${
               showReal
-                ? `<span class="wt-growth-real" style="color:${realColor}">${t("realGrowthPrefix")} ${realArrow} ${realSign}${g.realPct.toFixed(1)}%</span>`
+                ? `<span class="wt-growth-real" style="color:${realColor}">${t("realGrowthPrefix")} ${realArrow} ${realSign}${g.realPct.toFixed(2)}%</span>`
                 : ""
             }
           </div>`;
@@ -121,8 +121,8 @@ function render() {
       ${
         savingsGoal > 0
           ? `<div class="wt-goal-bar-wrap">
-        <div class="wt-goal-bar-track"><div class="wt-goal-bar-fill" style="width:${Math.min(100, (totalUsd / savingsGoal) * 100).toFixed(1)}%"></div></div>
-        <div class="wt-goal-bar-label">${fmtUsd(totalUsd)} / ${fmtUsd(savingsGoal)} (${((totalUsd / savingsGoal) * 100).toFixed(1)}%)</div>
+        <div class="wt-goal-bar-track"><div class="wt-goal-bar-fill" style="width:${Math.min(100, (totalUsd / savingsGoal) * 100).toFixed(2)}%"></div></div>
+        <div class="wt-goal-bar-label">${fmtUsd(totalUsd)} / ${fmtUsd(savingsGoal)} (${((totalUsd / savingsGoal) * 100).toFixed(2)}%)</div>
       </div>`
           : ""
       }

@@ -12,7 +12,7 @@ function pct(val, total) {
   return total > 0 ? (val / total) * 100 : 0;
 }
 function fmtPct(n) {
-  return n.toFixed(1) + "%";
+  return n.toFixed(2) + "%";
 }
 
 function renderBreakdown() {
@@ -90,7 +90,7 @@ function renderBreakdown() {
               .map(
                 (b) => `<div class="wt-bk-bar-row">
                 <div class="wt-bk-bar-name">${b.n}</div>
-                <div class="wt-bk-bar-track"><div class="wt-bk-bar-fill" style="width:${b.v.toFixed(1)}%;background:${b.c}"></div></div>
+                <div class="wt-bk-bar-track"><div class="wt-bk-bar-fill" style="width:${b.v.toFixed(2)}%;background:${b.c}"</div></div>
                 <div class="wt-bk-bar-pct">${fmtPct(b.v)} <span class="wt-bk-leg-usd">· ${fmtUsd(b.u)}</span></div>
               </div>`
               )

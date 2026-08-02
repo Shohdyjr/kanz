@@ -320,7 +320,7 @@ function renderChangeAnalysis(filteredHistory) {
       const widthPct = (Math.abs(r.delta) / maxAbs) * 100;
       return `<div class="wt-change-row">
       <div class="wt-change-name">${r.name}</div>
-      <div class="wt-change-track"><div class="wt-change-fill" style="width:${widthPct.toFixed(1)}%;background:${r.color}"></div></div>
+      <div class="wt-change-track"><div class="wt-change-fill" style="width:${widthPct.toFixed(2)}%;background:${r.color}"></div></div>
       <div class="wt-change-val" style="color:${color}">${sign}${fmtUsd(r.delta)}</div>
     </div>`;
     })

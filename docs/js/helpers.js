@@ -1,7 +1,7 @@
 // ── Helpers ────────────────────────────────────────────
 const fmtUsd = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtEgp = (n) =>
-  n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + (lang === "en" ? " EGP" : " ج.م");
+  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (lang === "en" ? " EGP" : " ج.م");
 // Generic "amount + currency code" formatter for currencies without their
 // own dedicated formatter above (used by the Activities timeline, where the
 // user can log a salary/expense in EGP, USD, EUR, or SAR — see activities-log.js).
@@ -18,7 +18,7 @@ const fmtByCurrencyPrecise = (n, currency, d = 2) => {
   if (currency === "EGP") return n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) + (lang === "en" ? " EGP" : " ج.م");
   return n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) + " " + currency;
 };
-const fmtNum = (n, d = 4) => n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: d });
+const fmtNum = (n, d = 2) => n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: d });
 const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 function uid() {
