@@ -45,8 +45,8 @@ function renderItemHistoryModal() {
       const sign = up ? "+" : "";
       return `<div class="wt-item-hist-row">
         <span class="wt-item-hist-date">${e.date}</span>
-        <span class="wt-item-hist-vals">${fmtNum(e.before, 4)} → ${fmtNum(e.after, 4)}</span>
-        <span class="wt-item-hist-delta" style="color:${color}">${arrow} ${sign}${fmtNum(e.delta, 4)}</span>
+        <span class="wt-item-hist-vals">${fmtNum(e.before, 2)} → ${fmtNum(e.after, 2)}</span>
+        <span class="wt-item-hist-delta" style="color:${color}">${arrow} ${sign}${fmtNum(e.delta, 2)}</span>
       </div>`;
     })
     .join("");

@@ -137,8 +137,8 @@ function render() {
       rates
         ? `<div class="wt-rates">
       <div class="wt-rate-card"><p class="wt-rl">${t("rateEgp")}</p><p class="wt-rv">${fmtNum(rates.egpPerUsd, 2)}</p></div>
-      <div class="wt-rate-card"><p class="wt-rl">${t("rateEur")}</p><p class="wt-rv">${fmtNum(rates.eurPerUsd, 4)}</p></div>
-      <div class="wt-rate-card"><p class="wt-rl">${t("rateSar")}</p><p class="wt-rv">${fmtNum(rates.sarPerUsd, 4)}</p></div>
+      <div class="wt-rate-card"><p class="wt-rl">${t("rateEur")}</p><p class="wt-rv">${fmtNum(rates.eurPerUsd, 2)}</p></div>
+      <div class="wt-rate-card"><p class="wt-rl">${t("rateSar")}</p><p class="wt-rv">${fmtNum(rates.sarPerUsd, 2)}</p></div>
       <div class="wt-rate-card"><p class="wt-rl">${t("rateGoldGram")}</p><p class="wt-rv">${fmtUsd(rates.goldUsdPerGram)}</p></div>
     </div>`
         : ""
@@ -208,7 +208,7 @@ function render() {
             ${isColHidden("category") ? "" : `<td><button class="wt-category-badge ${a.isAsset ? "is-asset" : "is-cash"}" onclick="toggleAssetCategory('${a.id}')" title="${t("toggleCategoryTitle")}">${a.isAsset ? t("categoryAsset") : t("categoryCash")}</button></td>`}
             ${isColHidden("yield") ? "" : `<td><button class="wt-category-badge ${assetGeneratesReturn(a.id) ? "is-yield-yes" : "is-yield-no"}" onclick="toggleGeneratesReturn('${a.id}')" title="${t("toggleYieldTitle")}">${assetGeneratesReturn(a.id) ? t("yieldYes") : t("yieldNo")}</button></td>`}
             ${isColHidden("apy") ? "" : assetGeneratesReturn(a.id) ? `<td class="wt-apy-cell" title="${t("apyHint")}"><button type="button" class="wt-apy-set-link" onclick="openReturnPanel('${a.id}')">${apy[a.id] ? fmtNum(apy[a.id], 2) + "%" : t("setApyLink")}</button>${apy[a.id] && returnConfig[a.id] && returnConfig[a.id].rateBasis ? `<div class="wt-proj-date" dir="auto" title="${t("rateBasisHint")}">${t("rateBasisShort")[returnConfig[a.id].rateBasis]}</div>` : ""}</td>` : `<td class="wt-apy-cell">—</td>`}
-            ${isColHidden("unitPrice") ? "" : `<td class="wt-price-cell">${fmtNum(p, a.currency === "EGP" ? 6 : 4)}</td>`}
+            ${isColHidden("unitPrice") ? "" : `<td class="wt-price-cell">${fmtNum(p, 2)}</td>`}
             ${isColHidden("total") ? "" : `<td class="wt-total-cell" id="total-${a.id}">${fmtUsd(t2)}</td>`}
             ${
               isColHidden("projection")
