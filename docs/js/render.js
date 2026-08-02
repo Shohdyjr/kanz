@@ -200,7 +200,7 @@ function render() {
               <span>${esc(assetName(a))}</span>
             </div></td>
             <td><input class="wt-qty" type="number" min="0" step="any"
-              value="${qty[a.id] || ""}" placeholder="0"
+              value="${qty[a.id] ? Number(qty[a.id].toFixed(2)) : ""}" placeholder="0"
               oninput="setQty('${a.id}',this.value)">
               <div class="wt-proj-date" id="qty-updated-${a.id}" title="${t("lastUpdate")}">${qtyUpdatedAt[a.id] ? fmtDateShort(parseDateStr(qtyUpdatedAt[a.id])) : ""}</div>
               ${renderSinceDateBtn(a)}
