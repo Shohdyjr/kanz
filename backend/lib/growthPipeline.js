@@ -624,6 +624,33 @@ function tieredValueAt(principal, startDateStr, tierRates, targetDate) {
   return value * Math.pow(1 + lastRate / 100, remDays / 365);
 }
 
+// Which tierRates entry is actually in effect at `atDate` for a step-up
+// certificate — walks the exact same year-boundaries tieredValueAt() uses
+// (addYearsToDate from startDate), so this can never drift out of sync with
+// what's actually being compounded. Returns null when cfg isn't a tiered
+// config at all (callers fall back to the plain stored apy in that case).
+//
+// This is what was missing before: nothing in the app ever recomputed a
+// tiered item's "current rate" as time passed — the displayed rate (the
+// table's APY badge) was just whatever flat `apy` value happened to be
+// sitting in storage, which for a tiered item is only ever written once
+// (see return-config.js's save handler) and never touched again. A 3-year
+// certificate would keep showing/using its Year-1 rate forever, even long
+// after the real product had rolled into Year 2 or 3. currentTierRate()
+// gives callers the actual, live, elapsed-time-aware rate instead.
+function currentTierRate(cfg, atDate) {
+  const config = cfg || {};
+  if (!config.startDate || !Array.isArray(config.tierRates) || !config.tierRates.length) return null;
+  let cursor = parseDateStr(config.startDate);
+  if (atDate <= cursor) return config.tierRates[0];
+  for (let i = 0; i < config.tierRates.length; i++) {
+    const yearEnd = addYearsToDate(cursor, 1);
+    if (atDate <= yearEnd) return config.tierRates[i];
+    cursor = yearEnd;
+  }
+  return config.tierRates[config.tierRates.length - 1];
+}
+
 // ── Discount growth model (Treasury Bills, zero-coupon bonds) ───────────
 // Value grows linearly (straight-line, actual/actual) from purchasePrice at
 // issue (config.startDate) to faceValue at config.maturityDate — no rate,
@@ -979,6 +1006,7 @@ const GrowthPipeline = {
   simpleFlatValueAt,
   tieredValueAt,
   discountValueAt,
+  currentTierRate,
   projectValueAt,
   dailyGrowthDelta,
   nextCronTouch,
