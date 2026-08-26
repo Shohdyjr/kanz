@@ -602,26 +602,60 @@ function simpleFlatValueAt(principal, ratePercent, fromDate, targetDate, cfg) {
   return principal + segmentInterest(cfg, principal, ratePercent, days);
 }
 
-// Step-up certificate: compounds from startDateStr, switching to the next
-// rate in tierRates at every anniversary. Past the last tier, keeps
-// compounding at that last tier's rate.
-function tieredValueAt(principal, startDateStr, tierRates, targetDate) {
+// Step-up certificate: walks forward from startDateStr, switching to the
+// next rate in tierRates at every anniversary. Past the last tier, keeps
+// using that last tier's rate.
+//
+// `compounds` (added 2026-08-26 — see bug note) decides HOW each year's
+// interest feeds into the next:
+//   - true  (compoundingFrequency active — interest is reinvested): each
+//     year's interest is folded back into the running balance, so Year 2's
+//     interest is earned on Year 1's principal *plus* Year 1's interest.
+//   - false (distributionFrequency active, or nothing — interest is paid
+//     out as cash, or there's no reinvestment schedule at all): every
+//     year's interest is simple interest on the ORIGINAL principal only,
+//     summed together. This is the common case for an actual "step-up
+//     certificate" product (e.g. NBE Platinum: distributionFrequency:
+//     "annual", compoundingFrequency: "none" — Year 1's coupon is paid out
+//     to the holder, not added back into the certificate's own balance).
+//
+// BUG FIX (2026-08-26): this function used to always compound (multiply
+// the running `value`) regardless of the product's actual
+// compounding/distribution config — silently assuming every prior year's
+// interest had been reinvested even for certificates that pay it out as
+// cash instead. That inflated every projection past Year 1 for any
+// distributing tiered certificate (which is the normal, common shape —
+// see the NBE Platinum preset in return-config.js), because Year 2/3's
+// rate was being applied to a balance that had already (wrongly) absorbed
+// Year 1's payout. Callers now pass `compounds` explicitly (derived from
+// the item's own compoundingFrequency, exactly like every other branch in
+// projectValueAt already does) instead of it being silently assumed.
+function tieredValueAt(principal, startDateStr, tierRates, targetDate, compounds) {
   if (!startDateStr || !Array.isArray(tierRates) || !tierRates.length) return principal;
   let cursor = parseDateStr(startDateStr);
   if (targetDate <= cursor) return principal;
 
-  let value = principal;
+  let value = principal; // running compounded balance — only meaningful when compounds===true
+  let totalInterest = 0; // cumulative simple interest off the ORIGINAL principal — used when compounds===false
   for (let i = 0; i < tierRates.length; i++) {
     const yearEnd = addYearsToDate(cursor, 1);
     const segmentEnd = targetDate < yearEnd ? targetDate : yearEnd;
     const days = Math.max(0, daysBetweenDates(cursor, segmentEnd));
-    value *= Math.pow(1 + tierRates[i] / 100, days / 365);
-    if (targetDate <= yearEnd) return value;
+    if (compounds) {
+      value *= Math.pow(1 + tierRates[i] / 100, days / 365);
+    } else {
+      totalInterest += principal * (tierRates[i] / 100) * (days / 365);
+    }
+    if (targetDate <= yearEnd) return compounds ? value : principal + totalInterest;
     cursor = yearEnd;
   }
   const lastRate = tierRates[tierRates.length - 1];
   const remDays = Math.max(0, daysBetweenDates(cursor, targetDate));
-  return value * Math.pow(1 + lastRate / 100, remDays / 365);
+  if (compounds) {
+    return value * Math.pow(1 + lastRate / 100, remDays / 365);
+  }
+  totalInterest += principal * (lastRate / 100) * (remDays / 365);
+  return principal + totalInterest;
 }
 
 // Which tierRates entry is actually in effect at `atDate` for a step-up
@@ -738,7 +772,8 @@ function projectValueAt(principal, rate, cfg, fromDate, targetDate, basisOverrid
 
   if (config.startDate && Array.isArray(config.tierRates) && config.tierRates.length) {
     const tierAnchor = assumeContinuous ? config.startDate : formatDateStr(fromDate);
-    return tieredValueAt(principal, tierAnchor, config.tierRates, targetDate);
+    const tierCompounds = !!(config.compoundingFrequency && config.compoundingFrequency !== "none");
+    return tieredValueAt(principal, tierAnchor, config.tierRates, targetDate, tierCompounds);
   }
   if (!rate) return principal;
 

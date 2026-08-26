@@ -91,13 +91,16 @@ function render() {
           const sign = up ? "+" : "";
           // Real Growth is rendered per-window, right inside that window's own
           // chip — never as a single value tacked on after the last window.
-          // `showReal` is the actual granularity gate: contributions are
-          // summed at whatever date they were actually logged on (see
-          // activities-log.js), so splitting a rolling 7/30-day window
-          // into "added vs grew" isn't meaningful — a contribution can't be
-          // attributed to a specific week within its month, so those two
-          // windows never render this metric. MTD/YTD/all-time are
-          // month-aligned, so the split IS always accurate for them and is
+          // BUG FIX (2026-08-26): this used to only show for MTD/YTD/all-time,
+          // on the theory that Activities were only ever logged on the 1st of
+          // the month (so a rolling 7d/30d window couldn't reliably tell "in
+          // this window" from "just outside it"). That's no longer true —
+          // activities.js lets the person pick any exact date for a Salary/
+          // Deposit/Withdrawal (see the `type="date"` field there), so
+          // sumContributionsBetween() already attributes every contribution
+          // to its real day, and a 7d/30d window is exactly as attributable
+          // as MTD/YTD always were. Gating this off for those two windows was
+          // stale and just hid a correct number.
           // shown whenever the window has data — including when
           // `contributed` is exactly 0 (nothing logged that period), since
           // "real growth == total growth" is itself a correct, meaningful
@@ -116,7 +119,7 @@ function render() {
             }
           </div>`;
         };
-        return `<div class="wt-growth-row">${chip(w, t("growthWeek"), false)}${chip(m, t("growthMonth"), false)}${chip(mtd, t("growthMtd"))}${chip(y, t("growthYtd")(currentYear))}${chip(a, t("growthAllTime"))}</div>`;
+        return `<div class="wt-growth-row">${chip(w, t("growthWeek"))}${chip(m, t("growthMonth"))}${chip(mtd, t("growthMtd"))}${chip(y, t("growthYtd")(currentYear))}${chip(a, t("growthAllTime"))}</div>`;
       })()}
       ${
         savingsGoal > 0

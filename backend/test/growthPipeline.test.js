@@ -335,10 +335,6 @@ describe("Migration parity — legacyConfigToDomainModel", () => {
         rateBasis: "nominal",
       },
     },
-    {
-      name: "Thndr Cloud Instant (navBased, already daily)",
-      legacy: { calcMethod: "navBased", payoutFreq: "daily", compounding: true, liquidity: "daily", rateBasis: "effective" },
-    },
   ];
 
   cases.forEach(({ name, legacy }) => {

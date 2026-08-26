@@ -94,8 +94,8 @@ function getGrowthCandidate(days) {
 // growth. This sums the Activities logged in docs/js/activities-log.js
 // that fall strictly after `sinceDateExclusive` and up to `untilDateInclusive`,
 // so it can be subtracted from a raw diff to isolate the real, price-driven change.
-// Kept as a helper name (`*Exclusive`) for historical reasons, but the
-// comparison is actually inclusive (`>=`) on the start date.
+// The start date is genuinely exclusive (`>`, not `>=`) — see the bug-fix
+// note directly above sumContributionsBetween's definition below.
 // `currencies`, if given, restricts the sum to Activities logged in one of
 // those currencies — used to attribute a contribution to the EGP vs.
 // hard-currency change-breakdown category it actually landed in, since an
@@ -114,12 +114,29 @@ const CASH_FLOW_ACTIVITY_TYPES = new Set(["salary", "deposit", "withdrawal", "in
 const INCOME_ACTIVITY_TYPES = new Set(["salary", "deposit", "income"]);
 const EXPENSE_ACTIVITY_TYPES = new Set(["withdrawal", "expense"]);
 
-function sumContributionsBetween(sinceDateInclusive, untilDateInclusive, currencies) {
+// ── BUG FIX (2026-08-26) ──────────────────────────────────────────────
+// `sinceDateExclusive` is genuinely exclusive now — this used to compare
+// with `c.date >= sinceDateExclusive` (despite the parameter already being
+// named for exclusivity), which double-counted any Activity logged on the
+// exact date of the REFERENCE snapshot: that money is either already baked
+// into the reference snapshot's totalUsd (if logged before the snapshot
+// ran that day) or about to be counted as part of the window's own price
+// movement — either way, subtracting it a second time here understated
+// "real growth" (price-only, contributions excluded) for anyone who logs a
+// salary/deposit on the same day a snapshot happens to land, which for the
+// 1st-of-month-only granularity contributions use (see activities-log.js)
+// is a very common collision (salary day == month-start snapshot day).
+// Kept `> untilDateInclusive` bound out of it as before (the end date
+// stays inclusive, matching how the caller reads it) — only the start
+// bound changed, to match the (fromDate, toDate] convention
+// backend/lib/attribution.js already uses for the exact same computation
+// server-side, so the two never silently disagree again.
+function sumContributionsBetween(sinceDateExclusive, untilDateInclusive, currencies) {
   if (!activitiesData || activitiesData.length === 0) return 0;
   return activitiesData
     .filter(
       (c) =>
-        (!sinceDateInclusive || c.date >= sinceDateInclusive) &&
+        (!sinceDateExclusive || c.date > sinceDateExclusive) &&
         c.date <= untilDateInclusive &&
         // Entries saved before the currency field existed have no `currency`
         // at all — the backend already treats that as USD at save time

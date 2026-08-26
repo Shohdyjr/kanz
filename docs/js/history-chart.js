@@ -272,12 +272,16 @@ function renderChangeAnalysis(filteredHistory) {
   // assets, which aren't offered as a contribution currency, so those two
   // categories are always identical between modes.
   //
-  // Same granularity rule as the hero "Real growth" chips (see render.js):
-  // contributions are logged with monthly granularity (always the 1st of
-  // the month), so a rolling 7d/30d window can't reliably attribute one to
-  // "this window" vs. "just outside it" — only whole-month/year-aligned
-  // periods (MTD/YTD/All time) get the split.
-  const periodSupportsExclContrib = ["mtd", "ytd", "all"].includes(historyChartPeriod);
+  // BUG FIX (2026-08-26): this used to gate the excl-contributions split to
+  // month-aligned periods only (mtd/ytd/all), reasoning that Activities were
+  // always logged on the 1st of the month so a 7d/30d rolling window
+  // couldn't attribute one reliably. That's no longer true — activities.js
+  // lets the person pick any exact date for a Salary/Deposit/Withdrawal, so
+  // sumContributionsBetween() (see helpers.js) already attributes every
+  // contribution to its real logged day, and works identically well for a
+  // 7d/30d window as it does for MTD/YTD/all-time. Every period now
+  // supports the split.
+  const periodSupportsExclContrib = true;
   const exclMode = periodSupportsExclContrib && changeAnalysisExclContrib;
   const egpContributed = exclMode ? sumContributionsBetween(start.date, end.date, ["EGP"]) : 0;
   const hardContributed = exclMode ? sumContributionsBetween(start.date, end.date, ["USD", "EUR", "SAR"]) : 0;
