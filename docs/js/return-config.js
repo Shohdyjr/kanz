@@ -1215,7 +1215,7 @@ function projectAssetValue(a) {
 
   if (cfg.startDate && Array.isArray(cfg.tierRates) && cfg.tierRates.length) {
     return {
-      next: computeGrowthValueAt(a.id, principal, todayMid, nextDate),
+      next: nextMilestoneValue(a, cfg, principal, todayMid, nextDate, monthsStep),
       nextDate,
       endOfCycle: computeGrowthValueAt(a.id, principal, todayMid, endOfCycle),
       endOfCycleDate: endOfCycle,
@@ -1227,7 +1227,7 @@ function projectAssetValue(a) {
   const rate = apy[a.id] || 0;
   if (!rate) return null;
   return {
-    next: computeGrowthValueAt(a.id, principal, todayMid, nextDate),
+    next: nextMilestoneValue(a, cfg, principal, todayMid, nextDate, monthsStep),
     nextDate,
     endOfCycle: computeGrowthValueAt(a.id, principal, todayMid, endOfCycle),
     endOfCycleDate: endOfCycle,
@@ -1235,6 +1235,39 @@ function projectAssetValue(a) {
     endOfYearDate: oneYearOut,
   };
 }
+
+// BUG FIX (2026-08-26): the "next" milestone value used to always be
+// computeGrowthValueAt(...) straight up — the item's full CUMULATIVE value
+// (original principal + every period's interest since inception), anchored
+// at the item's real Since-date, exactly like the "current value"/"end of
+// cycle" figures are (see projectValueAt's flatBasisDate/tierAnchor
+// comments — that anchoring is correct and intentional for those).
+//
+// But when the product actually DISTRIBUTES (pays interest out as cash
+// instead of reinvesting it — distributionFrequency active,
+// compoundingFrequency "none"), that cumulative number is the wrong thing
+// to label "Next interest payment": prior periods' interest already left
+// the account as cash, it isn't sitting there waiting. A 2-year-old
+// step-up certificate showed its FULL two years of accumulated interest
+// (e.g. Year 1 + Year 2's coupons added together) as the size of the
+// single upcoming Year-2 payment — wildly overstating it the longer the
+// certificate had been held.
+//
+// The fix: for a genuine cash-distributing product, "next" is the DELTA
+// between the cumulative value at the next payment date and the
+// cumulative value at the start of the current payment cycle (one
+// distribution step back, clamped to the item's Since-date for the very
+// first cycle) — i.e. just that one period's interest, which is exactly
+// what actually gets paid out.
+function nextMilestoneValue(a, cfg, principal, todayMid, nextDate, monthsStep) {
+  const cumulative = computeGrowthValueAt(a.id, principal, todayMid, nextDate);
+  const distributes = cfg.distributionFrequency && cfg.distributionFrequency !== "none";
+  const reinvests = cfg.compoundingFrequency && cfg.compoundingFrequency !== "none";
+  if (!distributes || reinvests || !cfg.startDate || !monthsStep) return cumulative;
+  const since = parseDateStr(cfg.startDate);
+  const prevBoundary = addMonthsClamped(nextDate, -monthsStep);
+  const cycleStart = prevBoundary > since ? prevBoundary : since;
+  return cumulative - computeGrowthValueAt(a.id, principal, todayMid, cycleStart);
 
 // The natural end of the item's current compounding/payout cycle:
 //  - tiered certificate: the next anniversary of its start date (when the

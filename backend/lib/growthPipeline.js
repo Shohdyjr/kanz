@@ -1027,6 +1027,7 @@ const GrowthPipeline = {
   parseDateStr,
   daysBetweenDates,
   addYearsToDate,
+  addMonthsClamped,
   monthsStepForFreq,
   periodBoundaryAt,
   periodStartAtOrBefore,
