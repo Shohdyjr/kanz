@@ -1260,14 +1260,37 @@ function projectAssetValue(a) {
 // first cycle) — i.e. just that one period's interest, which is exactly
 // what actually gets paid out.
 function nextMilestoneValue(a, cfg, principal, todayMid, nextDate, monthsStep) {
-  const cumulative = computeGrowthValueAt(a.id, principal, todayMid, nextDate);
   const distributes = cfg.distributionFrequency && cfg.distributionFrequency !== "none";
   const reinvests = cfg.compoundingFrequency && cfg.compoundingFrequency !== "none";
-  if (!distributes || reinvests || !cfg.startDate || !monthsStep) return cumulative;
+  if (!distributes || reinvests || !cfg.startDate || !monthsStep) {
+    return computeGrowthValueAt(a.id, principal, todayMid, nextDate);
+  }
+  // BUG FIX (2026-08-26, follow-up): computeGrowthValueAt's underlying
+  // projectValueAt() has a forward-only guard — `targetDate <= fromDate`
+  // returns the raw principal untouched, since it assumes you're always
+  // projecting into the future FROM `fromDate`. That guard is exactly right
+  // for `cumulative` below (nextDate is always later than today). But
+  // `cycleStart` here is the START of the CURRENT cycle — typically the
+  // most recent anniversary, which for anyone checking mid-cycle (i.e.
+  // almost always) is a date in the PAST relative to today. Passing
+  // `todayMid` as fromDate for that call made the guard fire and silently
+  // return the bare principal (as if no interest had accrued at all)
+  // instead of the item's real value at that past date — which then threw
+  // off the whole "just this period's interest" subtraction (e.g. a real
+  // 2-year-old certificate came out to 118,500 instead of the correct
+  // 52,500 — a full extra prior year got miscounted in, in the opposite
+  // direction of the original cumulative-total bug this function exists to
+  // fix). Using the item's own Since-date as `fromDate` instead is always
+  // safe here — it's earlier than both `nextDate` and `cycleStart` by
+  // construction, so the guard never fires for either of the two calls
+  // below, and (per projectValueAt's own tierAnchor/flatBasisDate
+  // comments) `fromDate` isn't otherwise used for continuous/table
+  // projections like this anyway.
   const since = parseDateStr(cfg.startDate);
+  const cumulative = computeGrowthValueAt(a.id, principal, since, nextDate);
   const prevBoundary = addMonthsClamped(nextDate, -monthsStep);
   const cycleStart = prevBoundary > since ? prevBoundary : since;
-  return cumulative - computeGrowthValueAt(a.id, principal, todayMid, cycleStart);
+  return cumulative - computeGrowthValueAt(a.id, principal, since, cycleStart);
 }
 
 // The natural end of the item's current compounding/payout cycle:
