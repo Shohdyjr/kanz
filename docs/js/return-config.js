@@ -1268,6 +1268,7 @@ function nextMilestoneValue(a, cfg, principal, todayMid, nextDate, monthsStep) {
   const prevBoundary = addMonthsClamped(nextDate, -monthsStep);
   const cycleStart = prevBoundary > since ? prevBoundary : since;
   return cumulative - computeGrowthValueAt(a.id, principal, todayMid, cycleStart);
+}
 
 // The natural end of the item's current compounding/payout cycle:
 //  - tiered certificate: the next anniversary of its start date (when the
