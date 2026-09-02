@@ -430,6 +430,7 @@ const PRODUCT_CONFIG_FIELDS = [
   "creditAnchor",
   "creditDay",
   "creditBusinessDayAdjust",
+  "payoutDestinationAssetId",
   "faceValue",
   "purchasePrice",
   "maturityDate",
@@ -511,6 +512,12 @@ function readProductConfigForm(id) {
     cfg.distributionFrequency = null;
     cfg.creditAnchor = null;
   }
+  // Only meaningful once the item actually distributes cash on a schedule —
+  // strip it otherwise so a value picked before switching away from a
+  // distributing config can't linger unused in storage (same safety-net
+  // reasoning as tierRates/balanceTiers just above).
+  cfg.payoutDestinationAssetId =
+    usesCredit && cfg.distributionFrequency && cfg.distributionFrequency !== "none" ? cfg.payoutDestinationAssetId || null : null;
   const creditDayEl = document.getElementById("rc-creditDay");
   const creditDayNum = creditDayEl ? parseInt(creditDayEl.value, 10) : NaN;
   cfg.creditDay = usesCredit && cfg.creditAnchor === "fixedDay" && Number.isFinite(creditDayNum) ? creditDayNum : null;
@@ -887,6 +894,21 @@ function onBalanceBasisChange() {
   onGrowthSourceChange();
 }
 
+// Shows/hides the "which of your accounts should the payout land in" field
+// — only meaningful once a certificate actually distributes cash
+// (distributionFrequency !== "none"); for anything else (reinvested/
+// compounding products, or non-distributing ones) there's no separate
+// payout event for this to apply to.
+function onDistributionFrequencyChange() {
+  const freq = document.getElementById("rc-distributionFrequency").value;
+  const block = document.getElementById("rc-payoutDestination-block");
+  const select = document.getElementById("rc-payoutDestinationAssetId");
+  const applies = !!freq && freq !== "none";
+  if (block) block.style.display = applies ? "" : "none";
+  if (select) select.disabled = !applies;
+  refreshProductConfigPreview();
+}
+
 // "0-49999:11" per line -> [{min, max, rate}], max omitted/blank -> null
 // (open-ended top tier). Silently skips malformed lines rather than
 // throwing — the required-field/validateDomainModel checks downstream
@@ -993,7 +1015,7 @@ function renderReturnPanel() {
           </div>
           <div class="wt-field">
             ${fieldLabel("rc-distributionFrequency", "distributionFrequencyLabel", "distributionFrequency")}
-            ${domainSelect("distributionFrequency", cfg)}
+            ${domainSelect("distributionFrequency", cfg, "onDistributionFrequencyChange()")}
           </div>
           <div class="wt-field">
             ${fieldLabel("rc-compoundingFrequency", "compoundingFrequencyLabel", "compoundingFrequency")}
@@ -1006,6 +1028,22 @@ function renderReturnPanel() {
           <div class="wt-field">
             ${fieldLabel("rc-creditAnchor", "creditAnchorLabel", "creditAnchor")}
             <select id="rc-creditAnchor" onchange="onCreditAnchorChange()">${optionsHtml(t("creditAnchorOptions"), cfg.creditAnchor)}</select>
+          </div>
+        </div>
+        <div class="wt-field-row-3" id="rc-payoutDestination-block" ${
+          cfg.distributionFrequency && cfg.distributionFrequency !== "none" ? "" : 'style="display:none"'
+        }>
+          <div class="wt-field" style="flex:1 1 100%">
+            ${fieldLabel("rc-payoutDestinationAssetId", "payoutDestinationLabel", "payoutDestination")}
+            <select id="rc-payoutDestinationAssetId" onchange="refreshProductConfigPreview()">
+              <option value="">${t("payoutDestinationNone")}</option>
+              ${ASSETS.filter((x) => x.id !== id)
+                .map(
+                  (x) =>
+                    `<option value="${x.id}" ${cfg.payoutDestinationAssetId === x.id ? "selected" : ""}>${esc(assetName(x))}</option>`
+                )
+                .join("")}
+            </select>
           </div>
         </div>
         <div class="wt-field-row-3" id="rc-balanceTiers-block" ${cfg.balanceBasis === "tieredByBalance" ? "" : 'style="display:none"'}>
@@ -1202,6 +1240,11 @@ function projectAssetValue(a) {
 
   const freq = cycleFrequency(cfg);
   const monthsStep = monthsStepForFreq(freq);
+  const distributesCash = !!(
+    cfg.distributionFrequency &&
+    cfg.distributionFrequency !== "none" &&
+    !(cfg.compoundingFrequency && cfg.compoundingFrequency !== "none")
+  );
   let nextDate;
   if (cfg.startDate && monthsStep) {
     nextDate = nextCreditBoundary(cfg, monthsStep, todayMid);
@@ -1221,6 +1264,8 @@ function projectAssetValue(a) {
       endOfCycleDate: endOfCycle,
       endOfYear: computeGrowthValueAt(a.id, principal, todayMid, oneYearOut),
       endOfYearDate: oneYearOut,
+      principal,
+      distributesCash,
     };
   }
 
@@ -1233,6 +1278,8 @@ function projectAssetValue(a) {
     endOfCycleDate: endOfCycle,
     endOfYear: computeGrowthValueAt(a.id, principal, todayMid, oneYearOut),
     endOfYearDate: oneYearOut,
+    principal,
+    distributesCash,
   };
 }
 
@@ -1483,6 +1530,15 @@ function generateMilestones(a) {
       titleKey: nextMilestoneLabelKey(cfg),
       date: proj.nextDate,
       value: proj.next,
+      // Only for a genuine cash-distributing certificate (see
+      // nextMilestoneValue's bug-fix comment): `proj.next` there is
+      // deliberately just the size of the one upcoming coupon, not a
+      // cumulative total. On its own that reads as "the certificate is
+      // only worth 52,500" rather than "you get 52,500 IN ADDITION to
+      // your untouched 300,000 principal" — so the row also carries the
+      // principal separately, and render.js shows the two added together
+      // (e.g. "300,000 + 52,500") instead of just the coupon in isolation.
+      principalPortion: proj.distributesCash ? proj.principal : null,
     },
     {
       id: "cycle",

@@ -185,6 +185,7 @@ function render() {
           ${isColHidden("unitPrice") ? "" : `<th class="num">${t("thUnitPrice")}</th>`}
           ${isColHidden("total") ? "" : `<th class="num">${t("thTotal")}</th>`}
           ${isColHidden("projection") ? "" : `<th class="num">${t("thProjection")}</th>`}
+          ${isColHidden("gain") ? "" : `<th class="num">${t("thGain")}</th>`}
           ${isColHidden("cronTouch") ? "" : `<th class="num">${t("thCronTouch")}</th>`}
           <th class="wt-th-del"></th>
         </tr></thead>
@@ -221,11 +222,32 @@ function render() {
                     if (!m) return `<td class="wt-proj-cell" id="projection-${a.id}">${t("projNone")}</td>`;
                     const estimatePrefix = m.estimated ? "≈ " : "";
                     const title = m.estimated ? `${t(m.titleKey)} — ${t("projEstimateHint")}` : t(m.titleKey);
+                    const valueDisplay =
+                      m.principalPortion != null
+                        ? `${fmtByCurrencyPrecise(m.principalPortion, a.currency)} + ${fmtByCurrencyPrecise(m.value, a.currency)}`
+                        : `${estimatePrefix}${fmtByCurrencyPrecise(m.value, a.currency)}`;
                     return `<td class="wt-proj-cell wt-proj-clickable" id="projection-${a.id}" title="${title}" onclick="openReturnPanel('${a.id}')">
                     <div class="wt-proj-label">${t(m.titleKey)}</div>
-                    ${estimatePrefix}${fmtByCurrencyPrecise(m.value, a.currency)}
+                    ${valueDisplay}
                     <div class="wt-proj-date">${fmtDateShort(m.date)}</div>
                   </td>`;
+                  })()
+            }
+            ${
+              isColHidden("gain")
+                ? ""
+                : (() => {
+                    const cfg = returnConfig[a.id];
+                    if (!assetGeneratesReturn(a.id) || !cfg || !cfg.startDate) {
+                      return `<td class="wt-gain-cell num">—</td>`;
+                    }
+                    const principal = qty[a.id] || 0;
+                    const since = parseDateStr(cfg.startDate);
+                    const today = parseDateStr(todayLocalStr());
+                    const currentValue = computeGrowthValueAt(a.id, principal, since, today);
+                    const gain = currentValue - principal;
+                    const gainColor = gain >= 0 ? "var(--wt-green)" : "var(--wt-red)";
+                    return `<td class="wt-gain-cell num" style="color:${gainColor}" title="${t("gainHint")}">${gain >= 0 ? "+" : ""}${fmtByCurrencyPrecise(gain, a.currency)}</td>`;
                   })()
             }
             ${

@@ -15,6 +15,7 @@ const COLUMN_DEFS = [
   { key: "unitPrice", labelKey: "thUnitPrice" },
   { key: "total", labelKey: "thTotal" },
   { key: "projection", labelKey: "thProjection" },
+  { key: "gain", labelKey: "thGain" },
   { key: "cronTouch", labelKey: "thCronTouch" },
 ];
 
