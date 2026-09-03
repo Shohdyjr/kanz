@@ -539,9 +539,8 @@ body {
   white-space: nowrap;
 }
 .wt-cron-cell-manual {
-  font-family: "Tajawal", sans-serif;
+  font-family: "JetBrains Mono", monospace;
   color: var(--wt-text-dim);
-  font-style: italic;
   display: flex;
   align-items: center;
   justify-content: center;

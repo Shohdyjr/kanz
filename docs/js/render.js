@@ -272,7 +272,7 @@ function render() {
                 : (() => {
                     const cronResult = nextCronTouch(qty[a.id] || 0, apy[a.id] || 0, returnConfig[a.id] || {}, todayLocalStr());
                     if (!cronResult.date) {
-                      return `<td class="wt-cron-cell wt-cron-cell-manual">${t("cronTouchManualShort")}</td>`;
+                      return `<td class="wt-cron-cell wt-cron-cell-manual" title="${t("cronTouchManualShort")}">—</td>`;
                     }
                     const d = cronResult.date;
                     const monthName = lang === "ar" ? MONTH_NAMES_AR[d.getMonth()] : MONTH_NAMES_EN[d.getMonth()];
