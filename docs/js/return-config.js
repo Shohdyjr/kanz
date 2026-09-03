@@ -1266,6 +1266,7 @@ function projectAssetValue(a) {
       endOfYearDate: oneYearOut,
       principal,
       distributesCash,
+      gainToDate: gainToDateFor(a, cfg, principal, todayMid, nextDate, monthsStep, distributesCash),
     };
   }
 
@@ -1280,7 +1281,22 @@ function projectAssetValue(a) {
     endOfYearDate: oneYearOut,
     principal,
     distributesCash,
+    gainToDate: gainToDateFor(a, cfg, principal, todayMid, nextDate, monthsStep, distributesCash),
   };
+}
+
+// For a distributing (cash-paying, non-reinvesting) certificate, "Gain"
+// mirrors the "Next interest payment" milestone exactly — the size of the
+// coupon this cycle is on track to pay, not a day-by-day prorated accrual.
+// For anything that reinvests (compounds) or isn't on a distribution
+// schedule at all, nothing is ever paid out separately, so the
+// cumulative-since-inception figure is what "Gain" means there.
+function gainToDateFor(a, cfg, principal, todayMid, nextDate, monthsStep, distributesCash) {
+  if (distributesCash) {
+    return nextMilestoneValue(a, cfg, principal, todayMid, nextDate, monthsStep);
+  }
+  const since = cfg.startDate ? parseDateStr(cfg.startDate) : todayMid;
+  return computeGrowthValueAt(a.id, principal, since, todayMid) - principal;
 }
 
 // BUG FIX (2026-08-26): the "next" milestone value used to always be
@@ -1306,6 +1322,17 @@ function projectAssetValue(a) {
 // distribution step back, clamped to the item's Since-date for the very
 // first cycle) — i.e. just that one period's interest, which is exactly
 // what actually gets paid out.
+// The start of the CURRENT payout cycle — i.e. the most recent boundary
+// (an anniversary, month-start, etc.) at or before `nextDate`, clamped so
+// it never goes earlier than the item's own Since-date. Shared by
+// nextMilestoneValue (below) and by render.js's "Gain" column, since both
+// need the same "what's accrued in THIS cycle, not before" boundary.
+function currentCycleStart(cfg, nextDate, monthsStep) {
+  const since = parseDateStr(cfg.startDate);
+  const prevBoundary = addMonthsClamped(nextDate, -monthsStep);
+  return prevBoundary > since ? prevBoundary : since;
+}
+
 function nextMilestoneValue(a, cfg, principal, todayMid, nextDate, monthsStep) {
   const distributes = cfg.distributionFrequency && cfg.distributionFrequency !== "none";
   const reinvests = cfg.compoundingFrequency && cfg.compoundingFrequency !== "none";
@@ -1335,8 +1362,7 @@ function nextMilestoneValue(a, cfg, principal, todayMid, nextDate, monthsStep) {
   // projections like this anyway.
   const since = parseDateStr(cfg.startDate);
   const cumulative = computeGrowthValueAt(a.id, principal, since, nextDate);
-  const prevBoundary = addMonthsClamped(nextDate, -monthsStep);
-  const cycleStart = prevBoundary > since ? prevBoundary : since;
+  const cycleStart = currentCycleStart(cfg, nextDate, monthsStep);
   return cumulative - computeGrowthValueAt(a.id, principal, since, cycleStart);
 }
 

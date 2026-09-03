@@ -221,10 +221,14 @@ function render() {
                     const m = primaryMilestone(a);
                     if (!m) return `<td class="wt-proj-cell" id="projection-${a.id}">${t("projNone")}</td>`;
                     const estimatePrefix = m.estimated ? "≈ " : "";
-                    const title = m.estimated ? `${t(m.titleKey)} — ${t("projEstimateHint")}` : t(m.titleKey);
+                    const baseTitle = m.estimated ? `${t(m.titleKey)} — ${t("projEstimateHint")}` : t(m.titleKey);
+                    const title =
+                      m.principalPortion != null
+                        ? `${baseTitle} (${fmtByCurrencyPrecise(m.principalPortion, a.currency)} ${t("projPrincipalLabel")} + ${fmtByCurrencyPrecise(m.value, a.currency)})`
+                        : baseTitle;
                     const valueDisplay =
                       m.principalPortion != null
-                        ? `${fmtByCurrencyPrecise(m.principalPortion, a.currency)} + ${fmtByCurrencyPrecise(m.value, a.currency)}`
+                        ? fmtByCurrencyPrecise(m.principalPortion + m.value, a.currency)
                         : `${estimatePrefix}${fmtByCurrencyPrecise(m.value, a.currency)}`;
                     return `<td class="wt-proj-cell wt-proj-clickable" id="projection-${a.id}" title="${title}" onclick="openReturnPanel('${a.id}')">
                     <div class="wt-proj-label">${t(m.titleKey)}</div>
@@ -241,13 +245,12 @@ function render() {
                     if (!assetGeneratesReturn(a.id) || !cfg || !cfg.startDate) {
                       return `<td class="wt-gain-cell num">—</td>`;
                     }
-                    const principal = qty[a.id] || 0;
-                    const since = parseDateStr(cfg.startDate);
-                    const today = parseDateStr(todayLocalStr());
-                    const currentValue = computeGrowthValueAt(a.id, principal, since, today);
-                    const gain = currentValue - principal;
+                    const proj = projectAssetValue(a);
+                    if (!proj) return `<td class="wt-gain-cell num">—</td>`;
+                    const gain = proj.gainToDate;
                     const gainColor = gain >= 0 ? "var(--wt-green)" : "var(--wt-red)";
-                    return `<td class="wt-gain-cell num" style="color:${gainColor}" title="${t("gainHint")}">${gain >= 0 ? "+" : ""}${fmtByCurrencyPrecise(gain, a.currency)}</td>`;
+                    const hint = proj.distributesCash ? t("gainHintDistributing") : t("gainHint");
+                    return `<td class="wt-gain-cell num" style="color:${gainColor}" title="${hint}">${gain >= 0 ? "+" : ""}${fmtByCurrencyPrecise(gain, a.currency)}</td>`;
                   })()
             }
             ${
