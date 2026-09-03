@@ -185,7 +185,7 @@ function render() {
           ${isColHidden("unitPrice") ? "" : `<th class="num">${t("thUnitPrice")}</th>`}
           ${isColHidden("total") ? "" : `<th class="num">${t("thTotal")}</th>`}
           ${isColHidden("projection") ? "" : `<th class="num">${t("thProjection")}</th>`}
-          ${isColHidden("gain") ? "" : `<th class="num">${t("thGain")}</th>`}
+          ${isColHidden("gain") ? "" : `<th class="wt-th-gain">${t("thGain")}</th>`}
           ${isColHidden("cronTouch") ? "" : `<th class="num">${t("thCronTouch")}</th>`}
           <th class="wt-th-del"></th>
         </tr></thead>
@@ -243,10 +243,10 @@ function render() {
                 : (() => {
                     const cfg = returnConfig[a.id];
                     if (!assetGeneratesReturn(a.id) || !cfg || !cfg.startDate) {
-                      return `<td class="wt-gain-cell num">—</td>`;
+                      return `<td class="wt-gain-cell">—</td>`;
                     }
                     const m = primaryMilestone(a);
-                    if (!m) return `<td class="wt-gain-cell num">—</td>`;
+                    if (!m) return `<td class="wt-gain-cell">—</td>`;
                     // Gain = exactly (what the Projection column is showing) minus
                     // (what the qty box is showing) — computed from the SAME `m`
                     // object the Projection cell itself renders from, so the two
@@ -255,17 +255,32 @@ function render() {
                     const projectionShown = (m.principalPortion != null ? m.principalPortion : 0) + m.value;
                     const gain = projectionShown - (qty[a.id] || 0);
                     const gainColor = gain >= 0 ? "var(--wt-green)" : "var(--wt-red)";
-                    return `<td class="wt-gain-cell num" style="color:${gainColor}" title="${t("gainHint")}">${gain >= 0 ? "+" : ""}${fmtByCurrencyPrecise(gain, a.currency)}</td>`;
+                    // APR (nominal) is the exact, contractual number — no "+" dressing
+                    // it up as an estimate. APY (effective, or unset — same default
+                    // used everywhere else) already bakes in a compounding
+                    // assumption, so it's marked "≈" to flag it as the computed
+                    // equivalent rather than a flat guaranteed figure.
+                    const isApr = cfg.rateBasis === "nominal";
+                    const prefix = gain < 0 ? "" : isApr ? "" : "≈";
+                    return `<td class="wt-gain-cell" style="color:${gainColor}" title="${t("gainHint")}">${prefix}${fmtByCurrencyPrecise(gain, a.currency)}</td>`;
                   })()
             }
+
             ${
               isColHidden("cronTouch")
                 ? ""
                 : (() => {
                     const cronResult = nextCronTouch(qty[a.id] || 0, apy[a.id] || 0, returnConfig[a.id] || {}, todayLocalStr());
-                    return cronResult.date
-                      ? `<td class="wt-cron-cell">${fmtDateShort(cronResult.date)}</td>`
-                      : `<td class="wt-cron-cell wt-cron-cell-manual">${t("cronTouchManualShort")}</td>`;
+                    if (!cronResult.date) {
+                      return `<td class="wt-cron-cell wt-cron-cell-manual">${t("cronTouchManualShort")}</td>`;
+                    }
+                    const d = cronResult.date;
+                    const monthName = lang === "ar" ? MONTH_NAMES_AR[d.getMonth()] : MONTH_NAMES_EN[d.getMonth()];
+                    return `<td class="wt-cron-cell wt-cron-cell-stacked">
+                      <span class="wt-cron-day">${d.getDate()}</span>
+                      <span class="wt-cron-month">${monthName}</span>
+                      <span class="wt-cron-year">${d.getFullYear()}</span>
+                    </td>`;
                   })()
             }
             <td><div class="wt-row-actions">
