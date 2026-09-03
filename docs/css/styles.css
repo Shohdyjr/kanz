@@ -542,13 +542,19 @@ body {
   font-family: "Tajawal", sans-serif;
   color: var(--wt-text-dim);
   font-style: italic;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 47px;
 }
 .wt-cron-cell-stacked {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   line-height: 1.35;
   white-space: normal;
+  min-height: 47px;
 }
 .wt-cron-cell-stacked .wt-cron-day {
   font-size: 15px;

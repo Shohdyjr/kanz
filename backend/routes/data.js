@@ -127,6 +127,10 @@ const RETURN_CONFIG_KEYS = [
   "faceValue",
   "purchasePrice",
   "maturityDate",
+  // Purely informational — which of the user's OTHER assets should receive
+  // a distributing certificate's cash payout. Never used in any growth
+  // math; see gainToDate/nextMilestoneValue notes in return-config.js.
+  "payoutDestinationAssetId",
 ];
 const RETURN_CONFIG_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Regex only checks the shape (YYYY-MM-DD) — this also rejects dates that
@@ -195,6 +199,8 @@ const isValidReturnConfigEntry = (v) =>
   (v.creditDay == null || (typeof v.creditDay === "number" && Number.isInteger(v.creditDay) && v.creditDay >= 1 && v.creditDay <= 31)) &&
   (v.faceValue == null || (typeof v.faceValue === "number" && Number.isFinite(v.faceValue) && v.faceValue > 0)) &&
   (v.purchasePrice == null || (typeof v.purchasePrice === "number" && Number.isFinite(v.purchasePrice) && v.purchasePrice > 0)) &&
+  (v.payoutDestinationAssetId == null ||
+    (typeof v.payoutDestinationAssetId === "string" && v.payoutDestinationAssetId.length > 0 && v.payoutDestinationAssetId.length <= 200)) &&
   isValidGrowthFormula(v.growthFormula) &&
   isValidTierRates(v.tierRates) &&
   isValidBalanceTiers(v.balanceTiers) &&
