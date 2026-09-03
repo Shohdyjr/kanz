@@ -245,12 +245,17 @@ function render() {
                     if (!assetGeneratesReturn(a.id) || !cfg || !cfg.startDate) {
                       return `<td class="wt-gain-cell num">—</td>`;
                     }
-                    const proj = projectAssetValue(a);
-                    if (!proj) return `<td class="wt-gain-cell num">—</td>`;
-                    const gain = proj.gainToDate;
+                    const m = primaryMilestone(a);
+                    if (!m) return `<td class="wt-gain-cell num">—</td>`;
+                    // Gain = exactly (what the Projection column is showing) minus
+                    // (what the qty box is showing) — computed from the SAME `m`
+                    // object the Projection cell itself renders from, so the two
+                    // numbers can never drift apart or be computed two different
+                    // ways again.
+                    const projectionShown = (m.principalPortion != null ? m.principalPortion : 0) + m.value;
+                    const gain = projectionShown - (qty[a.id] || 0);
                     const gainColor = gain >= 0 ? "var(--wt-green)" : "var(--wt-red)";
-                    const hint = proj.distributesCash ? t("gainHintDistributing") : t("gainHint");
-                    return `<td class="wt-gain-cell num" style="color:${gainColor}" title="${hint}">${gain >= 0 ? "+" : ""}${fmtByCurrencyPrecise(gain, a.currency)}</td>`;
+                    return `<td class="wt-gain-cell num" style="color:${gainColor}" title="${t("gainHint")}">${gain >= 0 ? "+" : ""}${fmtByCurrencyPrecise(gain, a.currency)}</td>`;
                   })()
             }
             ${

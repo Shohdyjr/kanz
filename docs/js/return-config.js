@@ -1266,7 +1266,6 @@ function projectAssetValue(a) {
       endOfYearDate: oneYearOut,
       principal,
       distributesCash,
-      gainToDate: gainToDateFor(a, cfg, principal, todayMid, nextDate, monthsStep, distributesCash),
     };
   }
 
@@ -1281,22 +1280,7 @@ function projectAssetValue(a) {
     endOfYearDate: oneYearOut,
     principal,
     distributesCash,
-    gainToDate: gainToDateFor(a, cfg, principal, todayMid, nextDate, monthsStep, distributesCash),
   };
-}
-
-// For a distributing (cash-paying, non-reinvesting) certificate, "Gain"
-// mirrors the "Next interest payment" milestone exactly — the size of the
-// coupon this cycle is on track to pay, not a day-by-day prorated accrual.
-// For anything that reinvests (compounds) or isn't on a distribution
-// schedule at all, nothing is ever paid out separately, so the
-// cumulative-since-inception figure is what "Gain" means there.
-function gainToDateFor(a, cfg, principal, todayMid, nextDate, monthsStep, distributesCash) {
-  if (distributesCash) {
-    return nextMilestoneValue(a, cfg, principal, todayMid, nextDate, monthsStep);
-  }
-  const since = cfg.startDate ? parseDateStr(cfg.startDate) : todayMid;
-  return computeGrowthValueAt(a.id, principal, since, todayMid) - principal;
 }
 
 // BUG FIX (2026-08-26): the "next" milestone value used to always be
