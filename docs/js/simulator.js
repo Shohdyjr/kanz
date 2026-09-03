@@ -11,9 +11,10 @@
 //       month, and per year at the item's current rate — regardless of
 //       the product's real payout frequency, since the user wants to see
 //       all three, not just the one that matches the configured cycle.
-//  A per-run APY/APR toggle lets the user re-interpret the same stored rate
-//  under the other basis, for this simulation only — it never touches the
-//  item's actual saved Return Settings.
+//  A per-run APY/APR toggle lets the user see the item's real, saved rate
+//  relabeled as its mathematically-equivalent APR or APY expression — it's
+//  a display choice only: switching it never changes the projected amount,
+//  since that's always driven by the item's own real Return Settings.
 //  Purely a read-only estimate: never writes back to qty/apy/history.
 // ══════════════════════════════════════════════════════
 
@@ -102,60 +103,74 @@ function setSimRateBasis(basis) {
 // Same growth model as computeGrowthValueAt (return-config.js) — both are
 // now thin wrappers around the shared projectValueAt() in growth-pipeline.js.
 // Here the Nominal-APR/Effective-APY basis is an explicit parameter instead
-// of always reading cfg.rateBasis — so the simulator's APY/APR toggle can
-// re-run the exact same math under the other interpretation without
-// touching the item's actual saved Return Settings.
-//
-// Deliberately does NOT pass assumeContinuous=true: `principal`/`fromDate`
-// here are a hypothetical amount+date the user is testing, not the item's
-// real current balance — it can't have earned interest before `fromDate`,
-// even if the item's real Since-date implies an earlier period start.
-function simComputeGrowthValueAt(assetId, principal, fromDate, targetDate, basis) {
+// REDESIGNED (2026-08-27): this used to pass the user's toggle selection
+// straight through as `basisOverride`, so picking the basis that DIDN'T
+// match the item's real, saved rateBasis silently reinterpreted the raw
+// stored number as if it meant something else — genuinely changing the
+// projected EGP/USD outcome depending only on which button was clicked, for
+// a number the person already configured for real in Return Settings. That
+// makes no sense for a real account: 15% APR on a real Mashreq certificate
+// IS a fixed, single real-world outcome — it can't earn two different
+// dollar amounts depending on which label you're currently looking at.
+// The money math must always use the item's own actual cfg.rateBasis,
+// never the toggle — the toggle is now purely a relabeling/display choice
+// (see simDisplayedRate below), and never changes what gets projected.
+function simComputeGrowthValueAt(assetId, principal, fromDate, targetDate) {
   const cfg = returnConfig[assetId] || {};
   const rate = apy[assetId] || 0;
-  return projectValueAt(principal, rate, cfg, fromDate, targetDate, basis);
+  return projectValueAt(principal, rate, cfg, fromDate, targetDate);
 }
 
-// The rate actually fed into whichever formula branch runs above — used for
-// BOTH the math and the on-screen formula text, so the number the user sees
-// printed in the equation is always the one really being multiplied, never
-// the raw stored value dressed up as something it isn't.
+// The rate as it would read under the SELECTED basis toggle, purely for
+// display — the item's real cfg.rateBasis (defaulting to "effective" if
+// never set, same default used elsewhere) is the number's one true
+// meaning; when the toggle matches it, this returns the raw stored value
+// untouched. When the toggle is set to the OTHER basis, this converts the
+// SAME real, fixed rate into its mathematically-equivalent expression
+// under that unit — informational only, and — critically — this value is
+// NEVER fed back into simComputeGrowthValueAt above, so switching the
+// toggle relabels the number shown but never changes the projected
+// EGP/USD amount.
 function simDisplayedRate(cfg, rate, basis) {
+  const nativeBasis = cfg.rateBasis || "effective";
+  if (basis === nativeBasis) return rate;
   const compounds = cfg.compoundingFrequency && cfg.compoundingFrequency !== "none";
   const monthsStep = monthsStepForFreq(cfg.growthFrequency);
   if (cfg.growthSource !== "nav" && cfg.startDate && monthsStep && compounds) {
     const periodsPerYear = 12 / monthsStep;
-    return basis === "effective" ? effectiveToNominal(rate, periodsPerYear) : rate;
+    return nativeBasis === "nominal" ? nominalToEffective(rate, periodsPerYear) : effectiveToNominal(rate, periodsPerYear);
   }
   if (!cfg.growthFormula && compounds) {
-    return basis === "nominal" ? nominalToEffective(rate, 365) : rate;
+    return nativeBasis === "nominal" ? nominalToEffective(rate, 365) : effectiveToNominal(rate, 365);
   }
   return rate;
 }
 
 // Effective per-day / per-month / per-year growth amounts an `amount`
-// balance earns, under the given basis — computed via simComputeGrowthValueAt
-// over a 1-day / 1-month / 1-year window starting at `fromDate`.
-function simIncrementAmounts(assetId, amount, fromDate, basis) {
+// balance earns — computed via simComputeGrowthValueAt (which always uses
+// the item's real cfg.rateBasis; see its comment) over a 1-day / 1-month /
+// 1-year window starting at `fromDate`. No `basis` parameter: the toggle
+// no longer affects the projected amount, only simDisplayedRate's label.
+function simIncrementAmounts(assetId, amount, fromDate) {
   if (!amount) return null;
   const oneDayLater = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate() + 1);
   const oneMonthLater = new Date(fromDate.getFullYear(), fromDate.getMonth() + 1, fromDate.getDate());
   const oneYearLater = new Date(fromDate.getFullYear() + 1, fromDate.getMonth(), fromDate.getDate());
   return {
-    daily: simComputeGrowthValueAt(assetId, amount, fromDate, oneDayLater, basis) - amount,
-    monthly: simComputeGrowthValueAt(assetId, amount, fromDate, oneMonthLater, basis) - amount,
-    yearly: simComputeGrowthValueAt(assetId, amount, fromDate, oneYearLater, basis) - amount,
+    daily: simComputeGrowthValueAt(assetId, amount, fromDate, oneDayLater) - amount,
+    monthly: simComputeGrowthValueAt(assetId, amount, fromDate, oneMonthLater) - amount,
+    yearly: simComputeGrowthValueAt(assetId, amount, fromDate, oneYearLater) - amount,
   };
 }
 
-// Same growth model used for the table's projection columns, under the
-// given basis, with an arbitrary principal + start date instead of always
-// the live qty/today.
-function simProjectedValue(assetId, amount, startDateStr, targetDateStr, basis) {
+// Same growth model used for the table's projection columns, with an
+// arbitrary principal + start date instead of always the live qty/today.
+// No `basis` parameter — see simIncrementAmounts above.
+function simProjectedValue(assetId, amount, startDateStr, targetDateStr) {
   if (!amount || !targetDateStr) return null;
   const targetDate = parseDateStr(targetDateStr);
   const startDate = startDateStr ? parseDateStr(startDateStr) : new Date();
-  return simComputeGrowthValueAt(assetId, amount, startDate, targetDate, basis);
+  return simComputeGrowthValueAt(assetId, amount, startDate, targetDate);
 }
 
 // Days between the sim's start/target dates, clamped to 0 — used both for the
@@ -220,8 +235,8 @@ function renderSimModal() {
   const basisMatters = !isTiered && !hasCustomFormula && !isSimpleFlat;
   const basis = simRateBasis || cfg.rateBasis || "effective";
 
-  const inc = rate || isTiered ? simIncrementAmounts(a.id, amount, parseDateStr(startDateVal), basis) : null;
-  const projected = amount && simDate ? simProjectedValue(a.id, amount, startDateVal, simDate, basis) : null;
+  const inc = rate || isTiered ? simIncrementAmounts(a.id, amount, parseDateStr(startDateVal)) : null;
+  const projected = amount && simDate ? simProjectedValue(a.id, amount, startDateVal, simDate) : null;
   const profit = projected != null ? projected - amount : null;
   const days = simDaysBetween(startDateVal, simDate);
 
@@ -251,11 +266,23 @@ function renderSimModal() {
 
   // Plain-language versions of the exact formulas used above, with the
   // user's own numbers substituted in, so the % and the math behind it are
-  // visible and not just the final result. rateStr always reflects the rate
-  // actually multiplied in that branch's formula (post basis-conversion when
-  // one applies), never the raw stored value.
-  const displayedRate = simDisplayedRate(cfg, rate, basis);
-  const rateStr = fmtFormulaNum(displayedRate, 4);
+  // visible and not just the final result. rateStr is always the item's
+  // REAL, native rate — the same number simComputeGrowthValueAt actually
+  // multiplied — so the printed arithmetic is always internally
+  // consistent and checks out if you do the multiplication yourself. The
+  // toggle's relabeled equivalent (equivRateStr) is shown as a separate
+  // informational line instead of being substituted into the formula —
+  // substituting it in used to make the formula text lie about its own
+  // arithmetic whenever the toggle didn't match the item's native basis
+  // (the printed rate wouldn't actually multiply out to the printed
+  // result anymore).
+  const rateStr = fmtFormulaNum(rate, 4);
+  const nativeBasis = cfg.rateBasis || "effective";
+  const equivRate = basisMatters ? simDisplayedRate(cfg, rate, basis) : null;
+  const equivRateLine =
+    basisMatters && basis !== nativeBasis
+      ? `<p class="wt-sim-rate-equiv" dir="auto">${t("simEquivRateLabel")(fmtFormulaNum(equivRate, 4), basis === "nominal" ? "APR" : "APY")}</p>`
+      : "";
   const amountStr = fmtFormulaNum(amount, 2);
   let incFormula = "";
   if (inc && hasCustomFormula) {
@@ -318,6 +345,7 @@ function renderSimModal() {
       ${daysLabel}
       ${noRateNote}
       ${basisToggle}
+      ${equivRateLine}
 
       <div class="wt-sim-results">
         ${
