@@ -248,7 +248,40 @@ function toggleAssetCategory(id) {
 // ── Category filter (Savings / Investments / Assets) ──────
 // View-only: filters which rows are shown in the table, does not affect
 // totals, breakdown, or history — those always use every asset.
+// ── Name-prefix tabs (NBE / Mashreq / Thndr …) ────────────
+// Any items whose names start with the same first word are collected under
+// one tab automatically — no setup needed. A tab only appears when at least
+// 2 items share the prefix. Matching is case-insensitive and uses the name
+// in the current display language.
+function assetPrefixKey(a) {
+  const first = String(assetName(a) || "")
+    .trim()
+    .split(/\s+/)[0]
+    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+  return first ? first.toLowerCase() : "";
+}
+
+function assetPrefixTabs() {
+  const map = new Map();
+  ASSETS.forEach((a) => {
+    const key = assetPrefixKey(a);
+    if (!key) return;
+    const label = String(assetName(a)).trim().split(/\s+/)[0].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+    const e = map.get(key) || { key, label, count: 0 };
+    e.count++;
+    map.set(key, e);
+  });
+  return [...map.values()].filter((e) => e.count >= 2);
+}
+
+function assetMatchesFilter(a, filter) {
+  if (!filter) return true;
+  if (filter.startsWith("p:")) return assetPrefixKey(a) === filter.slice(2);
+  return a.group === filter;
+}
+
 function setGroupFilter(g) {
+  if (g && g.startsWith("p:")) g = "p:" + decodeURIComponent(g.slice(2));
   groupFilter = groupFilter === g ? null : g;
   render();
 }

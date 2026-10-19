@@ -52,6 +52,9 @@ function sinceDateFromNativeInput(id, value) {
 const sinceDatePreset = (daysAgo) => addDaysToDateStr(todayLocalStr(), -daysAgo);
 
 function renderSinceDateBtn(a) {
+  // "Since when" only makes sense for items that actually yield — hide it
+  // entirely for items marked Not Yield.
+  if (!assetGeneratesReturn(a.id)) return "";
   const cfg = returnConfig[a.id];
   const set = cfg && cfg.startDate;
   const label = set ? t("sinceDateBtnSet")(fmtDateShort(parseDateStr(cfg.startDate))) : t("sinceDateBtn");

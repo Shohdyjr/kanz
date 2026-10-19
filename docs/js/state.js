@@ -163,7 +163,7 @@ let simStartDate = null; // last start date typed into the simulator (YYYY-MM-DD
 // touching the item's actual saved Return Settings. Reset to the item's own
 // cfg.rateBasis whenever the simulator opens or the selected asset changes.
 let simRateBasis = null;
-let groupFilter = null; // "savings" | "investments" | "assets" | null (null = show all rows)
+let groupFilter = null; // "savings" | "investments" | "assets" | "p:<name-prefix>" | null (null = show all rows)
 let order = [];
 let itemHistoryModalId = null; // asset id whose history timeline is open, or null
 let itemHistoryEntries = []; // entries loaded for itemHistoryModalId

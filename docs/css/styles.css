@@ -409,6 +409,17 @@ body {
   color: var(--wt-bg);
   font-weight: 600;
 }
+.wt-group-filter-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--wt-line);
+  margin: 2px 4px;
+}
+.wt-group-filter-count {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-inline-start: 2px;
+}
 .wt-table {
   width: 100%;
   border-collapse: collapse;

@@ -24,6 +24,11 @@ function render() {
         minute: "2-digit",
       })
     : "—";
+  const prefixTabs = assetPrefixTabs();
+  // A selected name tab that no longer exists (renamed/deleted items) → show all.
+  if (groupFilter && groupFilter.startsWith("p:") && !prefixTabs.some((x) => "p:" + x.key === groupFilter)) {
+    groupFilter = null;
+  }
   const orderedAssets = order.map((id) => ASSETS.find((a) => a.id === id)).filter(Boolean);
   const fxNote = rates && rates.fxSource === "daily" ? t("footerDaily") : t("footerHourly");
 
@@ -172,6 +177,17 @@ function render() {
               `<button class="wt-group-filter-btn ${groupFilter === g ? "active" : ""}" onclick="setGroupFilter('${g}')">${t("groupOptions")[g]}</button>`
           )
           .join("")}
+        ${
+          prefixTabs.length
+            ? `<span class="wt-group-filter-sep"></span>` +
+              prefixTabs
+                .map(
+                  (x) =>
+                    `<button class="wt-group-filter-btn ${groupFilter === "p:" + x.key ? "active" : ""}" onclick="setGroupFilter('p:${encodeURIComponent(x.key).replace(/'/g, "%27")}')">${esc(x.label)} <span class="wt-group-filter-count">${x.count}</span></button>`
+                )
+                .join("")
+            : ""
+        }
       </div>
       <div class="wt-table-scroll">
       <table class="wt-table">
@@ -190,7 +206,7 @@ function render() {
           <th class="wt-th-del"></th>
         </tr></thead>
         <tbody>
-        ${(groupFilter ? orderedAssets.filter((a) => a.group === groupFilter) : orderedAssets)
+        ${orderedAssets.filter((a) => assetMatchesFilter(a, groupFilter))
           .map((a, idx, visible) => {
             const p = priceFor(a);
             const t2 = qty[a.id] * p;
