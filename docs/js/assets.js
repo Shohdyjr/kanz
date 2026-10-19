@@ -258,6 +258,10 @@ function toggleAssetCategory(id) {
 const NAME_EDGE_RE = /^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu;
 const NAME_PAREN_RE = /\(\s*(\p{L}[\p{L}\p{N}.&-]*)\s*\)/gu;
 
+// Parenthesized words that are just a currency label (e.g. "ثاندر (جنيه)")
+// say nothing about the brand, so they never form a tab on their own.
+const NAME_KEY_IGNORE = new Set(["جنيه", "دولار", "يورو", "ريال", "ذهب", "egp", "usd", "eur", "sar", "gold"]);
+
 function assetNameKeys(a) {
   const name = String(assetName(a) || "").trim();
   const out = new Map();
@@ -266,7 +270,9 @@ function assetNameKeys(a) {
     if (clean && !out.has(clean.toLowerCase())) out.set(clean.toLowerCase(), clean);
   };
   add(name.split(/\s+/)[0]);
-  for (const m of name.matchAll(NAME_PAREN_RE)) add(m[1]);
+  for (const m of name.matchAll(NAME_PAREN_RE)) {
+    if (!NAME_KEY_IGNORE.has(m[1].toLowerCase())) add(m[1]);
+  }
   return [...out].map(([key, label]) => ({ key, label }));
 }
 

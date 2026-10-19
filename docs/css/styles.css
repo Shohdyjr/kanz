@@ -420,6 +420,36 @@ body {
   opacity: 0.7;
   margin-inline-start: 2px;
 }
+.wt-th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.wt-sort-btns {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0;
+}
+.wt-sort-btn {
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  margin: 0;
+  font-size: 8px;
+  line-height: 9px;
+  color: var(--wt-text-dim);
+  opacity: 0.45;
+  cursor: pointer;
+}
+.wt-sort-btn:hover {
+  opacity: 1;
+  color: var(--wt-text);
+}
+.wt-sort-btn.active {
+  opacity: 1;
+  color: var(--wt-gold-light);
+}
 .wt-table {
   width: 100%;
   border-collapse: collapse;

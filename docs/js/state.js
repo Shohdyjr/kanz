@@ -164,6 +164,8 @@ let simStartDate = null; // last start date typed into the simulator (YYYY-MM-DD
 // cfg.rateBasis whenever the simulator opens or the selected asset changes.
 let simRateBasis = null;
 let groupFilter = null; // "savings" | "investments" | "assets" | "p:<name-prefix>" | null (null = show all rows)
+let sortKey = null; // table column key currently sorted by, or null (= manual order)
+let sortDir = "asc"; // "asc" | "desc"
 let order = [];
 let itemHistoryModalId = null; // asset id whose history timeline is open, or null
 let itemHistoryEntries = []; // entries loaded for itemHistoryModalId

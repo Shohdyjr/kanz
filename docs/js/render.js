@@ -192,28 +192,28 @@ function render() {
       <div class="wt-table-scroll">
       <table class="wt-table">
         <thead><tr>
-          <th class="wt-th-order">${t("thOrder")}</th>
-          <th>${t("thAsset")}</th>
-          <th>${t("thQty")}</th>
-          ${isColHidden("category") ? "" : `<th>${t("thCategory")}</th>`}
-          ${isColHidden("yield") ? "" : `<th>${t("thYield")}</th>`}
-          ${isColHidden("apy") ? "" : `<th>${t("thApy")}</th>`}
-          ${isColHidden("unitPrice") ? "" : `<th class="num">${t("thUnitPrice")}</th>`}
-          ${isColHidden("total") ? "" : `<th class="num">${t("thTotal")}</th>`}
-          ${isColHidden("projection") ? "" : `<th class="num">${t("thProjection")}</th>`}
-          ${isColHidden("gain") ? "" : `<th class="wt-th-gain">${t("thGain")}</th>`}
-          ${isColHidden("cronTouch") ? "" : `<th class="num">${t("thCronTouch")}</th>`}
+          ${sortTh("order", t("thOrder"), "wt-th-order")}
+          ${sortTh("asset", t("thAsset"))}
+          ${sortTh("qty", t("thQty"))}
+          ${isColHidden("category") ? "" : sortTh("category", t("thCategory"))}
+          ${isColHidden("yield") ? "" : sortTh("yield", t("thYield"))}
+          ${isColHidden("apy") ? "" : sortTh("apy", t("thApy"))}
+          ${isColHidden("unitPrice") ? "" : sortTh("unitPrice", t("thUnitPrice"), "num")}
+          ${isColHidden("total") ? "" : sortTh("total", t("thTotal"), "num")}
+          ${isColHidden("projection") ? "" : sortTh("projection", t("thProjection"), "num")}
+          ${isColHidden("gain") ? "" : sortTh("gain", t("thGain"), "wt-th-gain")}
+          ${isColHidden("cronTouch") ? "" : sortTh("cronTouch", t("thCronTouch"), "num")}
           <th class="wt-th-del"></th>
         </tr></thead>
         <tbody>
-        ${orderedAssets.filter((a) => assetMatchesFilter(a, groupFilter))
+        ${sortAssets(orderedAssets.filter((a) => assetMatchesFilter(a, groupFilter)))
           .map((a, idx, visible) => {
             const p = priceFor(a);
             const t2 = qty[a.id] * p;
             return `<tr>
             <td><div class="wt-order-btns">
-              <button class="wt-ord" onclick="move('${a.id}',-1)" ${idx === 0 ? "disabled" : ""}>▲</button>
-              <button class="wt-ord" onclick="move('${a.id}',1)"  ${idx === visible.length - 1 ? "disabled" : ""}>▼</button>
+              <button class="wt-ord" onclick="move('${a.id}',-1)" ${idx === 0 || sortKey ? "disabled" : ""}>▲</button>
+              <button class="wt-ord" onclick="move('${a.id}',1)"  ${idx === visible.length - 1 || sortKey ? "disabled" : ""}>▼</button>
             </div></td>
             <td><div class="wt-asset-name">
               <span class="wt-asset-icon wt-asset-icon-bg">${esc(a.icon)}</span>

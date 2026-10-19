@@ -78,6 +78,8 @@ const I18N = {
     groupLabel: "التصنيف",
     groupOptions: { savings: "توفير (Savings)", investments: "استثمارات (Investments)", assets: "أصول (Assets)" },
     groupFilterAll: "الكل",
+    sortAsc: "ترتيب تصاعدي",
+    sortDesc: "ترتيب تنازلي",
     startDateLabel: "تاريخ البداية",
     tierRatesLabel: "معدلات متدرجة لكل سنة",
     tierRatesHint:
@@ -571,6 +573,8 @@ const I18N = {
     groupLabel: "Category",
     groupOptions: { savings: "Savings", investments: "Investments", assets: "Assets" },
     groupFilterAll: "All",
+    sortAsc: "Sort ascending",
+    sortDesc: "Sort descending",
     startDateLabel: "Start date",
     tierRatesLabel: "Step-up rates per year",
     tierRatesHint:
