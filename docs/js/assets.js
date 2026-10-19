@@ -248,35 +248,43 @@ function toggleAssetCategory(id) {
 // ── Category filter (Savings / Investments / Assets) ──────
 // View-only: filters which rows are shown in the table, does not affect
 // totals, breakdown, or history — those always use every asset.
-// ── Name-prefix tabs (NBE / Mashreq / Thndr …) ────────────
-// Any items whose names start with the same first word are collected under
-// one tab automatically — no setup needed. A tab only appears when at least
-// 2 items share the prefix. Matching is case-insensitive and uses the name
-// in the current display language.
-function assetPrefixKey(a) {
-  const first = String(assetName(a) || "")
-    .trim()
-    .split(/\s+/)[0]
-    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
-  return first ? first.toLowerCase() : "";
+// ── Name tabs (NBE / Mashreq / Thndr …) ───────────────────
+// Items are collected under one tab automatically when their names share a
+// "brand key". An item's keys are (1) the first word of its name, and
+// (2) any single word written in parentheses, e.g. "National Bank (NBE)"
+// → keys "national" and "nbe". A tab only appears when at least 2 items
+// share a key. Matching is case-insensitive and uses the name in the
+// current display language. One item can belong to more than one tab.
+const NAME_EDGE_RE = /^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu;
+const NAME_PAREN_RE = /\(\s*(\p{L}[\p{L}\p{N}.&-]*)\s*\)/gu;
+
+function assetNameKeys(a) {
+  const name = String(assetName(a) || "").trim();
+  const out = new Map();
+  const add = (label) => {
+    const clean = String(label || "").replace(NAME_EDGE_RE, "");
+    if (clean && !out.has(clean.toLowerCase())) out.set(clean.toLowerCase(), clean);
+  };
+  add(name.split(/\s+/)[0]);
+  for (const m of name.matchAll(NAME_PAREN_RE)) add(m[1]);
+  return [...out].map(([key, label]) => ({ key, label }));
 }
 
 function assetPrefixTabs() {
   const map = new Map();
   ASSETS.forEach((a) => {
-    const key = assetPrefixKey(a);
-    if (!key) return;
-    const label = String(assetName(a)).trim().split(/\s+/)[0].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
-    const e = map.get(key) || { key, label, count: 0 };
-    e.count++;
-    map.set(key, e);
+    assetNameKeys(a).forEach(({ key, label }) => {
+      const e = map.get(key) || { key, label, count: 0 };
+      e.count++;
+      map.set(key, e);
+    });
   });
   return [...map.values()].filter((e) => e.count >= 2);
 }
 
 function assetMatchesFilter(a, filter) {
   if (!filter) return true;
-  if (filter.startsWith("p:")) return assetPrefixKey(a) === filter.slice(2);
+  if (filter.startsWith("p:")) return assetNameKeys(a).some((k) => k.key === filter.slice(2));
   return a.group === filter;
 }
 
